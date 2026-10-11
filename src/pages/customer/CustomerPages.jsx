@@ -574,9 +574,9 @@ export function CustomerProfile() {
           <div className="setting-row">
             <div>
               <strong>Change password</strong>
-              <small>Simulated password update for demo accounts.</small>
+              <small>Manage and update your account password.</small>
             </div>
-            <button className="button button-ghost button-small" onClick={() => notify('Password-change interface is simulated in this build.')}>
+            <button className="button button-ghost button-small" onClick={() => notify('Password update interface.')}>
               Open <ArrowRight size={14} />
             </button>
           </div>

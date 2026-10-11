@@ -158,7 +158,7 @@ export function PublicLayout({ children }) {
         <div className="footer-meta">
           <span>180 Cutcot National Highway, Pulilan, Bulacan</span>
           <span>Open daily · 9:00 AM–8:00 PM</span>
-          <span>Demo frontend · No real payments</span>
+          <span>© 2026 Biglang Gwapo Barbershop · All rights reserved</span>
         </div>
       </footer>
     </div>

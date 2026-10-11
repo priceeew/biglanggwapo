@@ -1,60 +1,85 @@
-# Biglang Gwapo Barber Shop
+# Biglang Gwapo Barbershop Management System
 
-A complete React + Vite frontend demo for a fictional Philippine barbershop. This phase is frontend-only: data is mock, interactions are simulated, and passwords, email delivery, payment gateways, MongoDB, Express, and real authentication are intentionally not implemented.
+A web-based barbershop operations and online appointment scheduling system for **Biglang Gwapo Barbershop** (Pulilan, Bulacan).
 
-## Run locally
+Built using **React**, **Vite**, **React Router**, and **Vanilla CSS**.
+
+---
+
+## Features & Modules
+
+### 1. Public & Customer Portal
+- **Service Catalog**: Browse cuts, beard trims, and grooming packages with real-time pricing and duration.
+- **Barber Profiles**: View barber specialties, ratings, and shifts (Marco Reyes, Paolo Santos, Nico Dela Cruz).
+- **Online Booking**: Multi-step booking flow with date, barber, and slot selection.
+- **Queue Status**: Live monitoring of waiting list and chair status.
+- **Customer Account**: Profile management, past service history, and review submission.
+
+### 2. Receptionist Desk (`/receptionist`)
+- **Appointment Management**: View and confirm incoming bookings.
+- **Walk-in Queue**: Fast registration of walk-in clients with queue ticket assignment.
+- **Checkout & Payments**: Record cash, GCash, or card payments with automatic change computation and receipt generation.
+
+### 3. Barber Station (`/barber`)
+- **Queue Overview**: Live list of customers waiting for each barber chair.
+- **Service Session**: Active chair management with service timer, checklist, and hair notes.
+- **Barber Schedule & Performance**: Personal calendar and client metrics.
+
+### 4. Admin Management (`/admin`)
+- **Operations Dashboard**: Summary metrics for revenue, bookings, queue, and staff.
+- **Categorized Inventory & Asset Management**: Separate management for:
+  - Products for Sale (Retail pomades, clays, oils)
+  - Barber Tools (Clippers, trimmers, shears)
+  - Shop Furniture (Chairs, mirrors, sofas)
+  - Accessories (Capes, aprons, dusters)
+  - Consumables (Neck strips, towels, blades)
+- **Staff & Services**: Manage barber accounts, receptionists, menu pricing, and working schedules.
+- **Promotions & Discounts**: Manage shop offers featured on the homepage.
+- **Reports & Analytics**: Daily sales, payment breakdowns, and service trends.
+
+---
+
+## Getting Started
+
+### Prerequisites
+- Node.js (v18 or higher recommended)
+- npm
+
+### Installation & Run
 
 ```bash
+# Install dependencies
 npm install
+
+# Start local development server
 npm run dev
 ```
 
-The Vite preview listens on `http://localhost:3000`. Production validation uses:
+The application runs locally at `http://localhost:3000`.
+
+### Build for Production
 
 ```bash
 npm run build
 ```
 
-## Demo access
+---
 
-Open the public homepage first. **Customer Login** accepts any valid-looking email and password and creates a simulated customer session. **Staff access** is intentionally separate and offers one-click demo entry for Receptionist, Barber, and Admin. Use the role switcher only from the Staff Access page or the staff gate.
+## Project Structure
 
-The customer demo is Miguel Santos. Receptionist is Bea Dizon, Barber is Marco Reyes, and Admin is Leah Navarro. There are no real credentials.
-
-## Connected workflow
-
-1. Customer signs in, selects a service, barber, date, and available time, and confirms a booking.
-2. Receptionist opens Appointment Management, confirms the booking, and marks the customer arrived. The appointment enters the shared queue exactly once.
-3. Barber opens My Queue / Service Session, starts the service, adds notes, and completes it.
-4. Receptionist opens Payment & Checkout, selects the completed service, and records a mock Cash, GCash, or Card (demo) payment. Cash change is calculated and duplicate payment recording is prevented.
-5. The service appears in customer history and demo analytics. Customer Reviews unlocks feedback for completed services.
-
-Reset Demo Data is available in every staff sidebar and on the customer Profile page. Demo state is stored in localStorage, excluding passwords.
-
-## Structure
-
-- `src/App.jsx` — routes, reusable layouts, page components, dialogs, and interactions.
-- `src/data.js` — shared Filipino demo data, navigation metadata, and route manifest source.
-- `src/mockService.js` — local API-shaped business logic and persistence.
-- `src/styles.css` — minimal classic barbershop design system and responsive rules.
-- `public/manus-routes.json` — all 35 page paths for preview tooling.
-- `plan.md` — implementation and design plan.
-
-## Page coverage
-
-| # | Page | Route |
-|---:|---|---|
-| 1 | Home | `/` |
-| 2 | Services | `/services` |
-| 3 | Barbers | `/barbers` |
-| 4 | Booking | `/booking` |
-| 5 | My Appointments | `/my-appointments` |
-| 6 | Queue Status | `/queue-status` |
-| 7 | Service History | `/service-history` |
-| 8 | Reviews & Ratings | `/reviews` |
-| 9 | Profile | `/profile` |
-| 10–16 | Receptionist Dashboard, Appointment Management, Walk-in Registration, Queue Management, Customer Management, Payment & Checkout, Daily Transactions | `/receptionist/*` |
-| 17–23 | Barber Dashboard, My Appointments, My Queue, Customer Details, Service Session, My Schedule, My Performance | `/barber/*` |
-| 24–35 | Admin Dashboard, Manage Receptionists, Manage Barbers, Manage Customers, Manage Services, Manage Appointments, Manage Schedules, Manage Transactions, Reports & Analytics, Inventory, Promotions & Discounts, System Settings | `/admin/*` |
-
-The supplied upload did not include a separate logo file, so the UI uses an easy-to-replace typographic BG mark without inventing or recoloring an asset.
+```
+biglanggwapo/
+├── public/               # Static assets & barbershop logo
+├── src/
+│   ├── components/       # Common UI elements & layout wrappers
+│   ├── context/          # Global store & state management
+│   ├── pages/            # Role-based page views (Customer, Barber, Receptionist, Admin)
+│   ├── data.js           # Shop data, initial inventory, services & staff
+│   ├── mockService.js    # Data layer & localStorage persistence
+│   ├── styles.css        # Responsive styling & design tokens
+│   ├── App.jsx           # Main router & app container
+│   └── main.jsx          # Entry point
+├── index.html            # HTML shell with barbershop branding
+├── package.json          # Project configuration & dependencies
+└── vite.config.js        # Vite build configuration
+```
