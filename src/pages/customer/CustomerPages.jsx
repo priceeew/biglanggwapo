@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, Clock3, Download,
-  FileText, ListOrdered, Pencil, Plus, ReceiptText, Scissors, Send, ShieldCheck,
-  Sparkles, Star, UserRound, Users, WalletCards
+  ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, ChevronLeft,
+  ChevronRight, Clock3, Download, FileText, ListOrdered, Pencil, Plus,
+  ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, UserRound,
+  Users, WalletCards, X
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
@@ -23,8 +24,339 @@ export function CustomerPage({ path }) {
   return <CustomerProfile />;
 }
 
+function RescheduleModal({ appointment, onClose }) {
+  const { demo, commit, notify } = useStore();
+  const [selectedDate, setSelectedDate] = useState(appointment.date || today);
+  const [selectedTime, setSelectedTime] = useState(appointment.time || '');
+
+  // Month navigation state initialized to selected date
+  const [viewDate, setViewDate] = useState(() => {
+    const parts = (appointment.date || today).split('-');
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+  });
+
+  const slots = [
+    '9:00 AM', '9:45 AM', '10:30 AM', '11:15 AM',
+    '1:00 PM', '1:45 PM', '2:30 PM', '3:15 PM',
+    '4:00 PM', '5:00 PM'
+  ];
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  const handlePrevMonth = () => {
+    setViewDate(new Date(year, month - 1, 1));
+  };
+  const handleNextMonth = () => {
+    setViewDate(new Date(year, month + 1, 1));
+  };
+
+  const todayParts = today.split('-');
+  const todayYear = Number(todayParts[0]);
+  const todayMonth = Number(todayParts[1]) - 1;
+  const isPastMonth = year < todayYear || (year === todayYear && month <= todayMonth);
+
+  const isTaken = (time) => demo.appointments.some((item) =>
+    item.id !== appointment.id &&
+    item.barberId === appointment.barberId &&
+    item.date === selectedDate &&
+    item.time === time &&
+    !['Cancelled', 'No-show'].includes(item.status)
+  );
+
+  // Quick dates (next 5 days)
+  const quickDates = [];
+  const baseDate = new Date(`${today}T00:00:00`);
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(baseDate);
+    d.setDate(baseDate.getDate() + i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' });
+    quickDates.push({ dateStr, label });
+  }
+
+  // Calendar cells calculation
+  const calendarCells = [];
+  for (let i = firstDayIndex - 1; i >= 0; i--) {
+    calendarCells.push({
+      day: daysInPrevMonth - i,
+      isCurrentMonth: false,
+      dateString: ''
+    });
+  }
+  for (let day = 1; day <= daysInCurrentMonth; day++) {
+    const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const isPast = dateString < today;
+    const isSelected = dateString === selectedDate;
+    const isToday = dateString === today;
+    calendarCells.push({
+      day,
+      isCurrentMonth: true,
+      dateString,
+      isPast,
+      isSelected,
+      isToday
+    });
+  }
+  const remaining = (7 - (calendarCells.length % 7)) % 7;
+  for (let i = 1; i <= remaining; i++) {
+    calendarCells.push({
+      day: i,
+      isCurrentMonth: false,
+      dateString: ''
+    });
+  }
+
+  const handleSelectDate = (dateStr) => {
+    if (!dateStr || dateStr < today) return;
+    setSelectedDate(dateStr);
+
+    // If currently chosen time slot is taken on this new date, reset time
+    if (selectedTime) {
+      const conflict = demo.appointments.some((item) =>
+        item.id !== appointment.id &&
+        item.barberId === appointment.barberId &&
+        item.date === dateStr &&
+        item.time === selectedTime &&
+        !['Cancelled', 'No-show'].includes(item.status)
+      );
+      if (conflict) {
+        setSelectedTime('');
+      }
+    }
+
+    // Keep calendar view in sync with chosen month
+    const parts = dateStr.split('-');
+    const newY = Number(parts[0]);
+    const newM = Number(parts[1]) - 1;
+    if (newY !== year || newM !== month) {
+      setViewDate(new Date(newY, newM, 1));
+    }
+  };
+
+  const isSameAsCurrent = selectedDate === appointment.date && selectedTime === appointment.time;
+  const canConfirm = selectedDate && selectedTime && !isSameAsCurrent;
+
+  const handleConfirm = () => {
+    if (!canConfirm) return;
+    try {
+      commit((state) => demoApi.rescheduleAppointment(state, appointment.id, selectedDate, selectedTime));
+      notify(`Appointment successfully rescheduled to ${humanDate(selectedDate)} at ${selectedTime}.`);
+      onClose();
+    } catch (error) {
+      notify(error.message, 'error');
+    }
+  };
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="modal-card reschedule-modal-card">
+        <button className="modal-close" onClick={onClose} aria-label="Close modal">
+          <X size={18} />
+        </button>
+
+        <div className="modal-heading" style={{ marginBottom: '18px' }}>
+          <div className="modal-mark">
+            <CalendarDays size={22} />
+          </div>
+          <span className="eyebrow gold">Modify Schedule</span>
+          <h2>Reschedule Chair</h2>
+          <p>Select a new date and available time slot with your barber.</p>
+        </div>
+
+        {/* Current appointment info box */}
+        <div style={{
+          background: 'var(--paper)',
+          border: '1px solid var(--line)',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <div>
+            <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--ink)' }}>{appointment.serviceName}</div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
+              with <strong>{appointment.barberName}</strong> · {appointment.duration} min
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <span className="eyebrow" style={{ fontSize: '9px', justifyContent: 'flex-end', marginBottom: '2px' }}>Current</span>
+            <div style={{ fontWeight: '700', fontSize: '12px', color: 'var(--gold)' }}>
+              {humanDate(appointment.date)} · {appointment.time}
+            </div>
+          </div>
+        </div>
+
+        {/* Calendar widget */}
+        <div className="calendar-widget">
+          <div className="calendar-header">
+            <button
+              type="button"
+              className="calendar-nav-btn"
+              onClick={handlePrevMonth}
+              disabled={isPastMonth}
+              title="Previous month"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="calendar-month-title">
+              {monthNames[month]} {year}
+            </span>
+            <button
+              type="button"
+              className="calendar-nav-btn"
+              onClick={handleNextMonth}
+              title="Next month"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          <div className="calendar-weekdays">
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+              <span key={d} className="calendar-weekday">{d}</span>
+            ))}
+          </div>
+
+          <div className="calendar-days-grid">
+            {calendarCells.map((cell, idx) => {
+              if (!cell.isCurrentMonth) {
+                return (
+                  <span key={idx} className="calendar-day-cell other-month">
+                    {cell.day}
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={cell.isPast}
+                  onClick={() => handleSelectDate(cell.dateString)}
+                  className={`calendar-day-cell ${cell.isSelected ? 'selected' : ''} ${cell.isToday ? 'today' : ''} ${cell.isPast ? 'disabled' : ''}`}
+                  title={cell.isPast ? 'Past date' : cell.dateString}
+                >
+                  {cell.day}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Quick Date Pills */}
+          <div className="calendar-quick-dates">
+            {quickDates.map((item) => (
+              <button
+                key={item.dateStr}
+                type="button"
+                className={`quick-date-btn ${selectedDate === item.dateStr ? 'active' : ''}`}
+                onClick={() => handleSelectDate(item.dateStr)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Time slots */}
+        <div style={{ marginTop: '18px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label className="field-label" style={{ margin: 0, fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Select Available Time
+          </label>
+          <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+            {selectedDate ? humanDate(selectedDate) : ''}
+          </span>
+        </div>
+
+        <div className="slot-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+          {slots.map((slot) => {
+            const taken = isTaken(slot);
+            const isCurrent = appointment.date === selectedDate && appointment.time === slot;
+            const isSelected = selectedTime === slot;
+            return (
+              <button
+                key={slot}
+                type="button"
+                disabled={taken}
+                className={`slot-button ${isSelected ? 'selected' : ''}`}
+                onClick={() => setSelectedTime(slot)}
+                style={isCurrent && !isSelected ? { borderColor: 'var(--gold)' } : {}}
+                title={taken ? 'Barber already booked' : isCurrent ? 'Current booked time' : 'Available'}
+              >
+                {slot}
+                {taken && <small>Booked</small>}
+                {isCurrent && !taken && <small style={{ color: isSelected ? 'var(--white)' : 'var(--gold)' }}>Current</small>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Action footer */}
+        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--line)' }}>
+          {isSameAsCurrent ? (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'center', marginBottom: '14px' }}>
+              ℹ️ Current booking time selected. Pick a different date or time slot to reschedule.
+            </div>
+          ) : selectedDate && selectedTime ? (
+            <div style={{
+              fontSize: '12px',
+              textAlign: 'center',
+              marginBottom: '14px',
+              padding: '8px 12px',
+              background: 'var(--gold-soft)',
+              borderRadius: '6px',
+              color: '#6d4e21',
+              fontWeight: '500'
+            }}>
+              New schedule: <strong>{humanDate(selectedDate)} at {selectedTime}</strong>
+            </div>
+          ) : (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'center', marginBottom: '14px' }}>
+              Select a date and an available time slot above.
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button type="button" className="button button-ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button-dark"
+              disabled={!canConfirm}
+              onClick={handleConfirm}
+            >
+              Confirm Reschedule
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CustomerDashboard() {
   const { demo, commit, notify } = useStore();
+  const [rescheduleTarget, setRescheduleTarget] = useState(null);
   const appointments = demo.appointments.filter((item) => item.customerId === 'cust-demo');
   const upcoming = appointments.find((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completed = appointments.filter((item) => item.status === 'Completed');
@@ -34,18 +366,6 @@ export function CustomerDashboard() {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
       commit((state) => demoApi.cancelAppointment(state, id));
       notify('Appointment cancelled.');
-    }
-  };
-
-  const reschedule = (id) => {
-    const date = window.prompt('New date (YYYY-MM-DD)', today);
-    const time = date && window.prompt('New time (for example, 2:00 PM)', '2:00 PM');
-    if (!date || !time) return;
-    try {
-      commit((state) => demoApi.rescheduleAppointment(state, id, date, time));
-      notify('Appointment rescheduled and returned to Pending.');
-    } catch (error) {
-      notify(error.message, 'error');
     }
   };
 
@@ -68,7 +388,7 @@ export function CustomerDashboard() {
         >
           {upcoming ? (
             <div style={{ padding: '20px' }}>
-              <AppointmentCard appointment={upcoming} onCancel={cancel} onReschedule={() => reschedule(upcoming.id)} />
+              <AppointmentCard appointment={upcoming} onCancel={cancel} onReschedule={() => setRescheduleTarget(upcoming)} />
             </div>
           ) : (
             <EmptyState
@@ -138,6 +458,13 @@ export function CustomerDashboard() {
           </div>
         </SectionCard>
       </div>
+
+      {rescheduleTarget && (
+        <RescheduleModal
+          appointment={rescheduleTarget}
+          onClose={() => setRescheduleTarget(null)}
+        />
+      )}
     </>
   );
 }
@@ -145,6 +472,7 @@ export function CustomerDashboard() {
 export function CustomerAppointments() {
   const { demo, commit, notify } = useStore();
   const [tab, setTab] = useState('Upcoming');
+  const [rescheduleTarget, setRescheduleTarget] = useState(null);
   const mine = demo.appointments.filter((item) => item.customerId === 'cust-demo');
   const upcomingList = mine.filter((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completedList = mine.filter((item) => item.status === 'Completed');
@@ -155,18 +483,6 @@ export function CustomerAppointments() {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
       commit((state) => demoApi.cancelAppointment(state, id));
       notify('Appointment cancelled.');
-    }
-  };
-
-  const reschedule = (id) => {
-    const date = window.prompt('New date (YYYY-MM-DD)', today);
-    const time = date && window.prompt('New time (for example, 2:00 PM)', '2:00 PM');
-    if (!date || !time) return;
-    try {
-      commit((state) => demoApi.rescheduleAppointment(state, id, date, time));
-      notify('Appointment rescheduled and returned to Pending.');
-    } catch (error) {
-      notify(error.message, 'error');
     }
   };
 
@@ -209,7 +525,7 @@ export function CustomerAppointments() {
                 key={item.id}
                 appointment={item}
                 onCancel={cancel}
-                onReschedule={() => reschedule(item.id)}
+                onReschedule={() => setRescheduleTarget(item)}
               />
             ))}
           </div>
@@ -228,6 +544,13 @@ export function CustomerAppointments() {
           />
         )}
       </SectionCard>
+
+      {rescheduleTarget && (
+        <RescheduleModal
+          appointment={rescheduleTarget}
+          onClose={() => setRescheduleTarget(null)}
+        />
+      )}
     </>
   );
 }
