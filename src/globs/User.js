@@ -7,7 +7,7 @@ export const accounts = {
     initials: 'MS',
     customerId: 'cust-demo',
     phone: '+63 917 555 0142',
-    redirectPath: '/customer'
+    redirectPath: '/booking'
   },
   'admin@biglanggwapo.com': {
     email: 'admin@biglanggwapo.com',

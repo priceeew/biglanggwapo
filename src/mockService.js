@@ -26,7 +26,14 @@ export function loadDemoState() {
       currentInventory = [...currentInventory, ...additional];
     }
 
-    return { ...initial, ...parsed, inventory: currentInventory };
+    let currentReviews = parsed.reviews || initial.reviews;
+    if (currentReviews.length < initial.reviews.length) {
+      const existingIds = new Set(currentReviews.map((r) => r.id));
+      const newReviews = initial.reviews.filter((r) => !existingIds.has(r.id));
+      currentReviews = [...currentReviews, ...newReviews];
+    }
+
+    return { ...initial, ...parsed, inventory: currentInventory, reviews: currentReviews };
   } catch {
     return getInitialDemoState();
   }

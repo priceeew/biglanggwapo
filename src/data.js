@@ -21,7 +21,19 @@ export const promotions = [
 export const reviews = [
   { id: 'rev-1', customer: 'Andrea Lim', initials: 'AL', barber: 'Marco Reyes', rating: 5, comment: 'The fade was sharp and the whole visit felt effortless.', date: '2026-10-08', public: true },
   { id: 'rev-2', customer: 'Jonas Villanueva', initials: 'JV', barber: 'Paolo Santos', rating: 5, comment: 'Exactly the classic cut I described. I will be back.', date: '2026-10-05', public: true },
-  { id: 'rev-3', customer: 'Kyla Ramos', initials: 'KR', barber: 'Nico Dela Cruz', rating: 4, comment: 'Great beard sculpt and a very friendly consultation.', date: '2026-09-29', public: true }
+  { id: 'rev-3', customer: 'Kyla Ramos', initials: 'KR', barber: 'Nico Dela Cruz', rating: 4, comment: 'Great beard sculpt and a very friendly consultation.', date: '2026-09-29', public: true },
+  { id: 'rev-4', customer: 'Christian Dizon', initials: 'CD', barber: 'Marco Reyes', rating: 5, comment: 'Best tapers in Bulacan. Clean shop, cold drinks, and zero rush.', date: '2026-10-09', public: true },
+  { id: 'rev-5', customer: 'Rafael Cruz', initials: 'RC', barber: 'Paolo Santos', rating: 5, comment: 'The hot towel shave and scissor work here is unbeatable.', date: '2026-10-06', public: true },
+  { id: 'rev-6', customer: 'Dave Bautista', initials: 'DB', barber: 'Nico Dela Cruz', rating: 5, comment: 'Consistent quality every single time. My go-to barbershop in Pulilan.', date: '2026-10-03', public: true },
+  { id: 'rev-7', customer: 'Mark Anthony Tan', initials: 'MT', barber: 'Marco Reyes', rating: 5, comment: 'Smooth booking system and my haircut turned out immaculate.', date: '2026-10-01', public: true },
+  { id: 'rev-8', customer: 'Lorenzo Gabriel', initials: 'LG', barber: 'Paolo Santos', rating: 4, comment: 'Clean lineup and solid styling advice from Paolo. Highly recommend!', date: '2026-09-27', public: true },
+  { id: 'rev-9', customer: 'Kenneth Alcantara', initials: 'KA', barber: 'Nico Dela Cruz', rating: 5, comment: 'Super accommodating crew and great ambience. Worth every peso.', date: '2026-09-24', public: true },
+  { id: 'rev-10', customer: 'Gian Carlo Morales', initials: 'GM', barber: 'Marco Reyes', rating: 5, comment: 'First time here and Marco gave me the cleanest low taper fade I’ve ever had. Will definitely become a regular!', date: '2026-10-10', public: true },
+  { id: 'rev-11', customer: 'Patrick De Jesus', initials: 'PJ', barber: 'Paolo Santos', rating: 5, comment: 'Top-tier scissor cut. Paolo pays extreme attention to symmetry and detail.', date: '2026-10-07', public: true },
+  { id: 'rev-12', customer: 'Adrian Mercado', initials: 'AM', barber: 'Nico Dela Cruz', rating: 5, comment: 'The hot towel treatment and beard grooming package was pure relaxation. 10/10 service.', date: '2026-10-04', public: true },
+  { id: 'rev-13', customer: 'Joshua Fernandez', initials: 'JF', barber: 'Marco Reyes', rating: 5, comment: 'Crisp hairline, modern styling, and very welcoming atmosphere. Biglang Gwapo never disappoints.', date: '2026-09-30', public: true },
+  { id: 'rev-14', customer: 'Carl Mendoza', initials: 'CM', barber: 'Paolo Santos', rating: 5, comment: 'Quick wait time, smooth process, and my pompadour styling looks sharp.', date: '2026-09-26', public: true },
+  { id: 'rev-15', customer: 'Dominic Soriano', initials: 'DS', barber: 'Nico Dela Cruz', rating: 5, comment: 'Great music, cold aircon, and expertly blended fade. Easily the best barbershop in town.', date: '2026-09-21', public: true }
 ];
 
 export const customers = [

@@ -17,3 +17,249 @@
 .inventory-callout{display:flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--line);border-left:3px solid var(--gold);padding:14px 18px;margin-bottom:18px;border-radius:8px;font-size:12px;color:var(--muted)}
 .inventory-callout strong{color:var(--ink)}
 .inventory-tabs{margin-bottom:20px}
+
+/* Full-width sticky/fixed navbar */
+.site-header{
+  position: sticky;
+  top: 0;
+  z-index: 10001 !important;
+  background: rgba(247, 245, 240, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  padding: 0 32px !important;
+  border-bottom: 1px solid rgba(229, 227, 222, 0.9);
+  transition: box-shadow 0.2s ease, background 0.2s ease;
+}
+.site-header.scrolled{
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  background: rgba(247, 245, 240, 0.98);
+}
+.site-header-inner{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.desktop-nav{
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-left: auto;
+  margin-right: 28px;
+}
+.nav-link-btn{
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+  text-decoration: none;
+  transition: color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+}
+.nav-link-btn:hover{
+  color: var(--ink);
+}
+.nav-link-btn.active{
+  color: var(--ink);
+  font-weight: 700;
+}
+.nav-link-btn::after{
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--gold);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 2px;
+}
+.nav-link-btn.active::after{
+  transform: scaleX(1);
+}
+.nav-link-btn:hover::after{
+  transform: scaleX(1);
+}
+.nav-login-btn{
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+.nav-login-btn:hover{
+  border-color: var(--ink);
+  background: var(--white);
+}
+
+/* Enhanced Brand Logo and Name size */
+.brand-lockup {
+  gap: 14px !important;
+  align-items: center !important;
+}
+.brand-logo {
+  width: 54px !important;
+  height: 54px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  flex-shrink: 0 !important;
+  display: block !important;
+  border: 2px solid var(--gold) !important;
+  box-shadow: 0 2px 10px rgba(184, 138, 68, 0.25);
+}
+.brand-lockup strong {
+  font-size: 20px !important;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-weight: 800 !important;
+}
+.brand-lockup small {
+  font-size: 8px !important;
+  letter-spacing: 0.16em;
+  margin-top: 2px;
+  display: block;
+}
+
+/* Horizontal Scroll Reviews */
+.reviews-scroll-container {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  padding: 12px 4px 20px 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold) transparent;
+}
+.reviews-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+.reviews-scroll-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+.reviews-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--gold);
+  border-radius: 4px;
+}
+.reviews-scroll-item {
+  flex: 0 0 320px;
+  min-width: 320px;
+}
+.reviews-scroll-item .review-card {
+  height: 100%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.reviews-scroll-item .review-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+}
+.scroll-nav-btns {
+  display: flex;
+  gap: 8px;
+}
+.scroll-arrow-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  transition: all 0.2s ease;
+}
+.scroll-arrow-btn:hover {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--white);
+}
+
+@media(max-width: 760px) {
+  .site-header {
+    height: auto;
+    padding: 12px 18px !important;
+  }
+  .brand-logo {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .brand-lockup strong {
+    font-size: 15px !important;
+  }
+  .desktop-nav {
+    display: flex !important;
+    gap: 16px;
+    overflow-x: auto;
+    margin-right: 0;
+    max-width: 100%;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .desktop-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-link-btn {
+    font-size: 11px;
+    white-space: nowrap;
+    padding: 4px 0;
+  }
+  .reviews-scroll-item {
+    flex: 0 0 280px;
+    min-width: 280px;
+  }
+}
+
+/* Modal layers to ensure it sits above the fixed/sticky header (z-index: 100) and is always clickable */
+.modal-backdrop {
+  z-index: 9999 !important;
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(17, 17, 17, 0.65) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 85px 20px 20px !important;
+}
+
+.modal-card {
+  position: relative !important;
+  z-index: 10000 !important;
+  background: var(--white) !important;
+  width: min(100%, 460px) !important;
+  max-height: calc(100vh - 40px) !important;
+  overflow-y: auto !important;
+  padding: 32px !important;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35) !important;
+  border-radius: 12px !important;
+}
+
+/* Standalone Auth Pages (Register & Forgot Password) */
+.auth-page-wrapper {
+  min-height: calc(100vh - 180px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 20px 80px;
+}
+.auth-standalone-card {
+  position: relative;
+  background: var(--white);
+  width: min(100%, 460px);
+  padding: 38px 32px;
+  box-shadow: 0 20px 60px rgba(20, 18, 14, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
