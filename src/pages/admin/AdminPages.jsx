@@ -8,7 +8,7 @@ import {
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, deleteAccount } from '../../data';
-import { sendInviteNotification } from '../../services/api';
+import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
 } from '../../components/common/UIComponents';
@@ -160,6 +160,9 @@ export function AdminManagementPage({ collection }) {
     const itemName = item.name || item.customerName || item.serviceName || item.receipt || 'this record';
     if (window.confirm(`Delete "${itemName}"? This will permanently remove this record and its account.`)) {
       commit((state) => demoApi.deleteItem(state, collection, item.id));
+      if (collection === 'barbers') {
+        deleteBarberFromAtlas(item.id);
+      }
       if (item.email) {
         deleteAccount(item.email);
       }
@@ -223,14 +226,16 @@ export function AdminManagementPage({ collection }) {
       }
       const cleanEmail = formData.email.trim().toLowerCase();
       const newBarberId = 'bar-' + Date.now();
-      commit((state) => demoApi.addBarber(state, {
+      const newBarberObj = {
         id: newBarberId,
         name: formData.name.trim(),
         specialty: formData.specialty,
         email: cleanEmail,
         phone: formData.phone.trim(),
         status: formData.status || 'On shift'
-      }));
+      };
+      commit((state) => demoApi.addBarber(state, newBarberObj));
+      saveBarberToAtlas(newBarberObj);
       saveAccount({
         email: cleanEmail,
         password: formData.password,
@@ -323,6 +328,7 @@ export function AdminManagementPage({ collection }) {
                       current.data.forEach((b) => {
                         if (b.email) deleteAccount(b.email);
                       });
+                      clearAllBarbersFromAtlas();
                       commit((state) => ({ ...state, barbers: [] }));
                       notify('All test barbers cleared.', 'success');
                     }

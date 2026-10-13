@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { loadDemoState, persistDemoState, resetDemoState } from '../mockService';
+import { fetchBarbersFromAtlas, fetchAppointmentsFromAtlas } from '../services/api';
 
 const StoreContext = createContext(null);
 
@@ -21,6 +22,28 @@ export function StoreProvider({ children }) {
   });
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    fetchBarbersFromAtlas().then((barbers) => {
+      if (barbers && Array.isArray(barbers)) {
+        setDemo((prev) => {
+          const updated = { ...prev, barbers };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    fetchAppointmentsFromAtlas().then((appointments) => {
+      if (appointments && Array.isArray(appointments) && appointments.length > 0) {
+        setDemo((prev) => {
+          const updated = { ...prev, appointments: [...appointments, ...prev.appointments.filter((a) => !appointments.some((ap) => ap.id === a.id))] };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+  }, []);
 
   const notify = (message, tone = 'success') => {
     setToast({ message, tone });
