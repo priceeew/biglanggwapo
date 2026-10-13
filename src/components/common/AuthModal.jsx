@@ -191,17 +191,6 @@ export function AuthModal() {
                     {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px', fontSize: '10px' }}>
-                  <span style={{ color: form.password.length >= 8 ? '#16a34a' : 'var(--muted)', fontWeight: form.password.length >= 8 ? '700' : 'normal' }}>
-                    {form.password.length >= 8 ? '✓' : '○'} 8+ characters
-                  </span>
-                  <span style={{ color: /\d/.test(form.password) ? '#16a34a' : 'var(--muted)', fontWeight: /\d/.test(form.password) ? '700' : 'normal' }}>
-                    {/\d/.test(form.password) ? '✓' : '○'} 1 number
-                  </span>
-                  <span style={{ color: /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(form.password) ? '#16a34a' : 'var(--muted)', fontWeight: /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(form.password) ? '700' : 'normal' }}>
-                    {/[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(form.password) ? '✓' : '○'} 1 special char
-                  </span>
-                </div>
               </label>
               <label className="field-label">Confirm password
                 <input
