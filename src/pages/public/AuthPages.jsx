@@ -115,7 +115,7 @@ export function RegisterPage() {
                 }}
                 required
                 minLength={8}
-                placeholder="Min. 8 characters + number + special"
+                placeholder="*********"
               />
               <button
                 type="button"
@@ -137,11 +137,11 @@ export function RegisterPage() {
               }}
               required
               minLength={8}
-              placeholder="Repeat password"
+              placeholder="*********"
             />
             {form.confirm && (
               <span style={{ color: form.password === form.confirm ? '#16a34a' : '#dc2626', fontSize: '10px', marginTop: '4px' }}>
-                {form.password === form.confirm ? '✓ Passwords match' : '✗ Passwords do not match'}
+                {form.password === form.confirm ? 'Passwords match' : 'Passwords do not match'}
               </span>
             )}
           </label>

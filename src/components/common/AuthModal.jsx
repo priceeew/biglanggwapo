@@ -185,7 +185,7 @@ export function AuthModal() {
                     }}
                     required
                     minLength={8}
-                    placeholder="Min. 8 characters + number + special"
+                    placeholder="*********"
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                     {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -203,11 +203,11 @@ export function AuthModal() {
                   }}
                   required
                   minLength={8}
-                  placeholder="Repeat password"
+                  placeholder="*********"
                 />
                 {form.confirm && (
                   <span style={{ color: form.password === form.confirm ? '#16a34a' : '#dc2626', fontSize: '10px', marginTop: '4px' }}>
-                    {form.password === form.confirm ? '✓ Passwords match' : '✗ Passwords do not match'}
+                    {form.password === form.confirm ? 'Passwords match' : 'Passwords do not match'}
                   </span>
                 )}
               </label>
