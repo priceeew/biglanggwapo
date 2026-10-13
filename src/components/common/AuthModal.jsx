@@ -15,11 +15,13 @@ export function AuthModal() {
   const [mode, setMode] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '', role: 'customer' });
+  const [regError, setRegError] = useState('');
 
   useEffect(() => {
     if (modal) {
       setMode(modal.type);
       setForm({ name: '', email: '', phone: '', password: '', confirm: '', role: modal.requestedRole || 'customer' });
+      setRegError('');
       setTimeout(() => dialogRef.current?.focus(), 30);
     }
   }, [modal]);
@@ -65,15 +67,21 @@ export function AuthModal() {
 
   const submitRegister = (event) => {
     event.preventDefault();
+    setRegError('');
     if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password || !form.confirm) {
-      return notify('Please complete all registration fields.', 'error');
+      const err = 'Please complete all registration fields.';
+      setRegError(err);
+      return notify(err, 'error');
     }
     const pwdError = validatePassword(form.password);
     if (pwdError) {
+      setRegError(pwdError);
       return notify(pwdError, 'error');
     }
     if (form.password !== form.confirm) {
-      return notify('Passwords do not match.', 'error');
+      const err = 'Passwords do not match.';
+      setRegError(err);
+      return notify(err, 'error');
     }
     const cleanEmail = form.email.trim().toLowerCase();
     const initials = form.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
@@ -171,23 +179,55 @@ export function AuthModal() {
                     className="input"
                     type={showPassword ? 'text' : 'password'}
                     value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, password: e.target.value });
+                      if (regError) setRegError('');
+                    }}
                     required
                     minLength={8}
-                    placeholder="Min. 8 characters + special character"
+                    placeholder="Min. 8 characters + number + special"
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                     {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
-                <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
-                  At least 8 characters with at least one special character (!@#$%^&* etc.)
-                </small>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px', fontSize: '10px' }}>
+                  <span style={{ color: form.password.length >= 8 ? '#16a34a' : 'var(--muted)', fontWeight: form.password.length >= 8 ? '700' : 'normal' }}>
+                    {form.password.length >= 8 ? '✓' : '○'} 8+ characters
+                  </span>
+                  <span style={{ color: /\d/.test(form.password) ? '#16a34a' : 'var(--muted)', fontWeight: /\d/.test(form.password) ? '700' : 'normal' }}>
+                    {/\d/.test(form.password) ? '✓' : '○'} 1 number
+                  </span>
+                  <span style={{ color: /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(form.password) ? '#16a34a' : 'var(--muted)', fontWeight: /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(form.password) ? '700' : 'normal' }}>
+                    {/[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(form.password) ? '✓' : '○'} 1 special char
+                  </span>
+                </div>
               </label>
               <label className="field-label">Confirm password
-                <input className="input" type="password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} required minLength={8} placeholder="Repeat password" />
+                <input
+                  className="input"
+                  type="password"
+                  value={form.confirm}
+                  onChange={(e) => {
+                    setForm({ ...form, confirm: e.target.value });
+                    if (regError) setRegError('');
+                  }}
+                  required
+                  minLength={8}
+                  placeholder="Repeat password"
+                />
+                {form.confirm && (
+                  <span style={{ color: form.password === form.confirm ? '#16a34a' : '#dc2626', fontSize: '10px', marginTop: '4px' }}>
+                    {form.password === form.confirm ? '✓ Passwords match' : '✗ Passwords do not match'}
+                  </span>
+                )}
               </label>
-              <button className="button button-dark button-full">Create customer account <ArrowRight size={16} /></button>
+              {regError && (
+                <div style={{ background: '#fef2f2', border: '1px solid #f87171', color: '#991b1b', padding: '9px 12px', borderRadius: '6px', fontSize: '11px', marginTop: '2px' }}>
+                  ⚠️ {regError}
+                </div>
+              )}
+              <button className="button button-dark button-full" type="submit">Create customer account <ArrowRight size={16} /></button>
             </form>
             <div className="modal-links">
               <button className="text-button" onClick={() => setMode('login')}>Already have an account? Log in</button>

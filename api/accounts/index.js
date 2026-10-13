@@ -26,6 +26,18 @@ export default async function handler(req, res) {
       if (!payload || !payload.email) {
         return res.status(400).json({ success: false, message: 'Missing account email' });
       }
+      if (payload.password) {
+        if (
+          payload.password.length < 8 ||
+          !/\d/.test(payload.password) ||
+          !/[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(payload.password)
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: 'Password must be at least 8 characters long and contain at least one number and one special character.'
+          });
+        }
+      }
       const cleanEmail = payload.email.trim().toLowerCase();
       const saved = await Account.findOneAndUpdate(
         { email: cleanEmail },
