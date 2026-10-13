@@ -108,7 +108,7 @@ export const receptionists = [
   { id: 'rec-1', name: 'Bea Dizon', email: 'bea@biglanggwapo.com', phone: '+63 917 111 2233', status: 'Active', access: 'Receptionist' }
 ];
 
-export { accounts, saveAccount, deleteAccount } from './globs/User';
+export { accounts, saveAccount, deleteAccount, validatePassword } from './globs/User';
 
 export const staffUsers = {
   receptionist: { name: 'Bea Dizon', initials: 'BD', role: 'Receptionist' },

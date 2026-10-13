@@ -4,7 +4,7 @@ import {
   ArrowRight, Check, Eye, EyeOff, Send, X
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { accounts, saveAccount } from '../../data';
+import { accounts, saveAccount, validatePassword } from '../../data';
 import { demoApi } from '../../mockService';
 import { sendInviteNotification } from '../../services/api';
 
@@ -65,8 +65,12 @@ export function AuthModal() {
 
   const submitRegister = (event) => {
     event.preventDefault();
-    if (!form.name || !form.email || !form.phone || !form.password) {
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password || !form.confirm) {
       return notify('Please complete all registration fields.', 'error');
+    }
+    const pwdError = validatePassword(form.password);
+    if (pwdError) {
+      return notify(pwdError, 'error');
     }
     if (form.password !== form.confirm) {
       return notify('Passwords do not match.', 'error');
@@ -77,18 +81,18 @@ export function AuthModal() {
       email: cleanEmail,
       password: form.password,
       role: 'customer',
-      name: form.name,
+      name: form.name.trim(),
       initials,
       customerId: `cust-${Date.now()}`,
-      phone: form.phone,
+      phone: form.phone.trim(),
       redirectPath: '/booking'
     };
 
     saveAccount(newCustomer);
     commit((state) => demoApi.addCustomer(state, {
-      name: form.name,
+      name: form.name.trim(),
       email: cleanEmail,
-      phone: form.phone
+      phone: form.phone.trim()
     }));
 
     sendInviteNotification({
@@ -163,14 +167,25 @@ export function AuthModal() {
               </label>
               <label className="field-label">Password
                 <div className="password-input">
-                  <input className="input" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required placeholder="••••••••" />
+                  <input
+                    className="input"
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    required
+                    minLength={8}
+                    placeholder="Min. 8 characters + special character"
+                  />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                     {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
+                <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
+                  At least 8 characters with at least one special character (!@#$%^&* etc.)
+                </small>
               </label>
               <label className="field-label">Confirm password
-                <input className="input" type="password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} required placeholder="Repeat password" />
+                <input className="input" type="password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} required minLength={8} placeholder="Repeat password" />
               </label>
               <button className="button button-dark button-full">Create customer account <ArrowRight size={16} /></button>
             </form>

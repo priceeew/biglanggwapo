@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Send, Check } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { accounts, saveAccount } from '../../data';
+import { accounts, saveAccount, validatePassword } from '../../data';
 import { demoApi } from '../../mockService';
 
 export function RegisterPage() {
@@ -13,8 +13,12 @@ export function RegisterPage() {
 
   const submitRegister = (event) => {
     event.preventDefault();
-    if (!form.name || !form.email || !form.phone || !form.password) {
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password || !form.confirm) {
       return notify('Please complete all registration fields.', 'error');
+    }
+    const pwdError = validatePassword(form.password);
+    if (pwdError) {
+      return notify(pwdError, 'error');
     }
     if (form.password !== form.confirm) {
       return notify('Passwords do not match.', 'error');
@@ -25,17 +29,17 @@ export function RegisterPage() {
       email: cleanEmail,
       password: form.password,
       role: 'customer',
-      name: form.name,
+      name: form.name.trim(),
       initials,
       customerId: `cust-${Date.now()}`,
-      phone: form.phone,
+      phone: form.phone.trim(),
       redirectPath: '/booking'
     };
     saveAccount(newCustomer);
     commit((state) => demoApi.addCustomer(state, {
-      name: form.name,
+      name: form.name.trim(),
       email: cleanEmail,
-      phone: form.phone
+      phone: form.phone.trim()
     }));
     login(newCustomer);
     navigate('/booking');
@@ -91,7 +95,8 @@ export function RegisterPage() {
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
-                placeholder="••••••••"
+                minLength={8}
+                placeholder="Min. 8 characters + special character"
               />
               <button
                 type="button"
@@ -101,6 +106,9 @@ export function RegisterPage() {
                 {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
+            <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
+              At least 8 characters with at least one special character (!@#$%^&* etc.)
+            </small>
           </label>
           <label className="field-label">Confirm password
             <input
@@ -109,6 +117,7 @@ export function RegisterPage() {
               value={form.confirm}
               onChange={(e) => setForm({ ...form, confirm: e.target.value })}
               required
+              minLength={8}
               placeholder="Repeat password"
             />
           </label>

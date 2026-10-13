@@ -92,3 +92,15 @@ export function deleteAccount(email) {
     }).catch(() => {});
   } catch {}
 }
+
+export function validatePassword(password) {
+  if (!password || password.length < 8) {
+    return 'Password must be at least 8 characters long.';
+  }
+  const specialCharRegex = /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/;
+  if (!specialCharRegex.test(password)) {
+    return 'Password must contain at least one special character (e.g. !@#$%^&*).';
+  }
+  return null;
+}
+

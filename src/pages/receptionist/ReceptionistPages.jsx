@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount } from '../../data';
+import { saveAccount, validatePassword } from '../../data';
 import { sendInviteNotification } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
@@ -331,8 +331,12 @@ export function CustomerManagement() {
 
   const handleCreateCustomer = (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.email.trim() || !form.password) {
-      return notify('Name, email, and password are required.', 'error');
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password) {
+      return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
+    }
+    const pwdError = validatePassword(form.password);
+    if (pwdError) {
+      return notify(pwdError, 'error');
     }
     const cleanEmail = form.email.trim().toLowerCase();
     const initials = form.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
@@ -343,7 +347,7 @@ export function CustomerManagement() {
       name: form.name.trim(),
       initials,
       email: cleanEmail,
-      phone: form.phone.trim() || '—',
+      phone: form.phone.trim(),
       status: 'Active',
       visits: 0,
       lastVisit: 'Never',
@@ -477,6 +481,7 @@ export function CustomerManagement() {
               <label className="field-label">Phone number
                 <input
                   className="input"
+                  required
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="+63 917 000 0000"
@@ -487,10 +492,14 @@ export function CustomerManagement() {
                   className="input"
                   type="password"
                   required
+                  minLength={8}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Temporary password"
+                  placeholder="Min. 8 characters + special character"
                 />
+                <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
+                  At least 8 characters with at least one special character (!@#$%^&* etc.)
+                </small>
               </label>
               <label className="field-label">Hair preferences (optional)
                 <input

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount, deleteAccount } from '../../data';
+import { saveAccount, deleteAccount, validatePassword } from '../../data';
 import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
@@ -193,8 +193,12 @@ export function AdminManagementPage({ collection }) {
     if (!formData.name.trim()) return notify('Please enter a name.', 'error');
 
     if (collection === 'receptionists') {
-      if (!formData.email.trim() || !formData.password) {
-        return notify('Email and password are required for login credentials.', 'error');
+      if (!formData.email.trim() || !formData.phone.trim() || !formData.password) {
+        return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
+      }
+      const pwdError = validatePassword(formData.password);
+      if (pwdError) {
+        return notify(pwdError, 'error');
       }
       const cleanEmail = formData.email.trim().toLowerCase();
       commit((state) => demoApi.addReceptionist(state, {
@@ -221,15 +225,19 @@ export function AdminManagementPage({ collection }) {
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
     } else if (collection === 'barbers') {
-      if (!formData.email.trim() || !formData.password) {
-        return notify('Email and password are required for login credentials.', 'error');
+      if (!formData.email.trim() || !formData.phone.trim() || !formData.password || !formData.specialty.trim() || !formData.status) {
+        return notify('All fields (Name, Email, Phone, Password, Specialty, Working status) are required.', 'error');
+      }
+      const pwdError = validatePassword(formData.password);
+      if (pwdError) {
+        return notify(pwdError, 'error');
       }
       const cleanEmail = formData.email.trim().toLowerCase();
       const newBarberId = 'bar-' + Date.now();
       const newBarberObj = {
         id: newBarberId,
         name: formData.name.trim(),
-        specialty: formData.specialty,
+        specialty: formData.specialty.trim(),
         email: cleanEmail,
         phone: formData.phone.trim(),
         status: formData.status || 'On shift'
@@ -256,8 +264,12 @@ export function AdminManagementPage({ collection }) {
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
     } else if (collection === 'customers') {
-      if (!formData.email.trim() || !formData.password) {
-        return notify('Email and password are required for login credentials.', 'error');
+      if (!formData.email.trim() || !formData.phone.trim() || !formData.password) {
+        return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
+      }
+      const pwdError = validatePassword(formData.password);
+      if (pwdError) {
+        return notify(pwdError, 'error');
       }
       const cleanEmail = formData.email.trim().toLowerCase();
       const newCustId = 'cust-' + Date.now();
@@ -266,8 +278,8 @@ export function AdminManagementPage({ collection }) {
         name: formData.name.trim(),
         email: cleanEmail,
         phone: formData.phone.trim(),
-        preferences: formData.preferences,
-        notes: formData.notes
+        preferences: formData.preferences.trim(),
+        notes: formData.notes.trim()
       }));
       saveAccount({
         email: cleanEmail,
@@ -289,15 +301,15 @@ export function AdminManagementPage({ collection }) {
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
     } else if (collection === 'services') {
-      if (!formData.price || !formData.duration) {
-        return notify('Price and duration are required.', 'error');
+      if (!formData.name.trim() || !formData.price || !formData.duration || !formData.description.trim()) {
+        return notify('All fields (Name, Category, Price, Duration, Description) are required.', 'error');
       }
       commit((state) => demoApi.addItem(state, 'services', {
         name: formData.name.trim(),
         category: formData.category || 'Cuts',
         price: Number(formData.price),
         duration: Number(formData.duration),
-        description: formData.description || '',
+        description: formData.description.trim(),
         active: true
       }));
       notify(`Service "${formData.name}" added to menu!`);
@@ -437,6 +449,7 @@ export function AdminManagementPage({ collection }) {
                   <label className="field-label">Phone number
                     <input
                       className="input"
+                      required
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="+63 917 000 0000"
@@ -447,10 +460,14 @@ export function AdminManagementPage({ collection }) {
                       className="input"
                       type="password"
                       required
+                      minLength={8}
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="Password"
+                      placeholder="Min. 8 characters + special character"
                     />
+                    <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
+                      At least 8 characters with at least one special character (!@#$%^&* etc.)
+                    </small>
                   </label>
                 </>
               )}
@@ -460,6 +477,7 @@ export function AdminManagementPage({ collection }) {
                   <label className="field-label">Specialty
                     <input
                       className="input"
+                      required
                       value={formData.specialty}
                       onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
                       placeholder="e.g. Fades & texture, Scissor cuts"
@@ -468,6 +486,7 @@ export function AdminManagementPage({ collection }) {
                   <label className="field-label">Working status
                     <select
                       className="input"
+                      required
                       value={formData.status}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                     >
@@ -506,6 +525,7 @@ export function AdminManagementPage({ collection }) {
                     <label className="field-label">Category
                       <select
                         className="input"
+                        required
                         value={formData.category}
                         onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       >
@@ -538,6 +558,7 @@ export function AdminManagementPage({ collection }) {
                   <label className="field-label">Description
                     <textarea
                       className="input textarea"
+                      required
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       placeholder="Service details and finish..."
