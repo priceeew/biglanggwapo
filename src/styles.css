@@ -417,4 +417,16 @@
   border-color: var(--gold);
 }
 
+.icon-button-danger {
+  color: #c94a4a !important;
+  transition: all 0.15s ease;
+}
+
+.icon-button-danger:hover {
+  background: rgba(217, 83, 79, 0.12) !important;
+  color: #b73229 !important;
+  border-color: rgba(217, 83, 79, 0.3) !important;
+}
+
+
 

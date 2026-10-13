@@ -12,7 +12,12 @@ export const rolePath = (role) => `/${role}`;
 export function StoreProvider({ children }) {
   const [demo, setDemo] = useState(loadDemoState);
   const [session, setSession] = useState(() => {
-    try { return JSON.parse(window.localStorage.getItem('biglanggwapo-session') || 'null'); } catch { return null; }
+    try {
+      window.localStorage.removeItem('biglanggwapo-session');
+      return JSON.parse(window.sessionStorage.getItem('biglanggwapo-session') || 'null');
+    } catch {
+      return null;
+    }
   });
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
@@ -30,14 +35,17 @@ export function StoreProvider({ children }) {
 
   const login = (nextSession) => {
     setSession(nextSession);
-    window.localStorage.setItem('biglanggwapo-session', JSON.stringify(nextSession));
+    try { window.sessionStorage.setItem('biglanggwapo-session', JSON.stringify(nextSession)); } catch {}
     setModal(null);
     notify(`Signed in as ${nextSession.name}.`);
   };
 
   const logout = () => {
     setSession(null);
-    window.localStorage.removeItem('biglanggwapo-session');
+    try {
+      window.sessionStorage.removeItem('biglanggwapo-session');
+      window.localStorage.removeItem('biglanggwapo-session');
+    } catch {}
     notify('You have been signed out.');
   };
 

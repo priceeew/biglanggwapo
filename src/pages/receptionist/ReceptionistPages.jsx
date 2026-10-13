@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
+import { saveAccount } from '../../data';
+import { sendInviteNotification } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
   StatusBadge, EmptyState, StatCard
@@ -165,8 +167,8 @@ export function WalkInPage() {
     customerId: '',
     customerName: '',
     phone: '',
-    serviceId: demo.services[0].id,
-    barberId: demo.barbers[0].id
+    serviceId: demo.services[0]?.id || '',
+    barberId: demo.barbers[0]?.id || ''
   });
   const [created, setCreated] = useState(null);
 
@@ -174,6 +176,9 @@ export function WalkInPage() {
     event.preventDefault();
     if (!form.customerId && !form.customerName.trim()) {
       return notify('Choose an existing customer or enter a name.', 'error');
+    }
+    if (!form.barberId) {
+      return notify('Please select a barber (or add a barber to the shop first).', 'error');
     }
     const before = demo.queue.length;
     commit((state) => demoApi.addWalkIn(state, form));
@@ -314,17 +319,75 @@ export function QueueManagement() {
 }
 
 export function CustomerManagement() {
-  const { demo } = useStore();
+  const { demo, commit, notify } = useStore();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(demo.customers[0]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', preferences: '', notes: '' });
 
   const filtered = demo.customers.filter((item) =>
     `${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(query.toLowerCase())
   );
 
+  const handleCreateCustomer = (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim() || !form.password) {
+      return notify('Name, email, and password are required.', 'error');
+    }
+    const cleanEmail = form.email.trim().toLowerCase();
+    const initials = form.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
+    const newCustId = 'cust-' + Date.now();
+
+    const createdCustomer = {
+      id: newCustId,
+      name: form.name.trim(),
+      initials,
+      email: cleanEmail,
+      phone: form.phone.trim() || '—',
+      status: 'Active',
+      visits: 0,
+      lastVisit: 'Never',
+      preferences: form.preferences.trim(),
+      notes: form.notes.trim()
+    };
+
+    commit((state) => demoApi.addCustomer(state, createdCustomer));
+    saveAccount({
+      email: cleanEmail,
+      password: form.password,
+      role: 'customer',
+      customerId: newCustId,
+      name: form.name.trim(),
+      initials,
+      redirectPath: '/booking'
+    });
+
+    setSelected(createdCustomer);
+    setIsAdding(false);
+    setForm({ name: '', email: '', phone: '', password: '', preferences: '', notes: '' });
+    notify(`Customer "${form.name}" created! Sending welcome email...`);
+    sendInviteNotification({
+      to: cleanEmail,
+      name: form.name.trim(),
+      role: 'customer',
+      password: form.password
+    }).then((res) => {
+      if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Welcome email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
+      else notify(`Email failed: ${res.error || res.message}`, 'error');
+    });
+  };
+
   return (
     <div className="split-layout customer-management">
-      <SectionCard title="Customers" description="Search profiles, appointment history, and service notes.">
+      <SectionCard
+        title="Customers"
+        description="Search profiles, appointment history, and service notes."
+        action={
+          <button className="button button-dark button-small" onClick={() => setIsAdding(true)}>
+            <Plus size={14} /> Add customer
+          </button>
+        }
+      >
         <div className="inline-search">
           <Search size={16} />
           <input placeholder="Search by name, email, or phone" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -377,6 +440,87 @@ export function CustomerManagement() {
           <EmptyState title="Select a customer" copy="Choose a profile from the list." />
         )}
       </SectionCard>
+
+      {isAdding && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setIsAdding(false)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setIsAdding(false)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <span className="eyebrow gold">Front Desk Client Registration</span>
+              <h2>Add New Customer</h2>
+              <p>Register a client account for booking and front-desk visits.</p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleCreateCustomer}>
+              <label className="field-label">Full name
+                <input
+                  className="input"
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="e.g. Juan Dela Cruz"
+                  autoFocus
+                />
+              </label>
+              <label className="field-label">Email address
+                <input
+                  className="input"
+                  type="email"
+                  required
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="name@email.com"
+                />
+              </label>
+              <label className="field-label">Phone number
+                <input
+                  className="input"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="+63 917 000 0000"
+                />
+              </label>
+              <label className="field-label">Login password
+                <input
+                  className="input"
+                  type="password"
+                  required
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder="Temporary password"
+                />
+              </label>
+              <label className="field-label">Hair preferences (optional)
+                <input
+                  className="input"
+                  value={form.preferences}
+                  onChange={(e) => setForm({ ...form, preferences: e.target.value })}
+                  placeholder="e.g. Mid taper fade, scissor on top"
+                />
+              </label>
+              <label className="field-label">Internal notes (optional)
+                <input
+                  className="input"
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="e.g. Regular weekend client"
+                />
+              </label>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setIsAdding(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full">
+                  Create customer <ArrowRight size={16} />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

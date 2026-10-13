@@ -1,10 +1,10 @@
-import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, reviews, services, settings, transactions } from './data';
+import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
 
-const STORAGE_KEY = 'biglanggwapo-demo-v1';
+const STORAGE_KEY = 'biglanggwapo-demo-v3';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 export function getInitialDemoState() {
-  return clone({ services, barbers, customers, promotions, reviews, appointments: seedAppointments, queue: seedQueue, transactions, inventory, settings });
+  return clone({ services, barbers, customers, receptionists, promotions, reviews, appointments: seedAppointments, queue: seedQueue, transactions, inventory, settings });
 }
 
 export function loadDemoState() {
@@ -33,7 +33,9 @@ export function loadDemoState() {
       currentReviews = [...currentReviews, ...newReviews];
     }
 
-    return { ...initial, ...parsed, inventory: currentInventory, reviews: currentReviews };
+    let currentReceptionists = parsed.receptionists || initial.receptionists;
+
+    return { ...initial, ...parsed, inventory: currentInventory, reviews: currentReviews, receptionists: currentReceptionists };
   } catch {
     return getInitialDemoState();
   }
@@ -123,6 +125,50 @@ export const demoApi = {
   saveSettings(state, changes) { return { ...state, settings: { ...state.settings, ...changes } }; },
   toggleActive(state, collection, itemId, field = 'active') { return { ...state, [collection]: state[collection].map((item) => item.id === itemId ? { ...item, [field]: !item[field] } : item) }; },
   addItem(state, collection, item) { return { ...state, [collection]: [{ id: id(collection.slice(0, 3)), ...item }, ...state[collection]] }; },
+  addReceptionist(state, payload) {
+    const newRec = {
+      id: id('rec'),
+      name: payload.name,
+      email: payload.email,
+      phone: payload.phone || '',
+      status: 'Active',
+      access: 'Receptionist'
+    };
+    return { ...state, receptionists: [newRec, ...(state.receptionists || [])] };
+  },
+  addBarber(state, payload) {
+    const initials = payload.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'BR';
+    const newBarber = {
+      id: id('bar'),
+      name: payload.name,
+      initials,
+      specialty: payload.specialty || 'All-around cuts',
+      rating: 5.0,
+      status: payload.status || 'On shift',
+      bio: payload.bio || 'Skilled professional barber at Biglang Gwapo.',
+      working: true,
+      email: payload.email,
+      phone: payload.phone || '',
+      commissionEnabled: false
+    };
+    return { ...state, barbers: [newBarber, ...(state.barbers || [])] };
+  },
+  addCustomer(state, payload) {
+    const initials = payload.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
+    const newCust = {
+      id: id('cust'),
+      name: payload.name,
+      initials,
+      email: payload.email,
+      phone: payload.phone || '',
+      status: 'Active',
+      visits: 0,
+      lastVisit: 'Never',
+      preferences: payload.preferences || '',
+      notes: payload.notes || ''
+    };
+    return { ...state, customers: [newCust, ...(state.customers || [])] };
+  },
   updateItem(state, collection, itemId, changes) { return { ...state, [collection]: state[collection].map((item) => item.id === itemId ? { ...item, ...changes } : item) }; },
   deleteItem(state, collection, itemId) { return { ...state, [collection]: state[collection].filter((item) => item.id !== itemId) }; }
 };

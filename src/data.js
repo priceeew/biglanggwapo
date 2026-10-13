@@ -6,11 +6,7 @@ export const services = [
   { id: 'svc-kids', name: 'Junior Cut', description: 'A patient, tidy cut for our younger clients.', price: 300, duration: 35, category: 'Cuts', active: true }
 ];
 
-export const barbers = [
-  { id: 'bar-marco', name: 'Marco Reyes', initials: 'MR', specialty: 'Fades & texture', rating: 4.9, status: 'On shift', bio: 'Known for clean fades and low-key chair-side energy.', working: true, commissionEnabled: false },
-  { id: 'bar-paolo', name: 'Paolo Santos', initials: 'PS', specialty: 'Classic cuts', rating: 4.8, status: 'On shift', bio: 'Precision scissor work with a classic barbershop finish.', working: true, commissionEnabled: false },
-  { id: 'bar-nico', name: 'Nico Dela Cruz', initials: 'ND', specialty: 'Beard & grooming', rating: 4.7, status: 'Next shift 2:00 PM', bio: 'Beard shaping, hot towels, and relaxed consultations.', working: false, commissionEnabled: false }
-];
+export const barbers = [];
 
 export const promotions = [
   { id: 'promo-welcome', title: 'First chair, first impression', description: 'New clients enjoy 20% off their first Signature Fade.', type: 'Percentage', value: 20, validFrom: '2026-10-01', validTo: '2026-12-31', services: ['svc-fade'], active: true },
@@ -108,12 +104,16 @@ export const settings = {
   commissionTracking: false
 };
 
-export { accounts } from './globs/User';
+export const receptionists = [
+  { id: 'rec-1', name: 'Bea Dizon', email: 'bea@biglanggwapo.com', phone: '+63 917 111 2233', status: 'Active', access: 'Receptionist' }
+];
+
+export { accounts, saveAccount, deleteAccount } from './globs/User';
 
 export const staffUsers = {
   receptionist: { name: 'Bea Dizon', initials: 'BD', role: 'Receptionist' },
   barber: { name: 'Marco Reyes', initials: 'MR', role: 'Barber', barberId: 'bar-marco' },
-  admin: { name: 'Leah Navarro', initials: 'LN', role: 'Admin' }
+  admin: { name: 'Admin Desk', initials: 'AD', role: 'Admin' }
 };
 
 export const navItems = {

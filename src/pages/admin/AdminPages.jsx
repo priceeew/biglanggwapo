@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
+import { saveAccount, deleteAccount } from '../../data';
+import { sendInviteNotification } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
 } from '../../components/common/UIComponents';
@@ -86,14 +88,27 @@ export function AdminDashboard() {
 
 export function AdminManagementPage({ collection }) {
   const { demo, commit, notify } = useStore();
+  const [isAdding, setIsAdding] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    specialty: 'Fades & texture',
+    status: 'On shift',
+    preferences: '',
+    notes: '',
+    category: 'Cuts',
+    price: '',
+    duration: '30',
+    description: ''
+  });
+
   const config = {
     receptionists: {
       title: 'Manage receptionists',
       desc: 'Keep front-desk access current.',
-      data: [
-        { id: 'rec-1', name: 'Bea Dizon', email: 'bea@biglanggwapo.demo', status: 'Active', access: 'Receptionist' },
-        { id: 'rec-2', name: 'Carlo Uy', email: 'carlo@biglanggwapo.demo', status: 'Active', access: 'Receptionist' }
-      ]
+      data: demo.receptionists || []
     },
     barbers: {
       title: 'Manage barbers',
@@ -141,6 +156,153 @@ export function AdminManagementPage({ collection }) {
     }
   };
 
+  const handleDelete = (item) => {
+    const itemName = item.name || item.customerName || item.serviceName || item.receipt || 'this record';
+    if (window.confirm(`Delete "${itemName}"? This will permanently remove this record and its account.`)) {
+      commit((state) => demoApi.deleteItem(state, collection, item.id));
+      if (item.email) {
+        deleteAccount(item.email);
+      }
+      notify(`"${itemName}" has been deleted.`, 'success');
+    }
+  };
+
+  const handleOpenAdd = () => {
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      password: '',
+      specialty: 'Fades & texture',
+      status: 'On shift',
+      preferences: '',
+      notes: '',
+      category: 'Cuts',
+      price: '',
+      duration: '30',
+      description: ''
+    });
+    setIsAdding(true);
+  };
+
+  const handleSubmitAdd = (e) => {
+    e.preventDefault();
+    if (!formData.name.trim()) return notify('Please enter a name.', 'error');
+
+    if (collection === 'receptionists') {
+      if (!formData.email.trim() || !formData.password) {
+        return notify('Email and password are required for login credentials.', 'error');
+      }
+      const cleanEmail = formData.email.trim().toLowerCase();
+      commit((state) => demoApi.addReceptionist(state, {
+        name: formData.name.trim(),
+        email: cleanEmail,
+        phone: formData.phone.trim()
+      }));
+      saveAccount({
+        email: cleanEmail,
+        password: formData.password,
+        role: 'receptionist',
+        name: formData.name.trim(),
+        initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'RC',
+        redirectPath: '/receptionist'
+      });
+      notify(`Receptionist "${formData.name}" created! Sending invitation...`);
+      sendInviteNotification({
+        to: cleanEmail,
+        name: formData.name.trim(),
+        role: 'receptionist',
+        password: formData.password
+      }).then((res) => {
+        if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Invitation email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
+        else notify(`Email failed: ${res.error || res.message}`, 'error');
+      });
+    } else if (collection === 'barbers') {
+      if (!formData.email.trim() || !formData.password) {
+        return notify('Email and password are required for login credentials.', 'error');
+      }
+      const cleanEmail = formData.email.trim().toLowerCase();
+      const newBarberId = 'bar-' + Date.now();
+      commit((state) => demoApi.addBarber(state, {
+        id: newBarberId,
+        name: formData.name.trim(),
+        specialty: formData.specialty,
+        email: cleanEmail,
+        phone: formData.phone.trim(),
+        status: formData.status || 'On shift'
+      }));
+      saveAccount({
+        email: cleanEmail,
+        password: formData.password,
+        role: 'barber',
+        barberId: newBarberId,
+        name: formData.name.trim(),
+        initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'BR',
+        redirectPath: '/barber'
+      });
+      notify(`Barber "${formData.name}" created! Sending invitation...`);
+      sendInviteNotification({
+        to: cleanEmail,
+        name: formData.name.trim(),
+        role: 'barber',
+        password: formData.password
+      }).then((res) => {
+        if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Invitation email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
+        else notify(`Email failed: ${res.error || res.message}`, 'error');
+      });
+    } else if (collection === 'customers') {
+      if (!formData.email.trim() || !formData.password) {
+        return notify('Email and password are required for login credentials.', 'error');
+      }
+      const cleanEmail = formData.email.trim().toLowerCase();
+      const newCustId = 'cust-' + Date.now();
+      commit((state) => demoApi.addCustomer(state, {
+        id: newCustId,
+        name: formData.name.trim(),
+        email: cleanEmail,
+        phone: formData.phone.trim(),
+        preferences: formData.preferences,
+        notes: formData.notes
+      }));
+      saveAccount({
+        email: cleanEmail,
+        password: formData.password,
+        role: 'customer',
+        customerId: newCustId,
+        name: formData.name.trim(),
+        initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU',
+        redirectPath: '/booking'
+      });
+      notify(`Customer "${formData.name}" added! Sending welcome email...`);
+      sendInviteNotification({
+        to: cleanEmail,
+        name: formData.name.trim(),
+        role: 'customer',
+        password: formData.password
+      }).then((res) => {
+        if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Welcome email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
+        else notify(`Email failed: ${res.error || res.message}`, 'error');
+      });
+    } else if (collection === 'services') {
+      if (!formData.price || !formData.duration) {
+        return notify('Price and duration are required.', 'error');
+      }
+      commit((state) => demoApi.addItem(state, 'services', {
+        name: formData.name.trim(),
+        category: formData.category || 'Cuts',
+        price: Number(formData.price),
+        duration: Number(formData.duration),
+        description: formData.description || '',
+        active: true
+      }));
+      notify(`Service "${formData.name}" added to menu!`);
+    } else {
+      notify(`Record for "${formData.name}" created.`);
+    }
+
+    setIsAdding(false);
+  };
+
   return (
     <>
       <Toolbar
@@ -150,9 +312,30 @@ export function AdminManagementPage({ collection }) {
         query={query}
         setQuery={setQuery}
         action={
-          <button className="button button-dark button-small" onClick={() => notify('Create form opened in this demo build.')}>
-            <Plus size={15} /> Add new
-          </button>
+          ['receptionists', 'barbers', 'customers', 'services'].includes(collection) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {collection === 'barbers' && current.data.length > 0 && (
+                <button
+                  className="button button-ghost button-small"
+                  style={{ color: '#d9534f', borderColor: 'rgba(217, 83, 79, 0.4)' }}
+                  onClick={() => {
+                    if (window.confirm('Clear all test barbers? This will delete all current barbers and their login accounts.')) {
+                      current.data.forEach((b) => {
+                        if (b.email) deleteAccount(b.email);
+                      });
+                      commit((state) => ({ ...state, barbers: [] }));
+                      notify('All test barbers cleared.', 'success');
+                    }
+                  }}
+                >
+                  <Trash2 size={13} /> Clear all barbers
+                </button>
+              )}
+              <button className="button button-dark button-small" onClick={handleOpenAdd}>
+                <Plus size={15} /> Add new
+              </button>
+            </div>
+          ) : null
         }
       />
       <SectionCard>
@@ -182,6 +365,16 @@ export function AdminManagementPage({ collection }) {
                         {item.active === false || item.status === 'Inactive' ? 'Activate' : 'Deactivate'}
                       </button>
                     )}
+                    {['barbers', 'receptionists', 'customers', 'services'].includes(collection) && (
+                      <button
+                        className="icon-button icon-button-danger"
+                        title="Delete record"
+                        style={{ color: '#d9534f' }}
+                        onClick={() => handleDelete(item)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -190,6 +383,175 @@ export function AdminManagementPage({ collection }) {
         </DataTable>
         {!filtered.length && <EmptyState title="No records match" copy="Try a different search phrase." />}
       </SectionCard>
+
+      {isAdding && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setIsAdding(false)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setIsAdding(false)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <span className="eyebrow gold">
+                ADD NEW {collection === 'receptionists' ? 'RECEPTIONIST' : collection === 'barbers' ? 'BARBER' : collection === 'customers' ? 'CUSTOMER' : collection === 'services' ? 'SERVICE' : 'RECORD'}
+              </span>
+              <h2>
+                {collection === 'receptionists' ? 'Add Receptionist' : collection === 'barbers' ? 'Add Barber' : collection === 'customers' ? 'Add Customer' : collection === 'services' ? 'Add Service' : 'Add Record'}
+              </h2>
+              <p>
+                {['receptionists', 'barbers', 'customers'].includes(collection)
+                  ? 'Enter the details below. Login credentials will be automatically enabled.'
+                  : 'Enter the details to add this to the catalog.'}
+              </p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleSubmitAdd}>
+              <label className="field-label">Full name
+                <input
+                  className="input"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder={collection === 'receptionists' ? 'e.g. Bea Dizon' : collection === 'barbers' ? 'e.g. Marco Reyes' : collection === 'customers' ? 'e.g. Juan Dela Cruz' : 'e.g. Haircut Name'}
+                  autoFocus
+                />
+              </label>
+
+              {['receptionists', 'barbers', 'customers'].includes(collection) && (
+                <>
+                  <label className="field-label">Email address (for login)
+                    <input
+                      className="input"
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="name@biglanggwapo.com"
+                    />
+                  </label>
+                  <label className="field-label">Phone number
+                    <input
+                      className="input"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="+63 917 000 0000"
+                    />
+                  </label>
+                  <label className="field-label">Password
+                    <input
+                      className="input"
+                      type="password"
+                      required
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Password"
+                    />
+                  </label>
+                </>
+              )}
+
+              {collection === 'barbers' && (
+                <>
+                  <label className="field-label">Specialty
+                    <input
+                      className="input"
+                      value={formData.specialty}
+                      onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
+                      placeholder="e.g. Fades & texture, Scissor cuts"
+                    />
+                  </label>
+                  <label className="field-label">Working status
+                    <select
+                      className="input"
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    >
+                      <option value="On shift">On shift</option>
+                      <option value="Next shift 2:00 PM">Next shift 2:00 PM</option>
+                      <option value="Day off">Day off</option>
+                    </select>
+                  </label>
+                </>
+              )}
+
+              {collection === 'customers' && (
+                <>
+                  <label className="field-label">Preferences (optional)
+                    <input
+                      className="input"
+                      value={formData.preferences}
+                      onChange={(e) => setFormData({ ...formData, preferences: e.target.value })}
+                      placeholder="e.g. Low taper fade, matte finish"
+                    />
+                  </label>
+                  <label className="field-label">Notes (optional)
+                    <input
+                      className="input"
+                      value={formData.notes}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                      placeholder="e.g. Prefers afternoon appointments"
+                    />
+                  </label>
+                </>
+              )}
+
+              {collection === 'services' && (
+                <>
+                  <div className="form-grid">
+                    <label className="field-label">Category
+                      <select
+                        className="input"
+                        value={formData.category}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      >
+                        <option value="Cuts">Cuts</option>
+                        <option value="Grooming">Grooming</option>
+                        <option value="Combos">Combos</option>
+                      </select>
+                    </label>
+                    <label className="field-label">Price (₱)
+                      <input
+                        className="input"
+                        type="number"
+                        required
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        placeholder="420"
+                      />
+                    </label>
+                  </div>
+                  <label className="field-label">Duration (minutes)
+                    <input
+                      className="input"
+                      type="number"
+                      required
+                      value={formData.duration}
+                      onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                      placeholder="45"
+                    />
+                  </label>
+                  <label className="field-label">Description
+                    <textarea
+                      className="input textarea"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="Service details and finish..."
+                    />
+                  </label>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setIsAdding(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full">
+                  Create record <ArrowRight size={16} />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -4,29 +4,22 @@ import {
   ArrowRight, Check, Eye, EyeOff, Send, X
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { accounts } from '../../data';
+import { accounts, saveAccount } from '../../data';
+import { demoApi } from '../../mockService';
+import { sendInviteNotification } from '../../services/api';
 
 export function AuthModal() {
-  const { modal, closeModal, login, notify } = useStore();
+  const { modal, closeModal, login, notify, commit } = useStore();
   const navigate = useNavigate();
   const dialogRef = useRef(null);
   const [mode, setMode] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '', role: 'receptionist' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '', role: 'customer' });
 
   useEffect(() => {
     if (modal) {
       setMode(modal.type);
-      if (modal.type === 'staff') {
-        const defaultRole = modal.requestedRole || 'admin';
-        const staffAcc = Object.values(accounts).find((a) => a.role === defaultRole) || accounts['admin@biglanggwapo.com'];
-        setForm({ name: '', email: staffAcc.email, phone: '', password: staffAcc.password, confirm: '', role: defaultRole });
-      } else if (modal.targetPath === '/booking' || modal.requestedRole === 'customer') {
-        const custAcc = accounts['customer@biglanggwapo.com'];
-        setForm({ name: '', email: custAcc ? custAcc.email : '', phone: '', password: custAcc ? custAcc.password : '', confirm: '', role: 'customer' });
-      } else {
-        setForm({ name: '', email: '', phone: '', password: '', confirm: '', role: modal.requestedRole || 'customer' });
-      }
+      setForm({ name: '', email: '', phone: '', password: '', confirm: '', role: modal.requestedRole || 'customer' });
       setTimeout(() => dialogRef.current?.focus(), 30);
     }
   }, [modal]);
@@ -79,29 +72,41 @@ export function AuthModal() {
       return notify('Passwords do not match.', 'error');
     }
     const cleanEmail = form.email.trim().toLowerCase();
+    const initials = form.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
     const newCustomer = {
       email: cleanEmail,
       password: form.password,
       role: 'customer',
       name: form.name,
-      initials: form.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU',
+      initials,
       customerId: `cust-${Date.now()}`,
       phone: form.phone,
       redirectPath: '/booking'
     };
-    accounts[cleanEmail] = newCustomer;
+
+    saveAccount(newCustomer);
+    commit((state) => demoApi.addCustomer(state, {
+      name: form.name,
+      email: cleanEmail,
+      phone: form.phone
+    }));
+
+    sendInviteNotification({
+      to: cleanEmail,
+      name: form.name.trim(),
+      role: 'customer',
+      password: form.password
+    }).then((res) => {
+      if (res.success) {
+        notify(`Welcome email sent to ${cleanEmail}!`, 'success');
+      }
+    });
+
     login(newCustomer);
     if (modal.targetPath) {
       navigate(modal.targetPath);
     } else {
       navigate('/booking');
-    }
-  };
-
-  const fillQuickAccount = (email) => {
-    const acc = accounts[email];
-    if (acc) {
-      setForm((prev) => ({ ...prev, email: acc.email, password: acc.password }));
     }
   };
 
@@ -233,40 +238,6 @@ export function AuthModal() {
                 {modal.targetPath === '/booking' ? 'Sign in & Continue to Booking' : 'Sign in to panel'} <ArrowRight size={16} />
               </button>
             </form>
-
-            <div className="demo-accounts-box" style={{ marginTop: '20px', padding: '14px', background: '#f8f6f2', borderRadius: '8px', border: '1px solid #e7e4dc' }}>
-              <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#888', marginBottom: '8px' }}>
-                Quick Fill Demo Accounts:
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                {Object.entries(accounts).map(([emailKey, acc]) => {
-                  const isRecommended = modal.targetPath === '/booking' && acc.role === 'customer';
-                  return (
-                    <button
-                      key={emailKey}
-                      type="button"
-                      onClick={() => fillQuickAccount(emailKey)}
-                      className={`button button-ghost button-small ${isRecommended ? 'button-soft' : ''}`}
-                      style={{
-                        textAlign: 'left',
-                        justifyContent: 'flex-start',
-                        padding: '6px 8px',
-                        fontSize: '11px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-start',
-                        borderColor: isRecommended ? 'var(--gold)' : undefined
-                      }}
-                    >
-                      <span style={{ fontWeight: '700', textTransform: 'capitalize' }}>
-                        {acc.role} {isRecommended && '★ (Booking)'}
-                      </span>
-                      <small style={{ color: isRecommended ? '#6d4e21' : '#777', fontSize: '10px' }}>{acc.email}</small>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
             <div className="modal-links">
               <button className="text-button" onClick={() => setMode('recovery')}>Forgot password?</button>

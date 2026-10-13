@@ -187,11 +187,20 @@ export function BarbersPage() {
       title="Good hands, good energy."
       description="Every barber brings a different specialty to the chair. Choose the pace and finish that feels like you."
     >
-      <div className="barber-grid public-barbers">
-        {demo.barbers.map((barber) => (
-          <BarberCard key={barber.id} barber={barber} />
-        ))}
-      </div>
+      {demo.barbers.length > 0 ? (
+        <div className="barber-grid public-barbers">
+          {demo.barbers.map((barber) => (
+            <BarberCard key={barber.id} barber={barber} />
+          ))}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--white)', border: '1px solid var(--line)', borderRadius: '10px' }}>
+          <h3 style={{ fontSize: '18px', marginBottom: '8px' }}>No barbers registered yet</h3>
+          <p style={{ color: 'var(--muted)', fontSize: '13px', maxWidth: '400px', margin: '0 auto' }}>
+            New barbers will appear here once invited and added by the shop administrator.
+          </p>
+        </div>
+      )}
     </PageFrame>
   );
 }
@@ -314,20 +323,28 @@ export function BookingPage() {
           )}
 
           {step === 2 && (
-            <div className="choice-grid">
-              {demo.barbers.filter((item) => item.working).map((item) => (
-                <button
-                  className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''}`}
-                  key={item.id}
-                  onClick={() => setSelection({ ...selection, barberId: item.id })}
-                >
-                  <span className="avatar avatar-md">{item.initials}</span>
-                  <strong>{item.name}</strong>
-                  <small>{item.specialty}</small>
-                  <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
-                </button>
-              ))}
-            </div>
+            demo.barbers.filter((item) => item.working).length > 0 ? (
+              <div className="choice-grid">
+                {demo.barbers.filter((item) => item.working).map((item) => (
+                  <button
+                    className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''}`}
+                    key={item.id}
+                    onClick={() => setSelection({ ...selection, barberId: item.id })}
+                  >
+                    <span className="avatar avatar-md">{item.initials}</span>
+                    <strong>{item.name}</strong>
+                    <small>{item.specialty}</small>
+                    <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--white)', border: '1px solid var(--line)', borderRadius: '8px' }}>
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: '13px' }}>
+                  No barbers are currently on shift. Please check back later or contact the shop.
+                </p>
+              </div>
+            )
           )}
 
           {step === 3 && (

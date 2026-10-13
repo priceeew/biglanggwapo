@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Send, Check } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { accounts } from '../../data';
+import { accounts, saveAccount } from '../../data';
+import { demoApi } from '../../mockService';
 
 export function RegisterPage() {
-  const { login, notify } = useStore();
+  const { login, notify, commit } = useStore();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
@@ -19,17 +20,23 @@ export function RegisterPage() {
       return notify('Passwords do not match.', 'error');
     }
     const cleanEmail = form.email.trim().toLowerCase();
+    const initials = form.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
     const newCustomer = {
       email: cleanEmail,
       password: form.password,
       role: 'customer',
       name: form.name,
-      initials: form.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU',
+      initials,
       customerId: `cust-${Date.now()}`,
       phone: form.phone,
       redirectPath: '/booking'
     };
-    accounts[cleanEmail] = newCustomer;
+    saveAccount(newCustomer);
+    commit((state) => demoApi.addCustomer(state, {
+      name: form.name,
+      email: cleanEmail,
+      phone: form.phone
+    }));
     login(newCustomer);
     navigate('/booking');
   };
