@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, ChevronLeft,
+  AlertTriangle, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, ChevronLeft,
   ChevronRight, Clock3, Download, FileText, ListOrdered, Pencil, Plus,
   ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, UserRound,
   Users, WalletCards, X
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
+import { getSlotAvailability, isRestDay, isBarberOnLeave } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
   StatusBadge, QueueMini, ReviewCard
@@ -29,6 +30,8 @@ function RescheduleModal({ appointment, onClose }) {
   const [selectedDate, setSelectedDate] = useState(appointment.date || today);
   const [selectedTime, setSelectedTime] = useState(appointment.time || '');
 
+  const barber = demo.barbers.find((b) => b.id === appointment.barberId);
+
   // Month navigation state initialized to selected date
   const [viewDate, setViewDate] = useState(() => {
     const parts = (appointment.date || today).split('-');
@@ -36,9 +39,12 @@ function RescheduleModal({ appointment, onClose }) {
   });
 
   const slots = [
-    '9:00 AM', '9:45 AM', '10:30 AM', '11:15 AM',
-    '1:00 PM', '1:45 PM', '2:30 PM', '3:15 PM',
-    '4:00 PM', '5:00 PM'
+    '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
+    '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
+    '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM',
+    '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
+    '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM',
+    '7:00 PM'
   ];
 
   const year = viewDate.getFullYear();
@@ -65,13 +71,8 @@ function RescheduleModal({ appointment, onClose }) {
   const todayMonth = Number(todayParts[1]) - 1;
   const isPastMonth = year < todayYear || (year === todayYear && month <= todayMonth);
 
-  const isTaken = (time) => demo.appointments.some((item) =>
-    item.id !== appointment.id &&
-    item.barberId === appointment.barberId &&
-    item.date === selectedDate &&
-    item.time === time &&
-    !['Cancelled', 'No-show'].includes(item.status)
-  );
+  const restCheck = barber ? isRestDay(barber, selectedDate) : { isRest: false };
+  const leaveCheck = barber ? isBarberOnLeave(barber) : { onLeave: false };
 
   // Quick dates (next 5 days)
   const quickDates = [];
@@ -123,17 +124,13 @@ function RescheduleModal({ appointment, onClose }) {
     if (!dateStr || dateStr < today) return;
     setSelectedDate(dateStr);
 
-    // If currently chosen time slot is taken on this new date, reset time
+    // If currently chosen time slot is unavailable on this new date, reset time
     if (selectedTime) {
-      const conflict = demo.appointments.some((item) =>
-        item.id !== appointment.id &&
-        item.barberId === appointment.barberId &&
-        item.date === dateStr &&
-        item.time === selectedTime &&
-        !['Cancelled', 'No-show'].includes(item.status)
-      );
-      if (conflict) {
-        setSelectedTime('');
+      if (barber) {
+        const avail = getSlotAvailability(selectedTime, appointment.duration, barber, dateStr, demo.appointments, appointment.id);
+        if (!avail.available) {
+          setSelectedTime('');
+        }
       }
     }
 
@@ -151,6 +148,12 @@ function RescheduleModal({ appointment, onClose }) {
 
   const handleConfirm = () => {
     if (!canConfirm) return;
+    if (barber) {
+      const avail = getSlotAvailability(selectedTime, appointment.duration, barber, selectedDate, demo.appointments, appointment.id);
+      if (!avail.available) {
+        return notify(`Cannot reschedule to this slot (${avail.reason}). Please select an available slot.`, 'error');
+      }
+    }
     try {
       commit((state) => demoApi.rescheduleAppointment(state, appointment.id, selectedDate, selectedTime));
       notify(`Appointment successfully rescheduled to ${humanDate(selectedDate)} at ${selectedTime}.`);
@@ -277,6 +280,47 @@ function RescheduleModal({ appointment, onClose }) {
           </div>
         </div>
 
+        {/* Rest day or leave notice */}
+        {restCheck.isRest && (
+          <div style={{
+            marginTop: '14px',
+            padding: '10px 12px',
+            background: '#fff9e6',
+            border: '1px solid #f0dfa8',
+            borderRadius: '6px',
+            color: '#805d15',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, color: 'var(--gold)' }} />
+            <span>
+              <strong>Weekly Rest Day:</strong> {barber?.name || 'Barber'} is on scheduled rest day every <strong>{restCheck.dayName}</strong>. Please pick another date.
+            </span>
+          </div>
+        )}
+
+        {leaveCheck.onLeave && (
+          <div style={{
+            marginTop: '14px',
+            padding: '10px 12px',
+            background: '#fef3f2',
+            border: '1px solid #fed7d2',
+            borderRadius: '6px',
+            color: '#b42318',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, color: '#d92d20' }} />
+            <span>
+              <strong>Barber on Leave:</strong> {barber?.name || 'Barber'} is currently on {leaveCheck.reason}.
+            </span>
+          </div>
+        )}
+
         {/* Time slots */}
         <div style={{ marginTop: '18px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <label className="field-label" style={{ margin: 0, fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -289,22 +333,30 @@ function RescheduleModal({ appointment, onClose }) {
 
         <div className="slot-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
           {slots.map((slot) => {
-            const taken = isTaken(slot);
             const isCurrent = appointment.date === selectedDate && appointment.time === slot;
             const isSelected = selectedTime === slot;
+            const slotCheck = barber
+              ? getSlotAvailability(slot, appointment.duration || 45, barber, selectedDate, demo.appointments, appointment.id)
+              : { available: true, reason: 'Available' };
+            const disabled = !isCurrent && !slotCheck.available;
+
             return (
               <button
                 key={slot}
                 type="button"
-                disabled={taken}
+                disabled={disabled}
                 className={`slot-button ${isSelected ? 'selected' : ''}`}
                 onClick={() => setSelectedTime(slot)}
                 style={isCurrent && !isSelected ? { borderColor: 'var(--gold)' } : {}}
-                title={taken ? 'Barber already booked' : isCurrent ? 'Current booked time' : 'Available'}
+                title={!slotCheck.available ? `Unavailable: ${slotCheck.reason}` : isCurrent ? 'Current booked time' : 'Available'}
               >
                 {slot}
-                {taken && <small>Booked</small>}
-                {isCurrent && !taken && <small style={{ color: isSelected ? 'var(--white)' : 'var(--gold)' }}>Current</small>}
+                {!slotCheck.available && !isCurrent && (
+                  <small style={{ color: slotCheck.reason === 'Break' ? '#b07823' : '#a6a39b' }}>
+                    {slotCheck.reason}
+                  </small>
+                )}
+                {isCurrent && <small style={{ color: isSelected ? 'var(--white)' : 'var(--gold)' }}>Current</small>}
               </button>
             );
           })}

@@ -1,4 +1,5 @@
 import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
+import { getSlotAvailability, STANDARD_SCHEDULES } from './utils/scheduling';
 
 const STORAGE_KEY = 'biglanggwapo-demo-v3';
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -60,8 +61,34 @@ const id = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toS
 
 export const demoApi = {
   createBooking(state, payload) {
-    const alreadyBooked = state.appointments.some((item) => item.barberId === payload.barberId && item.date === payload.date && item.time === payload.time && !['Cancelled', 'No-show'].includes(item.status));
-    if (alreadyBooked) throw new Error('That slot was just taken. Please choose another time.');
+    const barber = state.barbers.find((b) => b.id === payload.barberId);
+    if (barber) {
+      const slotAvail = getSlotAvailability(
+        payload.time,
+        payload.duration,
+        barber,
+        payload.date,
+        state.appointments
+      );
+      if (!slotAvail.available) {
+        if (slotAvail.reason === 'Rest day') {
+          throw new Error(`${barber.name} is on scheduled weekly rest day on this date. Please choose another date or barber.`);
+        } else if (slotAvail.reason === 'Break') {
+          throw new Error(`The selected slot overlaps ${barber.name}'s scheduled break. Please pick another time.`);
+        } else if (slotAvail.reason === 'Exceeds shift') {
+          throw new Error(`This service duration exceeds ${barber.name}'s shift end time. Please select an earlier start time.`);
+        } else if (slotAvail.reason === 'Before shift') {
+          throw new Error(`The selected slot is before ${barber.name}'s shift begins.`);
+        } else if (slotAvail.reason === 'Booked') {
+          throw new Error('That slot was just taken. Please choose another time.');
+        } else {
+          throw new Error(`${barber.name} is unavailable (${slotAvail.reason}). Please select another barber.`);
+        }
+      }
+    } else {
+      const alreadyBooked = state.appointments.some((item) => item.barberId === payload.barberId && item.date === payload.date && item.time === payload.time && !['Cancelled', 'No-show'].includes(item.status));
+      if (alreadyBooked) throw new Error('That slot was just taken. Please choose another time.');
+    }
 
     // Prevent duplicate active booking with the same barber for this customer
     const activeConflict = state.appointments.some((item) =>
@@ -96,8 +123,33 @@ export const demoApi = {
     return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Cancelled' } : item), queue: state.queue.filter((item) => item.appointmentId !== appointmentId) };
   },
   rescheduleAppointment(state, appointmentId, date, time) {
-    const conflict = state.appointments.some((item) => item.id !== appointmentId && item.barberId === state.appointments.find((a) => a.id === appointmentId)?.barberId && item.date === date && item.time === time && !['Cancelled', 'No-show'].includes(item.status));
-    if (conflict) throw new Error('That barber is already booked for this time.');
+    const existingApt = state.appointments.find((a) => a.id === appointmentId);
+    if (!existingApt) return state;
+    const barber = state.barbers.find((b) => b.id === existingApt.barberId);
+    if (barber) {
+      const slotAvail = getSlotAvailability(
+        time,
+        existingApt.duration,
+        barber,
+        date,
+        state.appointments,
+        appointmentId
+      );
+      if (!slotAvail.available) {
+        if (slotAvail.reason === 'Rest day') {
+          throw new Error(`${barber.name} is on scheduled weekly rest day on this date.`);
+        } else if (slotAvail.reason === 'Break') {
+          throw new Error(`That time overlaps ${barber.name}'s scheduled break.`);
+        } else if (slotAvail.reason === 'Exceeds shift') {
+          throw new Error(`This service exceeds ${barber.name}'s shift end time.`);
+        } else {
+          throw new Error(`That time slot is unavailable (${slotAvail.reason}).`);
+        }
+      }
+    } else {
+      const conflict = state.appointments.some((item) => item.id !== appointmentId && item.barberId === existingApt.barberId && item.date === date && item.time === time && !['Cancelled', 'No-show'].includes(item.status));
+      if (conflict) throw new Error('That barber is already booked for this time.');
+    }
     return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, date, time, status: 'Pending' } : item) };
   },
   addWalkIn(state, payload) {
@@ -159,7 +211,7 @@ export const demoApi = {
       initials,
       specialty: payload.specialty || 'All-around cuts',
       rating: payload.rating || 5.0,
-      schedule: payload.schedule || 'Mon–Sun · Full Day (9:00 AM – 8:00 PM)',
+      schedule: payload.schedule || STANDARD_SCHEDULES[0],
       status: payload.status || 'On shift',
       leaveStatus: payload.leaveStatus || 'Active / On Duty',
       leaveNotes: payload.leaveNotes || '',

@@ -9,6 +9,7 @@ import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, deleteAccount, validatePassword, validatePhone } from '../../data';
 import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas } from '../../services/api';
+import { STANDARD_SCHEDULES, validateShiftWithinShopHours, findShiftConflicts } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
 } from '../../components/common/UIComponents';
@@ -85,15 +86,6 @@ export function AdminDashboard() {
     </>
   );
 }
-
-const STANDARD_SCHEDULES = [
-  'Mon–Sun · Full Day (9:00 AM – 8:00 PM)',
-  'Mon–Sat · Morning Shift (9:00 AM – 5:00 PM)',
-  'Mon–Sat · Afternoon Shift (1:00 PM – 9:00 PM)',
-  'Tue–Sun · Regular Shift (10:00 AM – 8:00 PM)',
-  'Mon–Fri · Weekdays (9:00 AM – 6:00 PM)',
-  'Fri–Sun · Weekend Specialist (8:30 AM – 8:30 PM)'
-];
 
 const LEAVE_STATUS_OPTIONS = [
   { value: 'Active / On Duty', label: 'Active / On Duty (Available for bookings)', working: true, status: 'On shift' },
@@ -246,6 +238,29 @@ export function AdminManagementPage({ collection }) {
       ? (editBarberData.customSchedule.trim() || 'Custom Schedule')
       : editBarberData.schedule;
 
+    // Validate shift times are within barbershop's configured opening and closing hours and include a weekly rest day
+    const shopHours = demo.settings?.hours || 'Mon–Sun · 9:00 AM–8:00 PM';
+    const valResult = validateShiftWithinShopHours(effectiveSchedule, shopHours);
+    if (!valResult.valid) {
+      return notify(valResult.error, 'error');
+    }
+
+    // Warn the admin if changing a shift affects existing active appointments
+    if (editingBarber.schedule !== effectiveSchedule) {
+      const conflicts = findShiftConflicts(editingBarber, effectiveSchedule, demo.appointments);
+      if (conflicts.length > 0) {
+        const conflictDetails = conflicts
+          .slice(0, 5)
+          .map((c) => `• ${c.apt.date} at ${c.apt.time} (${c.apt.customerName || 'Customer'} - ${c.apt.serviceName}): ${c.reason}`)
+          .join('\n');
+        const extra = conflicts.length > 5 ? `\n...and ${conflicts.length - 5} more` : '';
+        const warnMessage = `WARNING: Changing ${editingBarber.name}'s shift affects ${conflicts.length} active appointment(s):\n\n${conflictDetails}${extra}\n\nDo you want to proceed with this shift change? Affected appointments may need to be rescheduled.`;
+        if (!window.confirm(warnMessage)) {
+          return;
+        }
+      }
+    }
+
     const opt = LEAVE_STATUS_OPTIONS.find((o) => o.value === editBarberData.leaveStatus) || LEAVE_STATUS_OPTIONS[0];
     const isWorking = opt.working;
     const computedStatus = opt.status;
@@ -280,7 +295,7 @@ export function AdminManagementPage({ collection }) {
       } catch {}
     }
 
-    notify(`Barber "${updatedBarber.name}" profile & leave status updated!`, 'success');
+    notify(`Barber "${updatedBarber.name}" profile & shift schedule updated!`, 'success');
     setEditingBarber(null);
   };
 
@@ -338,6 +353,13 @@ export function AdminManagementPage({ collection }) {
       const finalSchedule = formData.schedule === 'Custom'
         ? (formData.customSchedule?.trim() || 'Custom Schedule')
         : formData.schedule;
+
+      // Validate shift times are within barbershop's configured opening and closing hours and include a weekly rest day
+      const shopHours = demo.settings?.hours || 'Mon–Sun · 9:00 AM–8:00 PM';
+      const valResult = validateShiftWithinShopHours(finalSchedule, shopHours);
+      if (!valResult.valid) {
+        return notify(valResult.error, 'error');
+      }
 
       const newBarberObj = {
         id: newBarberId,
@@ -631,15 +653,20 @@ export function AdminManagementPage({ collection }) {
                     </select>
                   </label>
                   {formData.schedule === 'Custom' && (
-                    <label className="field-label">Specify custom schedule
-                      <input
-                        className="input"
-                        required
-                        value={formData.customSchedule || ''}
-                        onChange={(e) => setFormData({ ...formData, customSchedule: e.target.value })}
-                        placeholder="e.g. Wed–Sun · 11:00 AM – 8:00 PM"
-                      />
-                    </label>
+                    <div style={{ marginTop: '4px' }}>
+                      <label className="field-label">Specify custom schedule
+                        <input
+                          className="input"
+                          required
+                          value={formData.customSchedule || ''}
+                          onChange={(e) => setFormData({ ...formData, customSchedule: e.target.value })}
+                          placeholder="e.g. Wed–Sun · 11:00 AM – 8:00 PM (Break: 2:30 PM – 3:30 PM · Rest: Tue)"
+                        />
+                      </label>
+                      <small style={{ color: 'var(--muted)', fontSize: '10px', display: 'block', marginTop: '4px', lineHeight: 1.4 }}>
+                        Must include a weekly rest day (e.g. Rest: Tue) and fit within shop hours ({demo.settings?.hours || '9:00 AM – 8:00 PM'}).
+                      </small>
+                    </div>
                   )}
                 </>
               )}
@@ -787,15 +814,20 @@ export function AdminManagementPage({ collection }) {
               </label>
 
               {editBarberData.schedule === 'Custom' && (
-                <label className="field-label">Custom schedule details
-                  <input
-                    className="input"
-                    required
-                    value={editBarberData.customSchedule || ''}
-                    onChange={(e) => setEditBarberData({ ...editBarberData, customSchedule: e.target.value })}
-                    placeholder="e.g. Wed–Sun · 11:00 AM – 8:00 PM"
-                  />
-                </label>
+                <div style={{ marginTop: '4px' }}>
+                  <label className="field-label">Custom schedule details
+                    <input
+                      className="input"
+                      required
+                      value={editBarberData.customSchedule || ''}
+                      onChange={(e) => setEditBarberData({ ...editBarberData, customSchedule: e.target.value })}
+                      placeholder="e.g. Wed–Sun · 11:00 AM – 8:00 PM (Break: 2:30 PM – 3:30 PM · Rest: Tue)"
+                    />
+                  </label>
+                  <small style={{ color: 'var(--muted)', fontSize: '10px', display: 'block', marginTop: '4px', lineHeight: 1.4 }}>
+                    Must include a weekly rest day (e.g. Rest: Tue) and fit within shop hours ({demo.settings?.hours || '9:00 AM – 8:00 PM'}).
+                  </small>
+                </div>
               )}
 
               <div style={{ padding: '14px', background: 'var(--paper)', borderRadius: '8px', border: '1px solid var(--line)' }}>

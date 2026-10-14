@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
+  AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
   LockKeyhole, Scissors, ShieldCheck, Zap
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
 import { demoApi } from '../../mockService';
 import { saveAppointmentToAtlas } from '../../services/api';
+import { getSlotAvailability, isRestDay, isBarberOnLeave } from '../../utils/scheduling';
 import {
   PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard
 } from '../../components/common/UIComponents';
@@ -221,8 +222,14 @@ export function BookingPage() {
 
   const service = demo.services.find((item) => item.id === selection.serviceId);
   const barber = demo.barbers.find((item) => item.id === selection.barberId);
-  const slots = ['9:00 AM', '9:45 AM', '10:30 AM', '11:15 AM', '1:00 PM', '1:45 PM', '2:30 PM', '3:15 PM', '4:00 PM', '5:00 PM'];
-  const isTaken = (time) => demo.appointments.some((item) => item.barberId === selection.barberId && item.date === selection.date && item.time === time && !['Cancelled', 'No-show'].includes(item.status));
+  const slots = [
+    '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
+    '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
+    '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM',
+    '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
+    '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM',
+    '7:00 PM'
+  ];
 
   // Safeguard: Customer can only have 1 active appointment at a time with a specific barber
   const hasActiveBookingWithBarber = (targetBarberId) => {
@@ -256,7 +263,13 @@ export function BookingPage() {
         return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
       }
     }
-    if (step === 3 && !selection.time) return notify('Choose an available time.', 'error');
+    if (step === 3) {
+      if (!selection.time) return notify('Choose an available time.', 'error');
+      const slotCheck = getSlotAvailability(selection.time, service?.duration, barber, selection.date, demo.appointments);
+      if (!slotCheck.available) {
+        return notify(`Cannot select this time (${slotCheck.reason}). Please choose an available time slot.`, 'error');
+      }
+    }
     setStep((current) => Math.min(4, current + 1));
   };
 
@@ -265,6 +278,11 @@ export function BookingPage() {
 
     if (hasActiveBookingWithBarber(barber.id)) {
       return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
+    }
+
+    const slotCheck = getSlotAvailability(selection.time, service?.duration, barber, selection.date, demo.appointments);
+    if (!slotCheck.available) {
+      return notify(`Cannot confirm booking (${slotCheck.reason}). Please select an available time.`, 'error');
     }
 
     try {
@@ -405,36 +423,96 @@ export function BookingPage() {
             )
           )}
 
-          {step === 3 && (
-            <div className="date-time-panel">
-              <label className="field-label">
-                Appointment date
-                <input
-                  className="input"
-                  type="date"
-                  min={today}
-                  value={selection.date}
-                  onChange={(event) => setSelection({ ...selection, date: event.target.value, time: '' })}
-                />
-              </label>
-              <div className="field-label">
-                Available times
-                <div className="slot-grid">
-                  {slots.map((slot) => (
-                    <button
-                      key={slot}
-                      disabled={isTaken(slot)}
-                      className={`slot-button ${selection.time === slot ? 'selected' : ''}`}
-                      onClick={() => setSelection({ ...selection, time: slot })}
-                    >
-                      {slot}
-                      {isTaken(slot) && <small>Booked</small>}
-                    </button>
-                  ))}
+          {step === 3 && (() => {
+            const restCheck = barber ? isRestDay(barber, selection.date) : { isRest: false };
+            const leaveCheck = barber ? isBarberOnLeave(barber) : { onLeave: false };
+
+            return (
+              <div className="date-time-panel">
+                <label className="field-label">
+                  Appointment date
+                  <input
+                    className="input"
+                    type="date"
+                    min={today}
+                    value={selection.date}
+                    onChange={(event) => setSelection({ ...selection, date: event.target.value, time: '' })}
+                  />
+                </label>
+
+                {restCheck.isRest && (
+                  <div style={{
+                    padding: '12px 14px',
+                    background: '#fff9e6',
+                    border: '1px solid #f0dfa8',
+                    borderRadius: '8px',
+                    color: '#805d15',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <AlertTriangle size={16} style={{ flexShrink: 0, color: 'var(--gold)' }} />
+                    <span>
+                      <strong>Weekly Rest Day:</strong> {barber.name} has a scheduled weekly rest day on <strong>{restCheck.dayName}s</strong>. All slots on this day are unavailable. Please pick another date or select another barber.
+                    </span>
+                  </div>
+                )}
+
+                {leaveCheck.onLeave && (
+                  <div style={{
+                    padding: '12px 14px',
+                    background: '#fef3f2',
+                    border: '1px solid #fed7d2',
+                    borderRadius: '8px',
+                    color: '#b42318',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <AlertTriangle size={16} style={{ flexShrink: 0, color: '#d92d20' }} />
+                    <span>
+                      <strong>Barber on Leave:</strong> {barber.name} is currently on {leaveCheck.reason}. Please select another barber.
+                    </span>
+                  </div>
+                )}
+
+                <div className="field-label">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span>Available times</span>
+                    {barber && (
+                      <span style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 500 }}>
+                        {barber.name}’s Shift: {barber.schedule || 'Standard Hours'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="slot-grid">
+                    {slots.map((slot) => {
+                      const slotCheck = getSlotAvailability(slot, service?.duration || 45, barber, selection.date, demo.appointments);
+                      const isSelected = selection.time === slot;
+                      return (
+                        <button
+                          key={slot}
+                          disabled={!slotCheck.available}
+                          className={`slot-button ${isSelected ? 'selected' : ''}`}
+                          onClick={() => setSelection({ ...selection, time: slot })}
+                          title={!slotCheck.available ? `Unavailable: ${slotCheck.reason}` : 'Available'}
+                        >
+                          {slot}
+                          {!slotCheck.available && (
+                            <small style={{ color: slotCheck.reason === 'Break' ? '#b07823' : '#a6a39b' }}>
+                              {slotCheck.reason}
+                            </small>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {step === 4 && (
             <div className="review-booking">

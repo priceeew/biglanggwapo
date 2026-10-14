@@ -6,7 +6,7 @@ const BarberSchema = new mongoose.Schema({
   initials: { type: String, default: 'BR' },
   specialty: { type: String, default: 'All-around cuts' },
   rating: { type: Number, default: 5.0 },
-  schedule: { type: String, default: 'Mon–Sun · Full Day (9:00 AM – 8:00 PM)' },
+  schedule: { type: String, default: 'Tue–Sun · 9:00 AM – 6:00 PM (Break: 1:00 PM – 2:00 PM · Rest: Mon)' },
   status: { type: String, default: 'On shift' },
   leaveStatus: { type: String, default: 'Active / On Duty' },
   leaveNotes: { type: String, default: '' },
