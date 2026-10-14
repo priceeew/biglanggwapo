@@ -86,15 +86,44 @@ export function AdminDashboard() {
   );
 }
 
+const STANDARD_SCHEDULES = [
+  'Mon–Sun · Full Day (9:00 AM – 8:00 PM)',
+  'Mon–Sat · Morning Shift (9:00 AM – 5:00 PM)',
+  'Mon–Sat · Afternoon Shift (1:00 PM – 9:00 PM)',
+  'Tue–Sun · Regular Shift (10:00 AM – 8:00 PM)',
+  'Mon–Fri · Weekdays (9:00 AM – 6:00 PM)',
+  'Fri–Sun · Weekend Specialist (8:30 AM – 8:30 PM)'
+];
+
+const LEAVE_STATUS_OPTIONS = [
+  { value: 'Active / On Duty', label: 'Active / On Duty (Available for bookings)', working: true, status: 'On shift' },
+  { value: 'Sick Leave', label: 'Sick Leave (Unavailable / Rest period)', working: false, status: 'Sick Leave' },
+  { value: 'Vacation Leave', label: 'Vacation Leave (Unavailable / Vacation)', working: false, status: 'Vacation Leave' },
+  { value: 'Day Off', label: 'Day Off (Scheduled rest day)', working: false, status: 'Day Off' },
+  { value: 'Inactive', label: 'Inactive / Deactivated', working: false, status: 'Inactive' }
+];
+
 export function AdminManagementPage({ collection }) {
   const { demo, commit, notify } = useStore();
   const [isAdding, setIsAdding] = useState(false);
+  const [editingBarber, setEditingBarber] = useState(null);
+  const [editBarberData, setEditBarberData] = useState({
+    name: '',
+    specialty: '',
+    phone: '',
+    schedule: STANDARD_SCHEDULES[0],
+    customSchedule: '',
+    leaveStatus: 'Active / On Duty',
+    leaveNotes: ''
+  });
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     password: '',
     specialty: 'Fades & texture',
+    schedule: STANDARD_SCHEDULES[0],
+    customSchedule: '',
     status: 'On shift',
     preferences: '',
     notes: '',
@@ -112,7 +141,7 @@ export function AdminManagementPage({ collection }) {
     },
     barbers: {
       title: 'Manage barbers',
-      desc: 'Profiles, specialties, shifts, and optional commission settings.',
+      desc: 'Profiles, specialties, permanent shifts, and leave availability.',
       data: demo.barbers
     },
     customers: {
@@ -133,7 +162,7 @@ export function AdminManagementPage({ collection }) {
     schedules: {
       title: 'Manage schedules',
       desc: 'Working hours, breaks, days off, and available slots.',
-      data: demo.barbers.map((b) => ({ ...b, schedule: 'Mon–Sun · 9:00 AM–8:00 PM' }))
+      data: demo.barbers.map((b) => ({ ...b, schedule: b.schedule || STANDARD_SCHEDULES[0] }))
     },
     transactions: {
       title: 'Manage transactions',
@@ -177,6 +206,8 @@ export function AdminManagementPage({ collection }) {
       phone: '',
       password: '',
       specialty: 'Fades & texture',
+      schedule: STANDARD_SCHEDULES[0],
+      customSchedule: '',
       status: 'On shift',
       preferences: '',
       notes: '',
@@ -186,6 +217,71 @@ export function AdminManagementPage({ collection }) {
       description: ''
     });
     setIsAdding(true);
+  };
+
+  const handleOpenEditBarber = (barber) => {
+    const isCustom = barber.schedule && !STANDARD_SCHEDULES.includes(barber.schedule);
+    const existingLeave = barber.leaveStatus || (['Sick Leave', 'Vacation Leave', 'Day Off', 'Day off', 'Inactive'].includes(barber.status) ? barber.status : (barber.working === false ? 'Day Off' : 'Active / On Duty'));
+    setEditingBarber(barber);
+    setEditBarberData({
+      name: barber.name || '',
+      specialty: barber.specialty || '',
+      phone: barber.phone || '',
+      schedule: isCustom ? 'Custom' : (barber.schedule || STANDARD_SCHEDULES[0]),
+      customSchedule: isCustom ? barber.schedule : '',
+      leaveStatus: existingLeave,
+      leaveNotes: barber.leaveNotes || ''
+    });
+  };
+
+  const handleSubmitEditBarber = (e) => {
+    e.preventDefault();
+    if (!editBarberData.name.trim()) return notify('Barber name is required.', 'error');
+    if (!editBarberData.specialty.trim()) return notify('Specialty is required.', 'error');
+    if (!editBarberData.phone.trim()) return notify('Phone number is required.', 'error');
+    const phoneErr = validatePhone(editBarberData.phone);
+    if (phoneErr) return notify(phoneErr, 'error');
+
+    const effectiveSchedule = editBarberData.schedule === 'Custom'
+      ? (editBarberData.customSchedule.trim() || 'Custom Schedule')
+      : editBarberData.schedule;
+
+    const opt = LEAVE_STATUS_OPTIONS.find((o) => o.value === editBarberData.leaveStatus) || LEAVE_STATUS_OPTIONS[0];
+    const isWorking = opt.working;
+    const computedStatus = opt.status;
+
+    const updatedBarber = {
+      ...editingBarber,
+      name: editBarberData.name.trim(),
+      specialty: editBarberData.specialty.trim(),
+      phone: editBarberData.phone.trim(),
+      schedule: effectiveSchedule,
+      leaveStatus: editBarberData.leaveStatus,
+      leaveNotes: editBarberData.leaveNotes.trim(),
+      status: computedStatus,
+      working: isWorking
+    };
+
+    commit((state) => demoApi.updateBarber(state, editingBarber.id, updatedBarber));
+    saveBarberToAtlas(updatedBarber);
+
+    if (editingBarber.email) {
+      try {
+        const raw = window.localStorage.getItem('biglanggwapo-accounts');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const idx = list.findIndex((a) => a.email?.toLowerCase() === editingBarber.email.toLowerCase());
+          if (idx !== -1) {
+            list[idx].name = updatedBarber.name;
+            list[idx].phone = updatedBarber.phone;
+            window.localStorage.setItem('biglanggwapo-accounts', JSON.stringify(list));
+          }
+        }
+      } catch {}
+    }
+
+    notify(`Barber "${updatedBarber.name}" profile & leave status updated!`, 'success');
+    setEditingBarber(null);
   };
 
   const handleSubmitAdd = (e) => {
@@ -213,6 +309,7 @@ export function AdminManagementPage({ collection }) {
         password: formData.password,
         role: 'receptionist',
         name: formData.name.trim(),
+        phone: formData.phone.trim(),
         initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'RC',
         redirectPath: '/receptionist'
       });
@@ -227,8 +324,8 @@ export function AdminManagementPage({ collection }) {
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
     } else if (collection === 'barbers') {
-      if (!formData.email.trim() || !formData.phone.trim() || !formData.password || !formData.specialty.trim() || !formData.status) {
-        return notify('All fields (Name, Email, Phone, Password, Specialty, Working status) are required.', 'error');
+      if (!formData.email.trim() || !formData.phone.trim() || !formData.password || !formData.specialty.trim() || !formData.schedule) {
+        return notify('All fields (Name, Email, Phone, Password, Specialty, Permanent schedule) are required.', 'error');
       }
       const phoneError = validatePhone(formData.phone);
       if (phoneError) return notify(phoneError, 'error');
@@ -238,13 +335,21 @@ export function AdminManagementPage({ collection }) {
       }
       const cleanEmail = formData.email.trim().toLowerCase();
       const newBarberId = 'bar-' + Date.now();
+      const finalSchedule = formData.schedule === 'Custom'
+        ? (formData.customSchedule?.trim() || 'Custom Schedule')
+        : formData.schedule;
+
       const newBarberObj = {
         id: newBarberId,
         name: formData.name.trim(),
         specialty: formData.specialty.trim(),
         email: cleanEmail,
         phone: formData.phone.trim(),
-        status: formData.status || 'On shift'
+        schedule: finalSchedule,
+        status: 'On shift',
+        leaveStatus: 'Active / On Duty',
+        leaveNotes: '',
+        working: true
       };
       commit((state) => demoApi.addBarber(state, newBarberObj));
       saveBarberToAtlas(newBarberObj);
@@ -254,6 +359,7 @@ export function AdminManagementPage({ collection }) {
         role: 'barber',
         barberId: newBarberId,
         name: formData.name.trim(),
+        phone: formData.phone.trim(),
         initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'BR',
         redirectPath: '/barber'
       });
@@ -367,6 +473,7 @@ export function AdminManagementPage({ collection }) {
           collection === 'services' ? ['Service', 'Category', 'Price', 'Duration', 'Status', ''] :
           collection === 'appointments' ? ['Customer', 'Service', 'Date', 'Barber', 'Status', ''] :
           collection === 'transactions' ? ['Receipt', 'Customer', 'Method', 'Amount', 'Date', ''] :
+          collection === 'barbers' ? ['Name / record', 'Phone & Specialty', 'Permanent Schedule', 'Status / Leave', ''] :
           ['Name / record', 'Details', 'Status', 'Last updated', '']
         }>
           <tbody>
@@ -378,15 +485,36 @@ export function AdminManagementPage({ collection }) {
                     <span><strong>{item.name || item.customerName || item.receipt}</strong><small>{item.email || item.description || item.serviceName || item.category || item.access || ''}</small></span>
                   </div>
                 </td>
-                <td>{collection === 'services' ? item.category : collection === 'appointments' ? item.serviceName : collection === 'transactions' ? item.method : collection === 'schedules' ? item.schedule : item.phone || item.specialty || item.email || '—'}</td>
-                <td>{collection === 'services' ? currency(item.price) : collection === 'appointments' ? humanDate(item.date) : collection === 'transactions' ? currency(item.amount) : <StatusBadge status={item.status || (item.active || item.working ? 'Active' : 'Inactive')} />}</td>
-                <td>{collection === 'services' ? `${item.duration} min` : collection === 'appointments' ? <StatusBadge status={item.status} /> : collection === 'transactions' ? humanDate(item.date) : item.lastVisit || 'Today'}</td>
+                <td>{collection === 'services' ? item.category : collection === 'appointments' ? item.serviceName : collection === 'transactions' ? item.method : collection === 'schedules' ? item.schedule : collection === 'barbers' ? (
+                  <div>
+                    <strong>{item.phone || 'No phone'}</strong>
+                    <small>{item.specialty || 'General cuts'}</small>
+                  </div>
+                ) : item.phone || item.specialty || item.email || '—'}</td>
+                <td>{collection === 'services' ? currency(item.price) : collection === 'appointments' ? humanDate(item.date) : collection === 'transactions' ? currency(item.amount) : collection === 'barbers' ? (
+                  <span style={{ fontSize: '11px', color: 'var(--ink)' }}>{item.schedule || STANDARD_SCHEDULES[0]}</span>
+                ) : <StatusBadge status={item.status || (item.active || item.working ? 'Active' : 'Inactive')} />}</td>
+                <td>{collection === 'services' ? `${item.duration} min` : collection === 'appointments' ? <StatusBadge status={item.status} /> : collection === 'transactions' ? humanDate(item.date) : collection === 'barbers' ? (
+                  <StatusBadge status={item.leaveStatus || item.status || (item.working ? 'Active / On Duty' : 'Inactive')} />
+                ) : item.lastVisit || 'Today'}</td>
                 <td>
                   <div className="row-actions">
-                    <button className="icon-button" title="Edit" onClick={() => notify('Edit form opened in this demo build.')}><Pencil size={16} /></button>
+                    <button
+                      className="icon-button"
+                      title="Edit"
+                      onClick={() => {
+                        if (collection === 'barbers') {
+                          handleOpenEditBarber(item);
+                        } else {
+                          notify('Edit form opened in this demo build.');
+                        }
+                      }}
+                    >
+                      <Pencil size={16} />
+                    </button>
                     {['barbers', 'services', 'customers'].includes(collection) && (
                       <button className="button button-soft button-small" onClick={() => toggle(item)}>
-                        {item.active === false || item.status === 'Inactive' ? 'Activate' : 'Deactivate'}
+                        {item.active === false || item.status === 'Inactive' || item.working === false ? 'Activate' : 'Deactivate'}
                       </button>
                     )}
                     {['barbers', 'receptionists', 'customers', 'services'].includes(collection) && (
@@ -489,18 +617,30 @@ export function AdminManagementPage({ collection }) {
                       placeholder="e.g. Fades & texture, Scissor cuts"
                     />
                   </label>
-                  <label className="field-label">Working status
+                  <label className="field-label">Permanent work schedule
                     <select
                       className="input"
                       required
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      value={formData.schedule}
+                      onChange={(e) => setFormData({ ...formData, schedule: e.target.value })}
                     >
-                      <option value="On shift">On shift</option>
-                      <option value="Next shift 2:00 PM">Next shift 2:00 PM</option>
-                      <option value="Day off">Day off</option>
+                      {STANDARD_SCHEDULES.map((sch) => (
+                        <option key={sch} value={sch}>{sch}</option>
+                      ))}
+                      <option value="Custom">Custom schedule...</option>
                     </select>
                   </label>
+                  {formData.schedule === 'Custom' && (
+                    <label className="field-label">Specify custom schedule
+                      <input
+                        className="input"
+                        required
+                        value={formData.customSchedule || ''}
+                        onChange={(e) => setFormData({ ...formData, customSchedule: e.target.value })}
+                        placeholder="e.g. Wed–Sun · 11:00 AM – 8:00 PM"
+                      />
+                    </label>
+                  )}
                 </>
               )}
 
@@ -579,6 +719,124 @@ export function AdminManagementPage({ collection }) {
                 </button>
                 <button type="submit" className="button button-dark button-full">
                   Create record <ArrowRight size={16} />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingBarber && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditingBarber(null)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setEditingBarber(null)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <span className="eyebrow gold">EDIT BARBER PROFILE</span>
+              <h2>Edit {editingBarber.name}</h2>
+              <p>Update permanent work schedule, contact details, or set sick / vacation leave status.</p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleSubmitEditBarber}>
+              <label className="field-label">Full name
+                <input
+                  className="input"
+                  required
+                  value={editBarberData.name}
+                  onChange={(e) => setEditBarberData({ ...editBarberData, name: e.target.value })}
+                  placeholder="e.g. Marco Reyes"
+                />
+              </label>
+
+              <label className="field-label">Specialty
+                <input
+                  className="input"
+                  required
+                  value={editBarberData.specialty}
+                  onChange={(e) => setEditBarberData({ ...editBarberData, specialty: e.target.value })}
+                  placeholder="e.g. Fades & texture, Scissor cuts"
+                />
+              </label>
+
+              <label className="field-label">Phone number
+                <input
+                  className="input"
+                  type="tel"
+                  inputMode="numeric"
+                  required
+                  maxLength={11}
+                  value={editBarberData.phone}
+                  onChange={(e) => setEditBarberData({ ...editBarberData, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  placeholder="09170000000"
+                />
+              </label>
+
+              <label className="field-label">Permanent work schedule
+                <select
+                  className="input"
+                  required
+                  value={editBarberData.schedule}
+                  onChange={(e) => setEditBarberData({ ...editBarberData, schedule: e.target.value })}
+                >
+                  {STANDARD_SCHEDULES.map((sch) => (
+                    <option key={sch} value={sch}>{sch}</option>
+                  ))}
+                  <option value="Custom">Custom schedule...</option>
+                </select>
+              </label>
+
+              {editBarberData.schedule === 'Custom' && (
+                <label className="field-label">Custom schedule details
+                  <input
+                    className="input"
+                    required
+                    value={editBarberData.customSchedule || ''}
+                    onChange={(e) => setEditBarberData({ ...editBarberData, customSchedule: e.target.value })}
+                    placeholder="e.g. Wed–Sun · 11:00 AM – 8:00 PM"
+                  />
+                </label>
+              )}
+
+              <div style={{ padding: '14px', background: 'var(--paper)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <label className="field-label" style={{ marginBottom: '8px', color: 'var(--ink)' }}>
+                  <strong>Leave / Availability status</strong>
+                  <select
+                    className="input"
+                    required
+                    value={editBarberData.leaveStatus}
+                    onChange={(e) => setEditBarberData({ ...editBarberData, leaveStatus: e.target.value })}
+                    style={{ marginTop: '6px' }}
+                  >
+                    {LEAVE_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <small style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', lineHeight: 1.4 }}>
+                  {editBarberData.leaveStatus === 'Active / On Duty'
+                    ? '✓ Barber is marked on-duty and open for customer bookings.'
+                    : '⚠ Barber is marked on leave/unavailable and hidden from online booking chair selection.'}
+                </small>
+              </div>
+
+              {editBarberData.leaveStatus !== 'Active / On Duty' && (
+                <label className="field-label">Leave notes / Return date (optional)
+                  <input
+                    className="input"
+                    value={editBarberData.leaveNotes}
+                    onChange={(e) => setEditBarberData({ ...editBarberData, leaveNotes: e.target.value })}
+                    placeholder="e.g. On sick leave until Friday, returns Oct 18"
+                  />
+                </label>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setEditingBarber(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full">
+                  Save changes
                 </button>
               </div>
             </form>

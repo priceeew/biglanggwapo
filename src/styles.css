@@ -626,6 +626,66 @@
   color: var(--muted);
 }
 
+/* Status Badge extensions for Leave & On Duty */
+.status-badge.active-on-duty, .status-badge.on-duty, .status-badge.on-shift {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.status-badge.active-on-duty i, .status-badge.on-duty i, .status-badge.on-shift i {
+  background: var(--green);
+}
+
+.status-badge.sick-leave {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid rgba(207, 19, 34, 0.25);
+}
+.status-badge.sick-leave i {
+  background: #cf1322;
+}
+
+.status-badge.vacation-leave {
+  background: #f0f5ff;
+  color: #2f54eb;
+  border: 1px solid rgba(47, 84, 235, 0.25);
+}
+.status-badge.vacation-leave i {
+  background: #2f54eb;
+}
+
+.status-badge.day-off, .status-badge.on-leave {
+  background: #f5f5f5;
+  color: #595959;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.status-badge.day-off i, .status-badge.on-leave i {
+  background: #8c8c8c;
+}
+
+/* Barber choice card booking conflict state */
+.choice-card.disabled-choice {
+  opacity: 0.85;
+  border-color: rgba(207, 19, 34, 0.35);
+  background: #fffbfb;
+}
+.choice-card.disabled-choice:hover {
+  transform: none;
+  box-shadow: none;
+}
+.active-booking-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #cf1322;
+  background: #fff1f0;
+  border: 1px solid rgba(207, 19, 34, 0.2);
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin-top: auto;
+}
+
 
 
 

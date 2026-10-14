@@ -7,6 +7,7 @@ import {
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
 import { demoApi } from '../../mockService';
+import { saveAppointmentToAtlas } from '../../services/api';
 import {
   PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard
 } from '../../components/common/UIComponents';
@@ -223,25 +224,67 @@ export function BookingPage() {
   const slots = ['9:00 AM', '9:45 AM', '10:30 AM', '11:15 AM', '1:00 PM', '1:45 PM', '2:30 PM', '3:15 PM', '4:00 PM', '5:00 PM'];
   const isTaken = (time) => demo.appointments.some((item) => item.barberId === selection.barberId && item.date === selection.date && item.time === time && !['Cancelled', 'No-show'].includes(item.status));
 
+  // Safeguard: Customer can only have 1 active appointment at a time with a specific barber
+  const hasActiveBookingWithBarber = (targetBarberId) => {
+    if (!session || !targetBarberId) return false;
+    return demo.appointments.some((item) => {
+      if (item.barberId !== targetBarberId) return false;
+      const isFinished = ['Completed', 'Cancelled', 'No-show'].includes(item.status);
+      if (isFinished) return false;
+
+      const currentCustId = session.customerId;
+      const currentName = session.name ? session.name.trim().toLowerCase() : '';
+      const currentEmail = session.email ? session.email.trim().toLowerCase() : '';
+
+      const aptCustId = item.customerId;
+      const aptCustName = item.customerName ? item.customerName.trim().toLowerCase() : '';
+      const aptCustEmail = item.customerEmail ? item.customerEmail.trim().toLowerCase() : '';
+
+      return (
+        (currentCustId && aptCustId && currentCustId === aptCustId) ||
+        (currentName && aptCustName && currentName === aptCustName) ||
+        (currentEmail && aptCustEmail && currentEmail === aptCustEmail)
+      );
+    });
+  };
+
   const nextStep = () => {
     if (step === 1 && !service) return notify('Choose a service to continue.', 'error');
-    if (step === 2 && !barber) return notify('Choose a barber to continue.', 'error');
+    if (step === 2) {
+      if (!barber) return notify('Choose a barber to continue.', 'error');
+      if (hasActiveBookingWithBarber(barber.id)) {
+        return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
+      }
+    }
     if (step === 3 && !selection.time) return notify('Choose an available time.', 'error');
     setStep((current) => Math.min(4, current + 1));
   };
 
   const confirm = () => {
     if (!session || session.role !== 'customer') return openModal('login', { targetPath: '/booking' });
+
+    if (hasActiveBookingWithBarber(barber.id)) {
+      return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
+    }
+
     try {
-      commit((state) => demoApi.createBooking(state, {
+      const newApt = {
+        id: 'apt-' + Date.now(),
         ...selection,
-        customerId: 'cust-demo',
+        customerId: session.customerId || 'cust-demo',
         customerName: session.name,
+        customerEmail: session.email || '',
         serviceName: service.name,
         barberName: barber.name,
         duration: service.duration,
-        price: service.price
-      }));
+        price: service.price,
+        status: 'Pending',
+        paymentStatus: 'Unpaid',
+        source: 'Online',
+        notes: selection.notes || ''
+      };
+      commit((state) => demoApi.createBooking(state, newApt));
+      saveAppointmentToAtlas(newApt);
       setConfirmed({ ...selection, serviceName: service.name, barberName: barber.name, price: service.price, duration: service.duration });
       notify('Your booking is ready for reception to confirm.');
     } catch (error) {
@@ -325,18 +368,33 @@ export function BookingPage() {
           {step === 2 && (
             demo.barbers.filter((item) => item.working).length > 0 ? (
               <div className="choice-grid">
-                {demo.barbers.filter((item) => item.working).map((item) => (
-                  <button
-                    className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''}`}
-                    key={item.id}
-                    onClick={() => setSelection({ ...selection, barberId: item.id })}
-                  >
-                    <span className="avatar avatar-md">{item.initials}</span>
-                    <strong>{item.name}</strong>
-                    <small>{item.specialty}</small>
-                    <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
-                  </button>
-                ))}
+                {demo.barbers.filter((item) => item.working).map((item) => {
+                  const isBlocked = hasActiveBookingWithBarber(item.id);
+                  return (
+                    <button
+                      className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''} ${isBlocked ? 'disabled-choice' : ''}`}
+                      key={item.id}
+                      onClick={() => {
+                        if (isBlocked) {
+                          notify(`You already have an active appointment with ${item.name}. Please select another barber or complete your current booking first.`, 'error');
+                          return;
+                        }
+                        setSelection({ ...selection, barberId: item.id });
+                      }}
+                    >
+                      <span className="avatar avatar-md">{item.initials}</span>
+                      <strong>{item.name}</strong>
+                      <small>{item.specialty}</small>
+                      {isBlocked ? (
+                        <span className="active-booking-badge">
+                          ● Active booking exists
+                        </span>
+                      ) : (
+                        <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--white)', border: '1px solid var(--line)', borderRadius: '8px' }}>

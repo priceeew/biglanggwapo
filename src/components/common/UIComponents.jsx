@@ -260,7 +260,7 @@ export function DataTable({ columns, children }) {
 
 export function StatusBadge({ status }) {
   const safe = String(status || 'Pending');
-  const slug = safe.toLowerCase().replaceAll(' ', '-');
+  const slug = safe.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return <span className={`status-badge ${slug}`}><i />{safe}</span>;
 }
 

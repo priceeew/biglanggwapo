@@ -62,7 +62,22 @@ export const demoApi = {
   createBooking(state, payload) {
     const alreadyBooked = state.appointments.some((item) => item.barberId === payload.barberId && item.date === payload.date && item.time === payload.time && !['Cancelled', 'No-show'].includes(item.status));
     if (alreadyBooked) throw new Error('That slot was just taken. Please choose another time.');
-    const appointment = { id: id('apt'), ...payload, status: 'Pending', paymentStatus: 'Unpaid', source: 'Online', notes: payload.notes || '' };
+
+    // Prevent duplicate active booking with the same barber for this customer
+    const activeConflict = state.appointments.some((item) =>
+      item.barberId === payload.barberId &&
+      !['Completed', 'Cancelled', 'No-show'].includes(item.status) &&
+      (
+        (payload.customerId && item.customerId === payload.customerId) ||
+        (payload.customerName && item.customerName && item.customerName.trim().toLowerCase() === payload.customerName.trim().toLowerCase()) ||
+        (payload.customerEmail && item.customerEmail && item.customerEmail.trim().toLowerCase() === payload.customerEmail.trim().toLowerCase())
+      )
+    );
+    if (activeConflict) {
+      throw new Error(`You already have an active appointment with ${payload.barberName || 'this barber'}. Customers can only book one appointment at a time per barber.`);
+    }
+
+    const appointment = { id: payload.id || id('apt'), ...payload, status: 'Pending', paymentStatus: 'Unpaid', source: 'Online', notes: payload.notes || '' };
     return { ...state, appointments: [appointment, ...state.appointments] };
   },
   confirmAppointment(state, appointmentId) {
@@ -139,19 +154,28 @@ export const demoApi = {
   addBarber(state, payload) {
     const initials = payload.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'BR';
     const newBarber = {
-      id: id('bar'),
+      id: payload.id || id('bar'),
       name: payload.name,
       initials,
       specialty: payload.specialty || 'All-around cuts',
-      rating: 5.0,
+      rating: payload.rating || 5.0,
+      schedule: payload.schedule || 'Mon–Sun · Full Day (9:00 AM – 8:00 PM)',
       status: payload.status || 'On shift',
+      leaveStatus: payload.leaveStatus || 'Active / On Duty',
+      leaveNotes: payload.leaveNotes || '',
       bio: payload.bio || 'Skilled professional barber at Biglang Gwapo.',
-      working: true,
+      working: payload.working !== undefined ? payload.working : true,
       email: payload.email,
       phone: payload.phone || '',
       commissionEnabled: false
     };
     return { ...state, barbers: [newBarber, ...(state.barbers || [])] };
+  },
+  updateBarber(state, barberId, updates) {
+    return {
+      ...state,
+      barbers: (state.barbers || []).map((b) => (b.id === barberId ? { ...b, ...updates } : b))
+    };
   },
   addCustomer(state, payload) {
     const initials = payload.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU';
