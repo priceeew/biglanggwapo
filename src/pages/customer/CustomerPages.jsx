@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { getSlotAvailability, isRestDay, isBarberOnLeave } from '../../utils/scheduling';
+import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
   StatusBadge, QueueMini, ReviewCard
@@ -27,14 +27,20 @@ export function CustomerPage({ path }) {
 
 function RescheduleModal({ appointment, onClose }) {
   const { demo, commit, notify } = useStore();
-  const [selectedDate, setSelectedDate] = useState(appointment.date || today);
-  const [selectedTime, setSelectedTime] = useState(appointment.time || '');
+  const isSameDayClosed = isSameDayBookingClosed();
+  const earliestDate = isSameDayClosed ? getTomorrowDateStr() : today;
+  const initialDate = appointment.date && appointment.date >= earliestDate ? appointment.date : earliestDate;
+
+  const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [selectedTime, setSelectedTime] = useState(
+    appointment.date === initialDate ? (appointment.time || '') : ''
+  );
 
   const barber = demo.barbers.find((b) => b.id === appointment.barberId);
 
   // Month navigation state initialized to selected date
   const [viewDate, setViewDate] = useState(() => {
-    const parts = (appointment.date || today).split('-');
+    const parts = initialDate.split('-');
     return new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
   });
 
@@ -74,10 +80,11 @@ function RescheduleModal({ appointment, onClose }) {
   const restCheck = barber ? isRestDay(barber, selectedDate) : { isRest: false };
   const leaveCheck = barber ? isBarberOnLeave(barber) : { onLeave: false };
 
-  // Quick dates (next 5 days)
+  // Quick dates (next 5 days starting from earliest valid date)
   const quickDates = [];
   const baseDate = new Date(`${today}T00:00:00`);
-  for (let i = 0; i < 5; i++) {
+  const startOffset = isSameDayClosed ? 1 : 0;
+  for (let i = startOffset; i < startOffset + 5; i++) {
     const d = new Date(baseDate);
     d.setDate(baseDate.getDate() + i);
     const yyyy = d.getFullYear();
@@ -99,7 +106,7 @@ function RescheduleModal({ appointment, onClose }) {
   }
   for (let day = 1; day <= daysInCurrentMonth; day++) {
     const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const isPast = dateString < today;
+    const isPast = dateString < earliestDate;
     const isSelected = dateString === selectedDate;
     const isToday = dateString === today;
     calendarCells.push({
@@ -121,7 +128,7 @@ function RescheduleModal({ appointment, onClose }) {
   }
 
   const handleSelectDate = (dateStr) => {
-    if (!dateStr || dateStr < today) return;
+    if (!dateStr || dateStr < earliestDate) return;
     setSelectedDate(dateStr);
 
     // If currently chosen time slot is unavailable on this new date, reset time
@@ -148,6 +155,9 @@ function RescheduleModal({ appointment, onClose }) {
 
   const handleConfirm = () => {
     if (!canConfirm) return;
+    if (selectedDate === today && isSameDayClosed) {
+      return notify('Same-day rescheduling is closed after 9:00 PM. Please select tomorrow or another date.', 'error');
+    }
     if (barber) {
       const avail = getSlotAvailability(selectedTime, appointment.duration, barber, selectedDate, demo.appointments, appointment.id);
       if (!avail.available) {
@@ -279,6 +289,27 @@ function RescheduleModal({ appointment, onClose }) {
             ))}
           </div>
         </div>
+
+        {/* Same-day closed after 9 PM notice */}
+        {selectedDate === today && isSameDayClosed && (
+          <div style={{
+            marginTop: '14px',
+            padding: '10px 12px',
+            background: '#fff9e6',
+            border: '1px solid #f0dfa8',
+            borderRadius: '6px',
+            color: '#805d15',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, color: 'var(--gold)' }} />
+            <span>
+              <strong>Same-Day Rescheduling Closed:</strong> We stop accepting bookings for today after 9:00 PM. All slots for today are grayed out. Please select tomorrow or another day.
+            </span>
+          </div>
+        )}
 
         {/* Rest day or leave notice */}
         {restCheck.isRest && (

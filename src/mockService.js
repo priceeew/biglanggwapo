@@ -71,7 +71,13 @@ export const demoApi = {
         state.appointments
       );
       if (!slotAvail.available) {
-        if (slotAvail.reason === 'Rest day') {
+        if (slotAvail.reason === 'Closed') {
+          throw new Error('Same-day booking is closed after 9:00 PM. Please select tomorrow or a later date.');
+        } else if (slotAvail.reason === 'Past time') {
+          throw new Error('This time slot has already passed for today. Please select a future time.');
+        } else if (slotAvail.reason === 'Past date') {
+          throw new Error('Cannot book an appointment for a past date.');
+        } else if (slotAvail.reason === 'Rest day') {
           throw new Error(`${barber.name} is on scheduled weekly rest day on this date. Please choose another date or barber.`);
         } else if (slotAvail.reason === 'Break') {
           throw new Error(`The selected slot overlaps ${barber.name}'s scheduled break. Please pick another time.`);
@@ -136,7 +142,13 @@ export const demoApi = {
         appointmentId
       );
       if (!slotAvail.available) {
-        if (slotAvail.reason === 'Rest day') {
+        if (slotAvail.reason === 'Closed') {
+          throw new Error('Same-day rescheduling is closed after 9:00 PM. Please select tomorrow or another day.');
+        } else if (slotAvail.reason === 'Past time') {
+          throw new Error('This time slot has already passed for today. Please select a future time.');
+        } else if (slotAvail.reason === 'Past date') {
+          throw new Error('Cannot reschedule to a past date.');
+        } else if (slotAvail.reason === 'Rest day') {
           throw new Error(`${barber.name} is on scheduled weekly rest day on this date.`);
         } else if (slotAvail.reason === 'Break') {
           throw new Error(`That time overlaps ${barber.name}'s scheduled break.`);

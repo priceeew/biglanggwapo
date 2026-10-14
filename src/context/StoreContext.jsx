@@ -1,12 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { loadDemoState, persistDemoState, resetDemoState } from '../mockService';
 import { fetchBarbersFromAtlas, fetchAppointmentsFromAtlas } from '../services/api';
+import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
 
 const StoreContext = createContext(null);
 
 export const currency = (value) => `₱${Number(value || 0).toLocaleString('en-PH')}`;
-export const today = '2026-10-12';
-export const humanDate = (value) => value === today ? 'Today' : new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+export const today = getLocalDateStr();
+export const humanDate = (value) => {
+  if (!value) return '';
+  const currentToday = getLocalDateStr();
+  if (value === currentToday) return 'Today';
+  if (value === getTomorrowDateStr()) return 'Tomorrow';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 export const stars = (rating) => '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
 export const rolePath = (role) => `/${role}`;
 

@@ -25,6 +25,44 @@ const DAY_MAP = {
 };
 
 /**
+ * Cutoff time for same-day booking: 9:00 PM (21:00 = 1260 minutes from midnight)
+ */
+export const SAME_DAY_CUTOFF_MINUTES = 21 * 60; // 9:00 PM (1260 mins)
+
+/**
+ * Returns local date string in YYYY-MM-DD
+ */
+export function getLocalDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Returns tomorrow's local date string in YYYY-MM-DD
+ */
+export function getTomorrowDateStr(d = new Date()) {
+  const tomorrow = new Date(d);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return getLocalDateStr(tomorrow);
+}
+
+/**
+ * Returns current minutes from midnight
+ */
+export function getCurrentMinutes(d = new Date()) {
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/**
+ * Checks if same-day booking is currently closed (at or after 9:00 PM)
+ */
+export function isSameDayBookingClosed(d = new Date()) {
+  return getCurrentMinutes(d) >= SAME_DAY_CUTOFF_MINUTES;
+}
+
+/**
  * Converts a time string like "9:00 AM" or "5:30 PM" to minutes from midnight
  */
 export function timeToMinutes(timeStr) {
@@ -233,16 +271,37 @@ export function isBarberOnLeave(barber) {
  * Checks if a specific slot can accommodate the requested service without
  * overlapping breaks, exceeding shift end, or conflicting with existing bookings.
  */
-export function getSlotAvailability(slotTime, serviceDuration, barber, dateStr, appointments = [], excludeAptId = null) {
+export function getSlotAvailability(slotTime, serviceDuration, barber, dateStr, appointments = [], excludeAptId = null, now = new Date()) {
   if (!barber) return { available: false, reason: 'No barber' };
 
-  // 1. Approved time off / leave check
+  const todayStr = getLocalDateStr(now);
+  const currentMin = getCurrentMinutes(now);
+
+  // 1. Same-day 9:00 PM cutoff & past time checks
+  if (dateStr && dateStr < todayStr) {
+    return { available: false, reason: 'Past date' };
+  }
+
+  if (dateStr && dateStr === todayStr) {
+    // If it is 9:00 PM (21:00) or later, same-day booking is completely closed for all slots!
+    if (currentMin >= SAME_DAY_CUTOFF_MINUTES) {
+      return { available: false, reason: 'Closed' };
+    }
+
+    // Also, if slot start time has already passed today
+    const slotStartMin = timeToMinutes(slotTime);
+    if (slotStartMin <= currentMin) {
+      return { available: false, reason: 'Past time' };
+    }
+  }
+
+  // 2. Approved time off / leave check
   const leaveCheck = isBarberOnLeave(barber);
   if (leaveCheck.onLeave) {
     return { available: false, reason: leaveCheck.reason };
   }
 
-  // 2. Rest day check
+  // 3. Rest day check
   const restCheck = isRestDay(barber, dateStr);
   if (restCheck.isRest) {
     return { available: false, reason: 'Rest day' };

@@ -39,9 +39,12 @@ export const customers = [
   { id: 'cust-paolo', name: 'Paolo Mendoza', initials: 'PM', email: 'paolo@example.com', phone: '+63 908 441 0871', status: 'Inactive', visits: 1, lastVisit: '2026-06-18', preferences: 'Junior Cut', notes: '' }
 ];
 
+const _d = new Date();
+const _today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
+
 export const appointments = [
-  { id: 'apt-demo', customerId: 'cust-demo', customerName: 'Miguel Santos', serviceId: 'svc-fade', serviceName: 'Signature Fade', barberId: 'bar-marco', barberName: 'Marco Reyes', date: '2026-10-12', time: '10:00 AM', duration: 45, price: 420, status: 'Pending', paymentStatus: 'Unpaid', source: 'Online', notes: 'Low fade, matte finish.' },
-  { id: 'apt-ana', customerId: 'cust-ana', customerName: 'Ana Villanueva', serviceId: 'svc-classic', serviceName: 'Classic Cut', barberId: 'bar-paolo', barberName: 'Paolo Santos', date: '2026-10-12', time: '10:45 AM', duration: 40, price: 380, status: 'Confirmed', paymentStatus: 'Unpaid', source: 'Online', notes: '' },
+  { id: 'apt-demo', customerId: 'cust-demo', customerName: 'Miguel Santos', serviceId: 'svc-fade', serviceName: 'Signature Fade', barberId: 'bar-marco', barberName: 'Marco Reyes', date: _today, time: '10:00 AM', duration: 45, price: 420, status: 'Pending', paymentStatus: 'Unpaid', source: 'Online', notes: 'Low fade, matte finish.' },
+  { id: 'apt-ana', customerId: 'cust-ana', customerName: 'Ana Villanueva', serviceId: 'svc-classic', serviceName: 'Classic Cut', barberId: 'bar-paolo', barberName: 'Paolo Santos', date: _today, time: '10:45 AM', duration: 40, price: 380, status: 'Confirmed', paymentStatus: 'Unpaid', source: 'Online', notes: '' },
   { id: 'apt-jordan', customerId: 'cust-jordan', customerName: 'Jordan Lim', serviceId: 'svc-beard', serviceName: 'Beard Sculpt', barberId: 'bar-nico', barberName: 'Nico Dela Cruz', date: '2026-10-11', time: '2:00 PM', duration: 25, price: 280, status: 'Completed', paymentStatus: 'Paid', source: 'Walk-in', notes: 'Hot towel finish.' },
   { id: 'apt-complete', customerId: 'cust-demo', customerName: 'Miguel Santos', serviceId: 'svc-classic', serviceName: 'Classic Cut', barberId: 'bar-paolo', barberName: 'Paolo Santos', date: '2026-10-04', time: '3:00 PM', duration: 40, price: 380, status: 'Completed', paymentStatus: 'Paid', source: 'Online', notes: '' }
 ];

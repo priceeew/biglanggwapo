@@ -2,13 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
-  LockKeyhole, Scissors, ShieldCheck, Zap
+  Clock, LockKeyhole, Scissors, ShieldCheck, Zap
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
 import { demoApi } from '../../mockService';
 import { saveAppointmentToAtlas } from '../../services/api';
-import { getSlotAvailability, isRestDay, isBarberOnLeave } from '../../utils/scheduling';
+import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
   PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard
 } from '../../components/common/UIComponents';
@@ -211,7 +211,8 @@ export function BookingPage() {
   const { demo, session, commit, notify, openModal } = useStore();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [selection, setSelection] = useState({ serviceId: '', barberId: '', date: today, time: '', notes: '' });
+  const defaultBookingDate = isSameDayBookingClosed() ? getTomorrowDateStr() : today;
+  const [selection, setSelection] = useState({ serviceId: '', barberId: '', date: defaultBookingDate, time: '', notes: '' });
   const [confirmed, setConfirmed] = useState(null);
 
   useEffect(() => {
@@ -267,6 +268,9 @@ export function BookingPage() {
       if (!selection.time) return notify('Choose an available time.', 'error');
       const slotCheck = getSlotAvailability(selection.time, service?.duration, barber, selection.date, demo.appointments);
       if (!slotCheck.available) {
+        if (selection.date === today && isSameDayBookingClosed()) {
+          return notify('Same-day booking is closed after 9:00 PM. Please select tomorrow or a later date.', 'error');
+        }
         return notify(`Cannot select this time (${slotCheck.reason}). Please choose an available time slot.`, 'error');
       }
     }
@@ -282,6 +286,9 @@ export function BookingPage() {
 
     const slotCheck = getSlotAvailability(selection.time, service?.duration, barber, selection.date, demo.appointments);
     if (!slotCheck.available) {
+      if (selection.date === today && isSameDayBookingClosed()) {
+        return notify('Same-day booking is closed after 9:00 PM. Please select tomorrow or a later date.', 'error');
+      }
       return notify(`Cannot confirm booking (${slotCheck.reason}). Please select an available time.`, 'error');
     }
 
@@ -426,6 +433,8 @@ export function BookingPage() {
           {step === 3 && (() => {
             const restCheck = barber ? isRestDay(barber, selection.date) : { isRest: false };
             const leaveCheck = barber ? isBarberOnLeave(barber) : { onLeave: false };
+            const isTodaySelected = selection.date === today;
+            const sameDayClosed = isTodaySelected && isSameDayBookingClosed();
 
             return (
               <div className="date-time-panel">
@@ -439,6 +448,36 @@ export function BookingPage() {
                     onChange={(event) => setSelection({ ...selection, date: event.target.value, time: '' })}
                   />
                 </label>
+
+                {sameDayClosed && (
+                  <div style={{
+                    padding: '14px 16px',
+                    background: '#fff9e6',
+                    border: '1px solid #f0dfa8',
+                    borderRadius: '8px',
+                    color: '#805d15',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Clock size={18} style={{ flexShrink: 0, color: 'var(--gold)' }} />
+                      <span>
+                        <strong>Same-Day Booking Closed:</strong> We stop accepting bookings for today after 9:00 PM. All slots for today are grayed out. Please select tomorrow or another date.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="button button-small button-dark"
+                      onClick={() => setSelection({ ...selection, date: getTomorrowDateStr(), time: '' })}
+                    >
+                      Book for Tomorrow ({humanDate(getTomorrowDateStr())}) →
+                    </button>
+                  </div>
+                )}
 
                 {restCheck.isRest && (
                   <div style={{
