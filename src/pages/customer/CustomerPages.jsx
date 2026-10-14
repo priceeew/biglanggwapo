@@ -867,7 +867,16 @@ export function CustomerProfile() {
             </label>
             <label className="field-label">
               Phone number
-              <input className="input" disabled={!editing} value={phone} onChange={(event) => setPhone(event.target.value)} />
+              <input
+                className="input"
+                type="tel"
+                inputMode="numeric"
+                maxLength={11}
+                disabled={!editing}
+                value={phone}
+                onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 11))}
+                placeholder="09170000000"
+              />
             </label>
           </div>
           {editing && (

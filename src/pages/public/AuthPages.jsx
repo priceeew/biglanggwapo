@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Send, Check } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { accounts, saveAccount, validatePassword } from '../../data';
+import { accounts, saveAccount, validatePassword, validatePhone } from '../../data';
 import { demoApi } from '../../mockService';
 
 export function RegisterPage() {
@@ -19,6 +19,11 @@ export function RegisterPage() {
       const err = 'Please complete all registration fields.';
       setRegError(err);
       return notify(err, 'error');
+    }
+    const phoneError = validatePhone(form.phone);
+    if (phoneError) {
+      setRegError(phoneError);
+      return notify(phoneError, 'error');
     }
     const pwdError = validatePassword(form.password);
     if (pwdError) {
@@ -94,13 +99,17 @@ export function RegisterPage() {
           <label className="field-label">Phone number
             <input
               className="input"
+              type="tel"
+              inputMode="numeric"
               value={form.phone}
               onChange={(e) => {
-                setForm({ ...form, phone: e.target.value });
+                const clean = e.target.value.replace(/\D/g, '').slice(0, 11);
+                setForm({ ...form, phone: clean });
                 if (regError) setRegError('');
               }}
+              maxLength={11}
               required
-              placeholder="+63 917 000 0000"
+              placeholder="09170000000"
             />
           </label>
           <label className="field-label">Password

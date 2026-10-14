@@ -4,7 +4,7 @@ import {
   ArrowRight, Check, Eye, EyeOff, Send, X
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { accounts, saveAccount, validatePassword } from '../../data';
+import { accounts, saveAccount, validatePassword, validatePhone } from '../../data';
 import { demoApi } from '../../mockService';
 import { sendInviteNotification } from '../../services/api';
 
@@ -72,6 +72,11 @@ export function AuthModal() {
       const err = 'Please complete all registration fields.';
       setRegError(err);
       return notify(err, 'error');
+    }
+    const phoneError = validatePhone(form.phone);
+    if (phoneError) {
+      setRegError(phoneError);
+      return notify(phoneError, 'error');
     }
     const pwdError = validatePassword(form.password);
     if (pwdError) {
@@ -171,7 +176,20 @@ export function AuthModal() {
                 <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required placeholder="you@biglanggwapo.com" />
               </label>
               <label className="field-label">Phone number
-                <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required placeholder="+63 917 000 0000" />
+                <input
+                  className="input"
+                  type="tel"
+                  inputMode="numeric"
+                  value={form.phone}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, '').slice(0, 11);
+                    setForm({ ...form, phone: clean });
+                    if (regError) setRegError('');
+                  }}
+                  maxLength={11}
+                  required
+                  placeholder="09170000000"
+                />
               </label>
               <label className="field-label">Password
                 <div className="password-input">

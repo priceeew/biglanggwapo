@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount, validatePassword } from '../../data';
+import { saveAccount, validatePassword, validatePhone } from '../../data';
 import { sendInviteNotification } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
@@ -204,7 +204,15 @@ export function WalkInPage() {
                 <input className="input" value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} placeholder="e.g. Sam Rivera" required />
               </label>
               <label className="field-label">Phone number
-                <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+63 917 ..." />
+                <input
+                  className="input"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={11}
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  placeholder="09170000000"
+                />
               </label>
             </>
           )}
@@ -333,6 +341,10 @@ export function CustomerManagement() {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password) {
       return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
+    }
+    const phoneError = validatePhone(form.phone);
+    if (phoneError) {
+      return notify(phoneError, 'error');
     }
     const pwdError = validatePassword(form.password);
     if (pwdError) {
@@ -481,10 +493,13 @@ export function CustomerManagement() {
               <label className="field-label">Phone number
                 <input
                   className="input"
+                  type="tel"
+                  inputMode="numeric"
                   required
+                  maxLength={11}
                   value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="+63 917 000 0000"
+                  onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  placeholder="09170000000"
                 />
               </label>
               <label className="field-label">Login password

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount, deleteAccount, validatePassword } from '../../data';
+import { saveAccount, deleteAccount, validatePassword, validatePhone } from '../../data';
 import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
@@ -196,6 +196,8 @@ export function AdminManagementPage({ collection }) {
       if (!formData.email.trim() || !formData.phone.trim() || !formData.password) {
         return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
       }
+      const phoneError = validatePhone(formData.phone);
+      if (phoneError) return notify(phoneError, 'error');
       const pwdError = validatePassword(formData.password);
       if (pwdError) {
         return notify(pwdError, 'error');
@@ -228,6 +230,8 @@ export function AdminManagementPage({ collection }) {
       if (!formData.email.trim() || !formData.phone.trim() || !formData.password || !formData.specialty.trim() || !formData.status) {
         return notify('All fields (Name, Email, Phone, Password, Specialty, Working status) are required.', 'error');
       }
+      const phoneError = validatePhone(formData.phone);
+      if (phoneError) return notify(phoneError, 'error');
       const pwdError = validatePassword(formData.password);
       if (pwdError) {
         return notify(pwdError, 'error');
@@ -267,6 +271,8 @@ export function AdminManagementPage({ collection }) {
       if (!formData.email.trim() || !formData.phone.trim() || !formData.password) {
         return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
       }
+      const phoneError = validatePhone(formData.phone);
+      if (phoneError) return notify(phoneError, 'error');
       const pwdError = validatePassword(formData.password);
       if (pwdError) {
         return notify(pwdError, 'error');
@@ -449,10 +455,13 @@ export function AdminManagementPage({ collection }) {
                   <label className="field-label">Phone number
                     <input
                       className="input"
+                      type="tel"
+                      inputMode="numeric"
                       required
+                      maxLength={11}
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="+63 917 000 0000"
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                      placeholder="09170000000"
                     />
                   </label>
                   <label className="field-label">Password

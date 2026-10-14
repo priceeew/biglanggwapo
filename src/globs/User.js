@@ -107,3 +107,18 @@ export function validatePassword(password) {
   return null;
 }
 
+export function validatePhone(phone) {
+  if (!phone || !phone.trim()) {
+    return 'Phone number is required.';
+  }
+  const digitsOnly = phone.replace(/\D/g, '');
+  if (digitsOnly.length > 11) {
+    return 'Phone number cannot exceed 11 digits.';
+  }
+  if (digitsOnly.length < 11) {
+    return 'Phone number must be 11 digits (e.g. 09171234567).';
+  }
+  return null;
+}
+
+
