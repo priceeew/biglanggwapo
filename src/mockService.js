@@ -35,10 +35,12 @@ export function loadDemoState() {
     }
 
     let currentReceptionists = parsed.receptionists || initial.receptionists;
-    let currentServices = (parsed.services || initial.services).map((svc) => {
+    const existingSvcIds = new Set((parsed.services || []).map((s) => s.id));
+    const newSeedServices = initial.services.filter((s) => !existingSvcIds.has(s.id));
+    let currentServices = [...(parsed.services || initial.services).map((svc) => {
       const seedMatch = initial.services.find((s) => s.id === svc.id);
-      return seedMatch ? { ...svc, image: svc.image || seedMatch.image } : svc;
-    });
+      return seedMatch ? { ...svc, category: seedMatch.category || svc.category, image: svc.image || seedMatch.image } : svc;
+    }), ...newSeedServices];
 
     return { ...initial, ...parsed, services: currentServices, inventory: currentInventory, reviews: currentReviews, receptionists: currentReceptionists };
   } catch {

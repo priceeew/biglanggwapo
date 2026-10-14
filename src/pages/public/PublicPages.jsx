@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
-  Clock, LockKeyhole, Scissors, ShieldCheck, Zap
+  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
@@ -212,12 +212,36 @@ export function BookingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const defaultBookingDate = isSameDayBookingClosed() ? getTomorrowDateStr() : today;
-  const [selection, setSelection] = useState({ serviceId: '', barberId: '', date: defaultBookingDate, time: '', notes: '' });
+  const [selection, setSelection] = useState({
+    haircutId: '',
+    shaveId: '',
+    treatmentIds: [],
+    barberId: '',
+    date: defaultBookingDate,
+    time: '',
+    notes: ''
+  });
   const [confirmed, setConfirmed] = useState(null);
 
-  // Let users freely select services and barbers without premature login popups
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
 
-  const service = demo.services.find((item) => item.id === selection.serviceId);
+  // Selected services lookup
+  const haircutService = demo.services.find((item) => item.id === selection.haircutId);
+  const shaveService = demo.services.find((item) => item.id === selection.shaveId);
+  const treatmentServices = demo.services.filter((item) => selection.treatmentIds.includes(item.id));
+
+  const allSelectedServices = [
+    ...(haircutService ? [haircutService] : []),
+    ...(shaveService ? [shaveService] : []),
+    ...treatmentServices
+  ];
+
+  const totalDuration = allSelectedServices.reduce((sum, item) => sum + (Number(item.duration) || 0), 0) || 45;
+  const totalPrice = allSelectedServices.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+  const combinedServiceName = allSelectedServices.map((s) => s.name).join(' + ') || 'Service Booking';
+
   const barber = demo.barbers.find((item) => item.id === selection.barberId);
   const slots = [
     '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
@@ -253,7 +277,9 @@ export function BookingPage() {
   };
 
   const nextStep = () => {
-    if (step === 1 && !service) return notify('Choose a service to continue.', 'error');
+    if (step === 1 && allSelectedServices.length === 0) {
+      return notify('Please select at least one service (Haircut, Shave, or Treatment) to continue.', 'error');
+    }
     if (step === 2) {
       if (!barber) return notify('Choose a barber to continue.', 'error');
       if (hasActiveBookingWithBarber(barber.id)) {
@@ -262,7 +288,7 @@ export function BookingPage() {
     }
     if (step === 3) {
       if (!selection.time) return notify('Choose an available time.', 'error');
-      const slotCheck = getSlotAvailability(selection.time, service?.duration, barber, selection.date, demo.appointments);
+      const slotCheck = getSlotAvailability(selection.time, totalDuration, barber, selection.date, demo.appointments);
       if (!slotCheck.available) {
         if (selection.date === today && isSameDayBookingClosed()) {
           return notify('Same-day booking is closed after 9:00 PM. Please select tomorrow or a later date.', 'error');
@@ -280,7 +306,7 @@ export function BookingPage() {
       return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
     }
 
-    const slotCheck = getSlotAvailability(selection.time, service?.duration, barber, selection.date, demo.appointments);
+    const slotCheck = getSlotAvailability(selection.time, totalDuration, barber, selection.date, demo.appointments);
     if (!slotCheck.available) {
       if (selection.date === today && isSameDayBookingClosed()) {
         return notify('Same-day booking is closed after 9:00 PM. Please select tomorrow or a later date.', 'error');
@@ -289,16 +315,18 @@ export function BookingPage() {
     }
 
     try {
+      const primaryServiceId = selection.haircutId || selection.shaveId || selection.treatmentIds[0] || 'svc-fade';
       const newApt = {
         id: 'apt-' + Date.now(),
         ...selection,
+        serviceId: primaryServiceId,
         customerId: session.customerId || 'cust-demo',
         customerName: session.name,
         customerEmail: session.email || '',
-        serviceName: service.name,
+        serviceName: combinedServiceName,
         barberName: barber.name,
-        duration: service.duration,
-        price: service.price,
+        duration: totalDuration,
+        price: totalPrice,
         status: 'Pending',
         paymentStatus: 'Unpaid',
         source: 'Online',
@@ -306,7 +334,14 @@ export function BookingPage() {
       };
       commit((state) => demoApi.createBooking(state, newApt));
       saveAppointmentToAtlas(newApt);
-      setConfirmed({ ...selection, serviceName: service.name, barberName: barber.name, price: service.price, duration: service.duration });
+      setConfirmed({
+        ...selection,
+        serviceName: combinedServiceName,
+        barberName: barber.name,
+        price: totalPrice,
+        duration: totalDuration,
+        selectedServicesList: allSelectedServices
+      });
       notify('Your booking is ready for reception to confirm.');
     } catch (error) {
       notify(error.message, 'error');
@@ -367,22 +402,193 @@ export function BookingPage() {
           </div>
 
           {step === 1 && (
-            <div className="choice-grid">
-              {demo.services.filter((item) => item.active).map((item) => (
-                <button
-                  className={`choice-card ${selection.serviceId === item.id ? 'selected' : ''}`}
-                  key={item.id}
-                  onClick={() => setSelection({ ...selection, serviceId: item.id })}
-                >
-                  <span className="choice-index">0{demo.services.indexOf(item) + 1}</span>
-                  <strong>{item.name}</strong>
-                  <small>{item.description}</small>
-                  <span className="choice-bottom">
-                    <b>{currency(item.price)}</b>
-                    <em>{item.duration} min</em>
-                  </span>
-                </button>
-              ))}
+            <div className="booking-categories-subtle-nav">
+              <button
+                type="button"
+                className={`subtle-cat-btn ${selection.haircutId ? 'has-pick' : ''}`}
+                onClick={() => {
+                  const container = document.querySelector('.services-categorized-container');
+                  const target = document.getElementById('sec-haircuts');
+                  if (container && target) {
+                    container.scrollTo({ top: target.offsetTop - container.offsetTop, behavior: 'smooth' });
+                  }
+                }}
+              >
+                Haircuts
+              </button>
+              <div className="subtle-cat-divider" />
+              <button
+                type="button"
+                className={`subtle-cat-btn ${selection.shaveId ? 'has-pick' : ''}`}
+                onClick={() => {
+                  const container = document.querySelector('.services-categorized-container');
+                  const target = document.getElementById('sec-shave');
+                  if (container && target) {
+                    container.scrollTo({ top: target.offsetTop - container.offsetTop, behavior: 'smooth' });
+                  }
+                }}
+              >
+                Shave
+              </button>
+              <div className="subtle-cat-divider" />
+              <button
+                type="button"
+                className={`subtle-cat-btn ${selection.treatmentIds.length > 0 ? 'has-pick' : ''}`}
+                onClick={() => {
+                  const container = document.querySelector('.services-categorized-container');
+                  const target = document.getElementById('sec-treatments');
+                  if (container && target) {
+                    container.scrollTo({ top: target.offsetTop - container.offsetTop, behavior: 'smooth' });
+                  }
+                }}
+              >
+                Treatment
+              </button>
+          
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="services-categorized-container">
+              {/* SECTION 1: HAIRCUTS (Pick 1) */}
+              <div className="service-category-group" id="sec-haircuts">
+                <div className="service-category-header">
+                  <div>
+                    <h3>1. Haircuts <span className="category-pill single">Choose 1</span></h3>
+                    <p>Select your primary haircut style or skin taper</p>
+                  </div>
+                    {selection.haircutId && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => setSelection({ ...selection, haircutId: '' })}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                <div className="choice-grid">
+                  {demo.services.filter((item) => item.active && (item.category === 'Haircut' || item.category === 'Cuts')).map((item, index) => {
+                    const isSelected = selection.haircutId === item.id;
+                    return (
+                      <button
+                        type="button"
+                        className={`choice-card service-booking-card ${isSelected ? 'selected' : ''}`}
+                        key={item.id}
+                        onClick={() => setSelection({ ...selection, haircutId: isSelected ? '' : item.id })}
+                      >
+                        {item.image && (
+                          <div className="choice-card-media">
+                            <img src={item.image} alt={item.name} loading="lazy" />
+                          </div>
+                        )}
+                        <span className="choice-index">0{index + 1}</span>
+                        <strong>{item.name}</strong>
+                        <small>{item.description}</small>
+                        <span className="choice-bottom">
+                          <b>{currency(item.price)}</b>
+                          <em>{item.duration} min</em>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SECTION 2: SHAVE (Pick 1) */}
+              <div className="service-category-group" id="sec-shave">
+                <div className="service-category-header">
+                  <div>
+                    <h3>2. Shave & Grooming <span className="category-pill single">Choose 1</span></h3>
+                    <p>Beard sculpt, razor line-up, or hot towel ritual</p>
+                  </div>
+                  {selection.shaveId && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => setSelection({ ...selection, shaveId: '' })}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="choice-grid">
+                  {demo.services.filter((item) => item.active && (item.category === 'Shave' || item.category === 'Grooming' || item.category === 'Combos')).map((item, index) => {
+                    const isSelected = selection.shaveId === item.id;
+                    return (
+                      <button
+                        type="button"
+                        className={`choice-card service-booking-card ${isSelected ? 'selected' : ''}`}
+                        key={item.id}
+                        onClick={() => setSelection({ ...selection, shaveId: isSelected ? '' : item.id })}
+                      >
+                        {item.image && (
+                          <div className="choice-card-media">
+                            <img src={item.image} alt={item.name} loading="lazy" />
+                          </div>
+                        )}
+                        <span className="choice-index">0{index + 1}</span>
+                        <strong>{item.name}</strong>
+                        <small>{item.description}</small>
+                        <span className="choice-bottom">
+                          <b>{currency(item.price)}</b>
+                          <em>{item.duration} min</em>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SECTION 3: TREATMENTS (Pick Many) */}
+              <div className="service-category-group" id="sec-treatments">
+                <div className="service-category-header">
+                  <div>
+                    <h3>3. Treatments & Add-ons <span className="category-pill multi">Select Multiple</span></h3>
+                    <p>Scalp massage, clarifying face detox, hair toning & resets</p>
+                  </div>
+                  {selection.treatmentIds.length > 0 && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => setSelection({ ...selection, treatmentIds: [] })}
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                <div className="choice-grid">
+                  {demo.services.filter((item) => item.active && (item.category === 'Treatment' || (!['Haircut', 'Cuts', 'Shave', 'Grooming', 'Combos'].includes(item.category)))).map((item, index) => {
+                    const isSelected = selection.treatmentIds.includes(item.id);
+                    return (
+                      <button
+                        type="button"
+                        className={`choice-card service-booking-card ${isSelected ? 'selected' : ''}`}
+                        key={item.id}
+                        onClick={() => {
+                          const updated = isSelected
+                            ? selection.treatmentIds.filter((id) => id !== item.id)
+                            : [...selection.treatmentIds, item.id];
+                          setSelection({ ...selection, treatmentIds: updated });
+                        }}
+                      >
+                        {item.image && (
+                          <div className="choice-card-media">
+                            <img src={item.image} alt={item.name} loading="lazy" />
+                          </div>
+                        )}
+                        <span className="choice-index">0{index + 1}</span>
+                        <strong>{item.name}</strong>
+                        <small>{item.description}</small>
+                        <span className="choice-bottom">
+                          <b>{currency(item.price)}</b>
+                          <em>{item.duration} min</em>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
@@ -552,10 +758,10 @@ export function BookingPage() {
           {step === 4 && (
             <div className="review-booking">
               <div className="review-summary">
-                <span><small>Service</small><strong>{service?.name}</strong></span>
+                <span><small>Services Selected</small><strong>{combinedServiceName}</strong></span>
                 <span><small>Barber</small><strong>{barber?.name}</strong></span>
                 <span><small>Schedule</small><strong>{humanDate(selection.date)} · {selection.time}</strong></span>
-                <span><small>Price</small><strong>{currency(service?.price)}</strong></span>
+                <span><small>Total ({totalDuration} mins)</small><strong>{currency(totalPrice)}</strong></span>
               </div>
               <label className="field-label">
                 Notes for your barber
@@ -596,23 +802,51 @@ export function BookingPage() {
         <aside className="booking-aside">
           <span className="eyebrow">Your booking</span>
           <div className="aside-rule" />
-          {service ? (
-            <div className="aside-service">
-              <span className="service-icon"><Scissors size={18} /></span>
-              <strong>{service.name}</strong>
-              <span>{currency(service.price)} · {service.duration} min</span>
+
+          {allSelectedServices.length > 0 ? (
+            <div className="aside-services-list">
+              {allSelectedServices.map((svc) => (
+                <div className="aside-service" key={svc.id}>
+                  <span className="service-icon"><Scissors size={16} /></span>
+                  <div>
+                    <strong>{svc.name}</strong>
+                    <small className="aside-cat-tag">{svc.category}</small>
+                  </div>
+                  <span className="aside-svc-price">{currency(svc.price)} · {svc.duration}m</span>
+                </div>
+              ))}
+
+              <div className="aside-total-bar">
+                <div>
+                  <small>Total duration</small>
+                  <strong>{totalDuration} mins</strong>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <small>Estimated Total</small>
+                  <strong>{currency(totalPrice)}</strong>
+                </div>
+              </div>
             </div>
           ) : (
-            <p className="muted-copy">Select a service to see your summary.</p>
+            <p className="muted-copy">Select your haircut, shave, or treatments to see your summary.</p>
           )}
+
           {barber && (
             <div className="aside-person">
               <span className="avatar avatar-sm">{barber.initials}</span>
               <span><small>With</small><strong>{barber.name}</strong></span>
             </div>
           )}
+
+          {selection.date && selection.time && (
+            <div className="aside-time-summary">
+              <small>Scheduled slot</small>
+              <strong>{humanDate(selection.date)} at {selection.time}</strong>
+            </div>
+          )}
+
           <div className="aside-note">
-            <Zap size={15} /> Availability is demo data and respects existing bookings.
+            <Zap size={15} /> Availability is live data and respects existing bookings.
           </div>
         </aside>
       </div>

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowRight, CalendarDays, Check, Download, Layers,
+  AlertTriangle, ArrowRight, CalendarDays, Check, Download, Image as ImageIcon, Layers,
   Package, Pencil, Plus, RefreshCcw, Scissors, ShoppingBag, Tag,
-  Trash2, TrendingUp, Users, X
+  Trash2, TrendingUp, Upload, Users, X
 } from 'lucide-react';
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
@@ -99,6 +99,15 @@ export function AdminManagementPage({ collection }) {
   const { demo, commit, notify } = useStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingBarber, setEditingBarber] = useState(null);
+  const [editingService, setEditingService] = useState(null);
+  const [editServiceData, setEditServiceData] = useState({
+    name: '',
+    category: 'Haircut',
+    price: '',
+    duration: '40',
+    description: '',
+    image: ''
+  });
   const [editBarberData, setEditBarberData] = useState({
     name: '',
     specialty: '',
@@ -211,6 +220,37 @@ export function AdminManagementPage({ collection }) {
       image: ''
     });
     setIsAdding(true);
+  };
+
+  const handleOpenEditService = (service) => {
+    setEditingService(service);
+    setEditServiceData({
+      name: service.name || '',
+      category: service.category || 'Haircut',
+      price: service.price || '',
+      duration: service.duration || '40',
+      description: service.description || '',
+      image: service.image || ''
+    });
+  };
+
+  const handleSubmitEditService = (e) => {
+    e.preventDefault();
+    if (!editServiceData.name.trim() || !editServiceData.price || !editServiceData.duration || !editServiceData.description.trim()) {
+      return notify('Please complete all required fields.', 'error');
+    }
+    const updated = {
+      ...editingService,
+      name: editServiceData.name.trim(),
+      category: editServiceData.category || 'Haircut',
+      price: Number(editServiceData.price),
+      duration: Number(editServiceData.duration),
+      description: editServiceData.description.trim(),
+      image: editServiceData.image || ''
+    };
+    commit((state) => demoApi.updateItem(state, 'services', editingService.id, updated));
+    notify(`Service "${updated.name}" updated successfully!`, 'success');
+    setEditingService(null);
   };
 
   const handleOpenEditBarber = (barber) => {
@@ -530,6 +570,8 @@ export function AdminManagementPage({ collection }) {
                       onClick={() => {
                         if (collection === 'barbers') {
                           handleOpenEditBarber(item);
+                        } else if (collection === 'services') {
+                          handleOpenEditService(item);
                         } else {
                           notify('Edit form opened in this demo build.');
                         }
@@ -705,9 +747,9 @@ export function AdminManagementPage({ collection }) {
                         value={formData.category}
                         onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       >
-                        <option value="Cuts">Cuts</option>
-                        <option value="Grooming">Grooming</option>
-                        <option value="Combos">Combos</option>
+                        <option value="Haircut">Haircut (Choose 1)</option>
+                        <option value="Shave">Shave & Grooming (Choose 1)</option>
+                        <option value="Treatment">Treatment & Add-on (Pick Many)</option>
                       </select>
                     </label>
                     <label className="field-label">Price (₱)
@@ -731,15 +773,45 @@ export function AdminManagementPage({ collection }) {
                       placeholder="45"
                     />
                   </label>
-                  <label className="field-label">Service Image URL
-                    <input
-                      className="input"
-                      type="url"
-                      value={formData.image}
-                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                      placeholder="https://images.unsplash.com/... or paste image link"
-                    />
-                  </label>
+                  <div className="field-label">
+                    <span>Service Image (Local Upload from Device)</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px' }}>
+                      {formData.image ? (
+                        <img
+                          src={formData.image}
+                          alt="Service preview"
+                          style={{ width: '64px', height: '64px', borderRadius: '10px', objectFit: 'cover', border: '1px solid var(--line)' }}
+                        />
+                      ) : (
+                        <div style={{ width: '64px', height: '64px', borderRadius: '10px', background: '#f5f2eb', display: 'grid', placeItems: 'center', color: '#999', border: '1px solid var(--line)' }}>
+                          <ImageIcon size={22} />
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label className="button button-soft button-small" style={{ margin: 0, cursor: 'pointer', display: 'inline-flex' }}>
+                          <Upload size={14} /> Choose local photo
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 3 * 1024 * 1024) return notify('Image must be under 3MB', 'error');
+                                const reader = new FileReader();
+                                reader.onload = (evt) => {
+                                  setFormData({ ...formData, image: evt.target.result });
+                                  notify('Image selected from device!');
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                        <small style={{ color: 'var(--muted)', fontSize: '10px' }}>Upload PNG, JPG, or WEBP from local files.</small>
+                      </div>
+                    </div>
+                  </div>
                   <label className="field-label">Description
                     <textarea
                       className="input textarea"
@@ -877,6 +949,130 @@ export function AdminManagementPage({ collection }) {
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="button" className="button button-ghost button-full" onClick={() => setEditingBarber(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full">
+                  Save changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT SERVICE MODAL WITH LOCAL IMAGE UPLOAD */}
+      {editingService && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditingService(null)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setEditingService(null)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <span className="eyebrow gold">EDIT SERVICE MENU ITEM</span>
+              <h2>Edit {editingService.name}</h2>
+              <p>Update service details, price, duration, category, or choose a custom photo from your device.</p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleSubmitEditService}>
+              <label className="field-label">Service name
+                <input
+                  className="input"
+                  required
+                  value={editServiceData.name}
+                  onChange={(e) => setEditServiceData({ ...editServiceData, name: e.target.value })}
+                  placeholder="e.g. Signature Fade"
+                />
+              </label>
+
+              <div className="form-grid">
+                <label className="field-label">Category
+                  <select
+                    className="input"
+                    required
+                    value={editServiceData.category}
+                    onChange={(e) => setEditServiceData({ ...editServiceData, category: e.target.value })}
+                  >
+                    <option value="Haircut">Haircut (Choose 1)</option>
+                    <option value="Shave">Shave & Grooming (Choose 1)</option>
+                    <option value="Treatment">Treatment & Add-on (Pick Many)</option>
+                  </select>
+                </label>
+                <label className="field-label">Price (₱)
+                  <input
+                    className="input"
+                    type="number"
+                    required
+                    value={editServiceData.price}
+                    onChange={(e) => setEditServiceData({ ...editServiceData, price: e.target.value })}
+                    placeholder="420"
+                  />
+                </label>
+              </div>
+
+              <label className="field-label">Duration (minutes)
+                <input
+                  className="input"
+                  type="number"
+                  required
+                  value={editServiceData.duration}
+                  onChange={(e) => setEditServiceData({ ...editServiceData, duration: e.target.value })}
+                  placeholder="45"
+                />
+              </label>
+
+              {/* LOCAL IMAGE UPLOAD / PREVIEW */}
+              <div className="field-label">
+                <span>Service Image (Local Upload from Device)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px' }}>
+                  {editServiceData.image ? (
+                    <img
+                      src={editServiceData.image}
+                      alt="Service preview"
+                      style={{ width: '64px', height: '64px', borderRadius: '10px', objectFit: 'cover', border: '1px solid var(--line)' }}
+                    />
+                  ) : (
+                    <div style={{ width: '64px', height: '64px', borderRadius: '10px', background: '#f5f2eb', display: 'grid', placeItems: 'center', color: '#999', border: '1px solid var(--line)' }}>
+                      <ImageIcon size={22} />
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label className="button button-soft button-small" style={{ margin: 0, cursor: 'pointer', display: 'inline-flex' }}>
+                      <Upload size={14} /> Choose local photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 3 * 1024 * 1024) return notify('Image must be under 3MB', 'error');
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                              setEditServiceData({ ...editServiceData, image: evt.target.result });
+                              notify('Image selected from device!');
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                    <small style={{ color: 'var(--muted)', fontSize: '10px' }}>Upload PNG, JPG, or WEBP from local files.</small>
+                  </div>
+                </div>
+              </div>
+
+              <label className="field-label">Description
+                <textarea
+                  className="input textarea"
+                  required
+                  value={editServiceData.description}
+                  onChange={(e) => setEditServiceData({ ...editServiceData, description: e.target.value })}
+                  placeholder="Service details and finish..."
+                />
+              </label>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setEditingService(null)}>
                   Cancel
                 </button>
                 <button type="submit" className="button button-dark button-full">
