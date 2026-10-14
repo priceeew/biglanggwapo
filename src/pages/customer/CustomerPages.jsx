@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, ChevronLeft,
+  AlertTriangle, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Camera, Check, ChevronLeft,
   ChevronRight, Clock3, Download, FileText, ListOrdered, Pencil, Plus,
-  ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, UserRound,
+  ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, Upload, UserRound,
   Users, WalletCards, X
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
@@ -959,11 +959,31 @@ export function CustomerReviews() {
 }
 
 export function CustomerProfile() {
-  const { session, notify, reset } = useStore();
+  const { session, updateSession, notify, reset } = useStore();
   const [editing, setEditing] = useState(false);
   const currentInitials = session?.initials || (session?.name ? session.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'CU');
   const [name, setName] = useState(session?.name || 'Customer');
   const [phone, setPhone] = useState(session?.phone || '+63 917 555 0142');
+  const [photoUrl, setPhotoUrl] = useState(session?.photoUrl || '');
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        return notify('Image size must be under 2MB', 'error');
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target.result;
+        setPhotoUrl(result);
+        if (updateSession) {
+          updateSession({ photoUrl: result });
+        }
+        notify('Profile picture updated successfully!');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   return (
     <>
@@ -984,7 +1004,7 @@ export function CustomerProfile() {
       <div className="profile-layout">
         <div className="profile-card">
           <div className="profile-header">
-            <span className="avatar avatar-xl">{currentInitials}</span>
+            <span className="avatar avatar-xl">{session?.initials || 'MS'}</span>
             <div>
               <h2>{name}</h2>
               <p>{session?.email || 'customer@biglanggwapo.com'} · Member since 2026</p>
@@ -996,7 +1016,15 @@ export function CustomerProfile() {
           <div className="profile-fields">
             <label className="field-label">
               Full name
-              <input className="input" disabled={!editing} value={name} onChange={(event) => setName(event.target.value)} />
+              <input
+                className="input"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                disabled={!editing}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
             </label>
             <label className="field-label">
               Email
@@ -1009,6 +1037,9 @@ export function CustomerProfile() {
                 type="tel"
                 inputMode="numeric"
                 maxLength={11}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
                 disabled={!editing}
                 value={phone}
                 onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 11))}
@@ -1021,6 +1052,9 @@ export function CustomerProfile() {
               className="button button-dark"
               onClick={() => {
                 setEditing(false);
+                if (updateSession) {
+                  updateSession({ name, phone, photoUrl });
+                }
                 notify('Profile details updated for this session.');
               }}
             >

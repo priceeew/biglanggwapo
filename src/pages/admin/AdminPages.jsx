@@ -122,7 +122,8 @@ export function AdminManagementPage({ collection }) {
     category: 'Cuts',
     price: '',
     duration: '30',
-    description: ''
+    description: '',
+    image: ''
   });
 
   const config = {
@@ -206,7 +207,8 @@ export function AdminManagementPage({ collection }) {
       category: 'Cuts',
       price: '',
       duration: '30',
-      description: ''
+      description: '',
+      image: ''
     });
     setIsAdding(true);
   };
@@ -444,6 +446,7 @@ export function AdminManagementPage({ collection }) {
         price: Number(formData.price),
         duration: Number(formData.duration),
         description: formData.description.trim(),
+        image: formData.image.trim() || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80',
         active: true
       }));
       notify(`Service "${formData.name}" added to menu!`);
@@ -726,6 +729,15 @@ export function AdminManagementPage({ collection }) {
                       value={formData.duration}
                       onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
                       placeholder="45"
+                    />
+                  </label>
+                  <label className="field-label">Service Image URL
+                    <input
+                      className="input"
+                      type="url"
+                      value={formData.image}
+                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                      placeholder="https://images.unsplash.com/... or paste image link"
                     />
                   </label>
                   <label className="field-label">Description

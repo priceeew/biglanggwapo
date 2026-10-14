@@ -46,6 +46,11 @@ export function ServiceCard({ service, index, detailed = false }) {
   const navigate = useNavigate();
   return (
     <article className={`service-card ${detailed ? 'detailed' : ''}`}>
+      {service.image && (
+        <div className="service-card-media">
+          <img src={service.image} alt={service.name} className="service-img" loading="lazy" />
+        </div>
+      )}
       <div className="service-card-top">
         <span className="service-index">0{index + 1}</span>
         <span className="service-icon"><Scissors size={19} /></span>

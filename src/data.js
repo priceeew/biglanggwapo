@@ -1,9 +1,9 @@
 export const services = [
-  { id: 'svc-fade', name: 'Signature Fade', description: 'Clean taper, tailored finish, and a hot towel reset.', price: 420, duration: 45, category: 'Cuts', active: true },
-  { id: 'svc-classic', name: 'Classic Cut', description: 'Scissor work and a timeless, easy-to-style finish.', price: 380, duration: 40, category: 'Cuts', active: true },
-  { id: 'svc-beard', name: 'Beard Sculpt', description: 'Line-up, shaping, conditioning, and a crisp outline.', price: 280, duration: 25, category: 'Grooming', active: true },
-  { id: 'svc-combo', name: 'The Full Ritual', description: 'Signature Fade paired with a full beard sculpt.', price: 620, duration: 70, category: 'Combos', active: true },
-  { id: 'svc-kids', name: 'Junior Cut', description: 'A patient, tidy cut for our younger clients.', price: 300, duration: 35, category: 'Cuts', active: true }
+  { id: 'svc-fade', name: 'Signature Fade', description: 'Clean taper, tailored finish, and a hot towel reset.', price: 420, duration: 45, category: 'Cuts', image: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80', active: true },
+  { id: 'svc-classic', name: 'Classic Cut', description: 'Scissor work and a timeless, easy-to-style finish.', price: 380, duration: 40, category: 'Cuts', image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80', active: true },
+  { id: 'svc-beard', name: 'Beard Sculpt', description: 'Line-up, shaping, conditioning, and a crisp outline.', price: 280, duration: 25, category: 'Grooming', image: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=600&q=80', active: true },
+  { id: 'svc-combo', name: 'The Full Ritual', description: 'Signature Fade paired with a full beard sculpt.', price: 620, duration: 70, category: 'Combos', image: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=600&q=80', active: true },
+  { id: 'svc-kids', name: 'Junior Cut', description: 'A patient, tidy cut for our younger clients.', price: 300, duration: 35, category: 'Cuts', image: 'https://images.unsplash.com/photo-1517832606589-7629c3395909?auto=format&fit=crop&w=600&q=80', active: true }
 ];
 
 export const barbers = [];

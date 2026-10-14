@@ -79,6 +79,14 @@ export function StoreProvider({ children }) {
     notify('You have been signed out.');
   };
 
+  const updateSession = (updater) => {
+    setSession((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+      try { window.sessionStorage.setItem('biglanggwapo-session', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const reset = () => {
     commit(resetDemoState());
     notify('Demo data has been reset.');
@@ -87,7 +95,7 @@ export function StoreProvider({ children }) {
   const openModal = (type, options = {}) => setModal({ type, ...options });
   const closeModal = () => setModal(null);
 
-  const value = { demo, session, modal, toast, notify, commit, login, logout, reset, openModal, closeModal };
+  const value = { demo, session, modal, toast, notify, commit, login, logout, reset, updateSession, openModal, closeModal };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

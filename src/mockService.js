@@ -35,8 +35,12 @@ export function loadDemoState() {
     }
 
     let currentReceptionists = parsed.receptionists || initial.receptionists;
+    let currentServices = (parsed.services || initial.services).map((svc) => {
+      const seedMatch = initial.services.find((s) => s.id === svc.id);
+      return seedMatch ? { ...svc, image: svc.image || seedMatch.image } : svc;
+    });
 
-    return { ...initial, ...parsed, inventory: currentInventory, reviews: currentReviews, receptionists: currentReceptionists };
+    return { ...initial, ...parsed, services: currentServices, inventory: currentInventory, reviews: currentReviews, receptionists: currentReceptionists };
   } catch {
     return getInitialDemoState();
   }

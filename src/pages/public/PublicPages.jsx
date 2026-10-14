@@ -88,7 +88,7 @@ export function HomePage() {
             }
           }}
         >
-          Use offer <ArrowUpRight size={17} />
+          Use offers <ArrowUpRight size={17} />
         </button>
       </section>
 
@@ -215,11 +215,7 @@ export function BookingPage() {
   const [selection, setSelection] = useState({ serviceId: '', barberId: '', date: defaultBookingDate, time: '', notes: '' });
   const [confirmed, setConfirmed] = useState(null);
 
-  useEffect(() => {
-    if (!session) {
-      openModal('login', { targetPath: '/booking', hideClose: true });
-    }
-  }, []);
+  // Let users freely select services and barbers without premature login popups
 
   const service = demo.services.find((item) => item.id === selection.serviceId);
   const barber = demo.barbers.find((item) => item.id === selection.barberId);

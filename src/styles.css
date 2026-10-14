@@ -686,6 +686,194 @@
   margin-top: auto;
 }
 
+#services { scroll-margin-top: 200px; }
+#reviews  { scroll-margin-top: 200px; }
+#location { scroll-margin-top: 200px; }
+
+/* Service Card Media & Images */
+.service-card-media {
+  width: calc(100% + 44px);
+  margin: -22px -22px 18px -22px;
+  height: 155px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: #111;
+}
+
+.service-card-media img.service-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+  display: block;
+}
+
+.service-card:hover .service-card-media img.service-img {
+  transform: scale(1.05);
+}
+
+/* Nav Customer Dropdown */
+.nav-profile-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-dropdown-toggle {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.nav-dropdown-toggle:hover {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.nav-dropdown-toggle svg {
+  transition: transform 0.2s ease;
+}
+
+.nav-dropdown-toggle svg.rotated {
+  transform: rotate(180deg);
+}
+
+.customer-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 230px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.14);
+  padding: 8px 6px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  animation: fadeInMenu 0.15s ease-out;
+}
+
+@keyframes fadeInMenu {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdown-header {
+  padding: 8px 12px 6px;
+}
+
+.dropdown-header strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.dropdown-header small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #f0eee9;
+  margin: 6px 0;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+  width: 100%;
+}
+
+.dropdown-item:hover {
+  background: var(--paper);
+  color: var(--gold);
+}
+
+.dropdown-item.logout {
+  color: var(--red);
+}
+
+.dropdown-item.logout:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* Footer Employee Portal Button */
+.footer-staff-action {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.footer-employee-link {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--gold);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.footer-employee-link:hover {
+  background: var(--gold);
+  color: var(--charcoal);
+  border-color: var(--gold);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(184, 138, 68, 0.35);
+}
+
+/* Profile photo upload & preview */
+.profile-photo-upload-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile-avatar-img {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--gold);
+  display: block;
+}
+
 
 
 

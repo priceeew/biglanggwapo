@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, BadgeCheck, BadgePercent, CalendarClock, CalendarDays,
-  ChartNoAxesCombined, CircleHelp, Clock3, Globe2, Home, LayoutDashboard,
+  ChartNoAxesCombined, ChevronDown, CircleHelp, Clock3, Globe2, Home, LayoutDashboard,
   ListOrdered, LockKeyhole, LogIn, LogOut, Menu, Package, RefreshCcw, Scissors,
-  Settings2, Sparkles, Star, TrendingUp, UserPlus, UserRound, Users, WalletCards, X
+  Settings2, Sparkles, Star, TrendingUp, UserCheck, UserPlus, UserRound, Users, WalletCards, X
 } from 'lucide-react';
 import { useStore, rolePath } from '../../context/StoreContext';
 import { navItems, routeManifest } from '../../data';
@@ -15,32 +15,48 @@ const IconMap = {
   Sparkles, CalendarClock, ChartNoAxesCombined, Package, BadgePercent, Settings2, Star
 };
 
+const SCROLL_OFFSETS = {
+  home: 0,
+  services: 300,
+  reviews: 250,
+  location: 200,
+};
+
 export function PublicLayout({ children }) {
-  const { session, openModal, closeModal } = useStore();
+  const { session, logout, openModal, closeModal } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeSection, setActiveSection] = useState('home');
   const [scrolled, setScrolled] = useState(false);
+  const [customerMenuOpen, setCustomerMenuOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setCustomerMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 15);
 
       if (location.pathname === '/') {
-        const homeEl = document.getElementById('home');
         const servicesEl = document.getElementById('services');
         const reviewsEl = document.getElementById('reviews');
         const locationEl = document.getElementById('location');
 
-        // Check if near bottom of page (Visit Us)
         const isNearBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 150);
-        const currentPos = window.scrollY + 160;
 
-        if (isNearBottom || (locationEl && currentPos >= locationEl.offsetTop)) {
+        if (isNearBottom || (locationEl && window.scrollY + SCROLL_OFFSETS.location >= locationEl.offsetTop)) {
           setActiveSection('location');
-        } else if (reviewsEl && currentPos >= reviewsEl.offsetTop) {
+        } else if (reviewsEl && window.scrollY + SCROLL_OFFSETS.reviews >= reviewsEl.offsetTop) {
           setActiveSection('reviews');
-        } else if (servicesEl && currentPos >= servicesEl.offsetTop) {
+        } else if (servicesEl && window.scrollY + SCROLL_OFFSETS.services >= servicesEl.offsetTop) {
           setActiveSection('services');
         } else {
           setActiveSection('home');
@@ -59,6 +75,16 @@ export function PublicLayout({ children }) {
 
   const scrollToSection = (sectionId) => {
     closeModal();
+    setCustomerMenuOpen(false);
+
+    const sectionKey = {
+      home: 'home',
+      services: 'services',
+      reviews: 'reviews',
+      location: 'location',
+    }[sectionId];
+    if (sectionKey) setActiveSection(sectionKey);
+
     if (location.pathname !== '/') {
       navigate('/#' + sectionId);
       setTimeout(() => {
@@ -76,12 +102,8 @@ export function PublicLayout({ children }) {
   };
 
   const handleAppointmentClick = () => {
-    if (!session) {
-      navigate('/booking');
-      openModal('login', { targetPath: '/booking', hideClose: true });
-    } else {
-      navigate('/booking');
-    }
+    setCustomerMenuOpen(false);
+    navigate('/booking');
   };
 
   return (
@@ -129,11 +151,88 @@ export function PublicLayout({ children }) {
             >
               Appointment
             </button>
+
             {session ? (
-              <button className="profile-trigger" onClick={() => navigate(rolePath(session.role))}>
-                <span className="avatar avatar-sm">{session.initials}</span>
-                <span className="hide-mobile">{session.name}</span>
-              </button>
+              <div className="nav-profile-wrapper" ref={dropdownRef}>
+                <button
+                  type="button"
+                  className="profile-trigger"
+                  onClick={() => navigate(rolePath(session.role))}
+                >
+                  {session.role === 'admin' ? (
+                    <img src="/logo.png" alt="Admin" className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
+                  ) : session.photoUrl ? (
+                    <img src={session.photoUrl} alt={session.name || 'User'} className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
+                  ) : (
+                    <span className="avatar avatar-sm">{session?.initials || (session?.name ? session.name.slice(0, 2).toUpperCase() : 'BG')}</span>
+                  )}
+                  <span className="hide-mobile">{session?.name || 'Account'}</span>
+                </button>
+
+                {session.role === 'customer' && (
+                  <>
+                    <button
+                      type="button"
+                      className="nav-dropdown-toggle"
+                      onClick={() => setCustomerMenuOpen((prev) => !prev)}
+                      aria-label="Toggle customer panel menu"
+                      aria-expanded={customerMenuOpen}
+                    >
+                      <ChevronDown size={14} className={customerMenuOpen ? 'rotated' : ''} />
+                    </button>
+
+                    {customerMenuOpen && (
+                      <div className="customer-dropdown-menu">
+                        <div className="dropdown-header">
+                          <strong>{session.name}</strong>
+                          <small>Customer Account</small>
+                        </div>
+                        <div className="dropdown-divider" />
+                        <Link
+                          to="/customer"
+                          className="dropdown-item"
+                          onClick={() => setCustomerMenuOpen(false)}
+                        >
+                          <LayoutDashboard size={14} /> Customer Overview
+                        </Link>
+                        <Link
+                          to="/my-appointments"
+                          className="dropdown-item"
+                          onClick={() => setCustomerMenuOpen(false)}
+                        >
+                          <CalendarDays size={14} /> My Appointments
+                        </Link>
+                        <Link
+                          to="/booking"
+                          className="dropdown-item"
+                          onClick={() => setCustomerMenuOpen(false)}
+                        >
+                          <Scissors size={14} /> Book a Chair
+                        </Link>
+                        <Link
+                          to="/customer-profile"
+                          className="dropdown-item"
+                          onClick={() => setCustomerMenuOpen(false)}
+                        >
+                          <Settings2 size={14} /> Profile & Settings
+                        </Link>
+                        <div className="dropdown-divider" />
+                        <button
+                          type="button"
+                          className="dropdown-item logout"
+                          onClick={() => {
+                            setCustomerMenuOpen(false);
+                            logout();
+                            navigate('/');
+                          }}
+                        >
+                          <LogOut size={14} /> Sign out
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             ) : (
               <button
                 type="button"
@@ -160,13 +259,24 @@ export function PublicLayout({ children }) {
           <span>Open daily · 9:00 AM–8:00 PM</span>
           <span>© 2026 Biglang Gwapo Barbershop · All rights reserved</span>
         </div>
+        {session?.role !== 'customer' && (
+          <div className="footer-staff-action">
+            <button
+              type="button"
+              className="footer-employee-link"
+              onClick={() => openModal('employeeLogin')}
+            >
+              <LockKeyhole size={13} /> Staff & Employee Portal
+            </button>
+          </div>
+        )}
       </footer>
     </div>
   );
 }
 
 export function StaffLayout({ role, children }) {
-  const { session, logout, reset } = useStore();
+  const { session, logout } = useStore();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = navItems[role] || [];
@@ -251,7 +361,13 @@ export function StaffLayout({ role, children }) {
               <CircleHelp size={18} />
             </button>
             <div className="staff-user">
-              <span className="avatar avatar-sm">{session?.initials || 'MS'}</span>
+              {session?.role === 'admin' ? (
+                <img src="/logo.png" alt="Biglang Gwapo Logo" className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
+              ) : session?.photoUrl ? (
+                <img src={session.photoUrl} alt={session.name} className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
+              ) : (
+                <span className="avatar avatar-sm">{session?.initials || 'MS'}</span>
+              )}
               <span className="hide-mobile">
                 <strong>{session?.name || 'Customer'}</strong>
                 <small>{session?.role || 'Customer'}</small>

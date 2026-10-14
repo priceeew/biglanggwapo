@@ -50,7 +50,19 @@ export function AuthModal() {
       return notify('Invalid email or password. Please check your credentials.', 'error');
     }
 
-    // Role check if opened from a specific role gate
+    const isEmployeeModal = modal.type === 'employeeLogin' || modal.portal === 'employee';
+
+    // Rule: Employee/Staff/Admin CANNOT log in through the Customer portal
+    if (!isEmployeeModal && matchedAccount.role !== 'customer') {
+      return notify('This login is for customers only. Staff and admins must log in via the Staff & Employee Portal at the bottom of the page.', 'error');
+    }
+
+    // Rule: Customer accounts CANNOT log in through the Employee portal
+    if (isEmployeeModal && matchedAccount.role === 'customer') {
+      return notify('Customer accounts cannot access the Employee & Staff Portal. Please use the Customer Login at the top.', 'error');
+    }
+
+    // Role check if opened from a specific role gate (e.g. /admin, /barber, /receptionist)
     if (modal.requestedRole && matchedAccount.role !== modal.requestedRole) {
       return notify(`This account has the role "${matchedAccount.role}", not "${modal.requestedRole}". Redirecting to its panel...`, 'warning');
     }
@@ -247,19 +259,27 @@ export function AuthModal() {
                 <img src="/logo.png" alt="Biglang Gwapo Logo" className="modal-logo-img" />
               </div>
               <span className="eyebrow gold">
-                {modal.targetPath === '/booking'
-                  ? 'PORTAL LOGIN'
-                  : modal.requestedRole
-                    ? `${modal.requestedRole.toUpperCase()} ACCESS`
-                    : 'PORTAL LOGIN'}
+                {modal.type === 'employeeLogin' || modal.portal === 'employee'
+                  ? 'STAFF & EMPLOYEE ACCESS'
+                  : modal.targetPath === '/booking'
+                    ? 'CUSTOMER BOOKING LOGIN'
+                    : modal.requestedRole
+                      ? `${modal.requestedRole.toUpperCase()} ACCESS`
+                      : 'CUSTOMER LOGIN'}
               </span>
               <h2 id="modal-title">
-                {modal.targetPath === '/booking' ? 'Sign in to book your chair' : 'Sign in to your panel'}
+                {modal.type === 'employeeLogin' || modal.portal === 'employee'
+                  ? 'Staff & Employee Portal'
+                  : modal.targetPath === '/booking'
+                    ? 'Sign in to book your chair'
+                    : 'Customer Sign In'}
               </h2>
               <p>
-                {modal.targetPath === '/booking'
-                  ? 'Sign in with your customer account to choose your barber and reserve your slot.'
-                  : 'Enter your email and password to open your respective panel.'}
+                {modal.type === 'employeeLogin' || modal.portal === 'employee'
+                  ? 'Authorized staff login for Barbers, Receptionists, and Administrators.'
+                  : modal.targetPath === '/booking'
+                    ? 'Sign in with your customer account to choose your barber and reserve your slot.'
+                    : 'Enter your customer email and password to access your account.'}
               </p>
             </div>
 
@@ -303,8 +323,12 @@ export function AuthModal() {
 
             <div className="modal-links">
               <button className="text-button" onClick={() => setMode('recovery')}>Forgot password?</button>
-              <span>·</span>
-              <button className="text-button" onClick={() => setMode('register')}>Create customer account</button>
+              {!(modal.type === 'employeeLogin' || modal.portal === 'employee') && (
+                <>
+                  <span>·</span>
+                  <button className="text-button" onClick={() => setMode('register')}>Create customer account</button>
+                </>
+              )}
             </div>
           </>
         )}
