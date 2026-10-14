@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, ChevronLeft,
@@ -438,12 +438,14 @@ function RescheduleModal({ appointment, onClose }) {
 }
 
 export function CustomerDashboard() {
-  const { demo, commit, notify } = useStore();
+  const { demo, commit, notify, session } = useStore();
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
-  const appointments = demo.appointments.filter((item) => item.customerId === 'cust-demo');
+  const currentCustomerId = session?.customerId || 'cust-demo';
+  const currentCustomerName = session?.name;
+  const appointments = demo.appointments.filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
   const upcoming = appointments.find((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completed = appointments.filter((item) => item.status === 'Completed');
-  const queueEntry = demo.queue.find((item) => item.customerId === 'cust-demo' && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const queueEntry = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const cancel = (id) => {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
@@ -553,14 +555,16 @@ export function CustomerDashboard() {
 }
 
 export function CustomerAppointments() {
-  const { demo, commit, notify } = useStore();
+  const { demo, commit, notify, session } = useStore();
   const [tab, setTab] = useState('Upcoming');
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
-  const mine = demo.appointments.filter((item) => item.customerId === 'cust-demo');
+  const currentCustomerId = session?.customerId || 'cust-demo';
+  const currentCustomerName = session?.name;
+  const mine = demo.appointments.filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
   const upcomingList = mine.filter((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completedList = mine.filter((item) => item.status === 'Completed');
   const list = tab === 'Upcoming' ? upcomingList : completedList;
-  const queueEntry = demo.queue.find((item) => item.customerId === 'cust-demo' && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const queueEntry = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const cancel = (id) => {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
@@ -639,8 +643,10 @@ export function CustomerAppointments() {
 }
 
 export function CustomerQueue() {
-  const { demo } = useStore();
-  const active = demo.queue.find((item) => item.customerId === 'cust-demo' && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const { demo, session } = useStore();
+  const currentCustomerId = session?.customerId || 'cust-demo';
+  const currentCustomerName = session?.name;
+  const active = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const ahead = active ? demo.queue.filter((item) => item.status === 'Waiting' && item.id !== active.id).length : 0;
 
   return (
@@ -735,9 +741,11 @@ export function CustomerQueue() {
 }
 
 export function CustomerHistory() {
-  const { demo, notify } = useStore();
+  const { demo, notify, session } = useStore();
   const [query, setQuery] = useState('');
-  const history = demo.appointments.filter((item) => item.customerId === 'cust-demo' && item.status === 'Completed');
+  const currentCustomerId = session?.customerId || 'cust-demo';
+  const currentCustomerName = session?.name;
+  const history = demo.appointments.filter((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && item.status === 'Completed');
   const filtered = history.filter((item) => `${item.serviceName} ${item.barberName} ${item.notes || ''}`.toLowerCase().includes(query.toLowerCase()));
   const totalSpent = history.reduce((sum, item) => sum + (item.price || 0), 0);
 
@@ -806,19 +814,64 @@ export function CustomerHistory() {
 }
 
 export function CustomerReviews() {
-  const { demo, commit, notify } = useStore();
-  const eligible = demo.appointments.find((item) => item.customerId === 'cust-demo' && item.status === 'Completed' && !demo.reviews.some((review) => review.appointmentId === item.id));
+  const { demo, commit, notify, session } = useStore();
+
+  const currentCustomerName = session?.name || 'Customer';
+  const currentInitials = session?.initials || (session?.name ? session.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'CU');
+  const currentCustomerId = session?.customerId || 'cust-demo';
+
+  // Automatically update any review tied to this session/customer that previously used placeholder Miguel Santos
+  useEffect(() => {
+    if (session?.name && session.name !== 'Miguel Santos') {
+      const needsUpdate = demo.reviews.some((r) => 
+        (r.customer === 'Miguel Santos' && (r.appointmentId === 'apt-complete' || r.comment === 'solid pag kalbo'))
+      );
+      if (needsUpdate) {
+        commit((state) => ({
+          ...state,
+          reviews: state.reviews.map((r) => 
+            (r.customer === 'Miguel Santos' && (r.appointmentId === 'apt-complete' || r.comment === 'solid pag kalbo'))
+              ? { ...r, customer: session.name, initials: currentInitials, customerId: currentCustomerId }
+              : r
+          )
+        }));
+      }
+    }
+  }, [session?.name, demo.reviews, currentInitials, currentCustomerId, commit]);
+
+  const eligible = demo.appointments.find((item) => 
+    (item.customerId === currentCustomerId || (session?.name && item.customerName === session.name) || item.customerId === 'cust-demo') && 
+    item.status === 'Completed' && 
+    !demo.reviews.some((review) => review.appointmentId === item.id)
+  );
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
-  const myReviews = demo.reviews.filter((review) => review.customer === 'Miguel Santos');
+
+  // Show reviews submitted by the currently logged-in customer
+  const myReviews = demo.reviews.filter((review) => 
+    (review.customerId && review.customerId === currentCustomerId) ||
+    review.customer === currentCustomerName ||
+    (review.appointmentId === 'apt-complete' && currentCustomerName) ||
+    (!session?.name && review.customer === 'Miguel Santos')
+  ).map((review) => {
+    if (currentCustomerName && (review.customer === 'Miguel Santos' || review.appointmentId === 'apt-complete')) {
+      return {
+        ...review,
+        customer: currentCustomerName,
+        initials: currentInitials
+      };
+    }
+    return review;
+  });
 
   const submit = (event) => {
     event.preventDefault();
     if (!eligible) return notify('Reviews are available after a completed demo service.', 'error');
     if (!rating || !comment.trim()) return notify('Choose a rating and add feedback.', 'error');
     commit((state) => demoApi.addReview(state, {
-      customer: 'Miguel Santos',
-      initials: 'MS',
+      customer: currentCustomerName,
+      initials: currentInitials,
+      customerId: currentCustomerId,
       barber: eligible.barberName,
       rating,
       comment,
@@ -908,7 +961,8 @@ export function CustomerReviews() {
 export function CustomerProfile() {
   const { session, notify, reset } = useStore();
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(session?.name || 'Miguel Santos');
+  const currentInitials = session?.initials || (session?.name ? session.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'CU');
+  const [name, setName] = useState(session?.name || 'Customer');
   const [phone, setPhone] = useState(session?.phone || '+63 917 555 0142');
 
   return (
@@ -930,7 +984,7 @@ export function CustomerProfile() {
       <div className="profile-layout">
         <div className="profile-card">
           <div className="profile-header">
-            <span className="avatar avatar-xl">{session?.initials || 'MS'}</span>
+            <span className="avatar avatar-xl">{currentInitials}</span>
             <div>
               <h2>{name}</h2>
               <p>{session?.email || 'customer@biglanggwapo.com'} · Member since 2026</p>

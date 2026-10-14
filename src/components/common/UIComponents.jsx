@@ -105,7 +105,7 @@ export function ReviewCard({ review }) {
         <span className="avatar avatar-sm">{review.initials}</span>
         <div>
           <strong>{review.customer}</strong>
-          <small>{review.barber}</small>
+          <small>{review.barber ? `Barber: ${review.barber}` : ''}</small>
         </div>
         <span className="stars">{stars(review.rating)}</span>
       </div>
