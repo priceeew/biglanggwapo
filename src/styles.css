@@ -495,5 +495,137 @@
   }
 }
 
+/* Week Schedule View Grid */
+.week-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 20px;
+}
+
+.week-day-col {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 440px;
+  box-shadow: 0 4px 14px rgba(20, 18, 14, 0.03);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.week-day-col.today {
+  border-color: var(--gold);
+  box-shadow: 0 8px 22px rgba(184, 138, 68, 0.16);
+}
+
+.week-day-head {
+  padding: 13px 12px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.week-day-col.today .week-day-head {
+  background: #fffcf5;
+  border-bottom-color: rgba(184, 138, 68, 0.25);
+}
+
+.week-day-head-left strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.week-day-head-left span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--gold);
+  margin-top: 2px;
+}
+
+.week-day-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 12px;
+  background: var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.week-day-badge.on-shift {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.week-day-badge.off {
+  background: #f1f0eb;
+  color: #999;
+}
+
+.week-events-stack {
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.week-event-card {
+  padding: 9px 10px;
+  border-radius: 6px;
+  border-left: 3px solid #ccc;
+  background: #f8f7f4;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.week-event-card.available {
+  border-left-color: #53aa7a;
+  background: #f4faf6;
+}
+
+.week-event-card.booked {
+  border-left-color: var(--gold);
+  background: #fffcf5;
+  border-right: 1px solid rgba(184, 138, 68, 0.15);
+  border-top: 1px solid rgba(184, 138, 68, 0.15);
+  border-bottom: 1px solid rgba(184, 138, 68, 0.15);
+}
+
+.week-event-card.break {
+  border-left-color: #a8a29e;
+  background: #f5f5f4;
+  opacity: 0.85;
+}
+
+.week-event-time {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.week-event-title {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.week-event-sub {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+
 
 

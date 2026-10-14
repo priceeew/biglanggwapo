@@ -293,6 +293,99 @@ export function ServiceSession() {
 }
 
 export function BarberSchedule() {
+  const [view, setView] = useState('agenda');
+
+  const days = [
+    {
+      name: 'Monday',
+      date: 'Oct 12',
+      isToday: true,
+      onShift: true,
+      shiftHours: '9:00 AM – 8:00 PM',
+      events: [
+        { time: '9:00 AM', title: 'Open chair', sub: 'Available for walk-ins', status: 'available' },
+        { time: '10:00 AM', title: 'Miguel Santos', sub: 'Signature Fade (₱420)', status: 'booked' },
+        { time: '1:00 PM', title: 'Lunch break', sub: 'Chair reset & sanitize', status: 'break' },
+        { time: '3:00 PM', title: 'Open chair', sub: 'Walk-in queue ready', status: 'available' },
+        { time: '5:30 PM', title: 'Reserved slot', sub: 'Junior Cut (₱300)', status: 'booked' }
+      ]
+    },
+    {
+      name: 'Tuesday',
+      date: 'Oct 13',
+      isToday: false,
+      onShift: true,
+      shiftHours: '9:00 AM – 8:00 PM',
+      events: [
+        { time: '9:00 AM', title: 'Working hours', sub: 'Shop open', status: 'available' },
+        { time: '10:45 AM', title: 'Ana Villanueva', sub: 'Classic Cut (₱380)', status: 'booked' },
+        { time: '1:00 PM', title: 'Break', sub: 'Station cleaning', status: 'break' },
+        { time: '4:00 PM', title: 'Open chair', sub: 'Walk-ins welcomed', status: 'available' }
+      ]
+    },
+    {
+      name: 'Wednesday',
+      date: 'Oct 14',
+      isToday: false,
+      onShift: true,
+      shiftHours: '9:00 AM – 8:00 PM',
+      events: [
+        { time: '9:00 AM', title: 'Midweek start', sub: 'Available for walk-ins', status: 'available' },
+        { time: '11:15 AM', title: 'Rafael Cruz', sub: 'Beard Sculpt (₱280)', status: 'booked' },
+        { time: '1:00 PM', title: 'Break', sub: '30 min rest', status: 'break' },
+        { time: '2:30 PM', title: 'Dave Bautista', sub: 'Signature Fade (₱420)', status: 'booked' }
+      ]
+    },
+    {
+      name: 'Thursday',
+      date: 'Oct 15',
+      isToday: false,
+      onShift: true,
+      shiftHours: '9:00 AM – 8:00 PM',
+      events: [
+        { time: '9:00 AM', title: 'Morning chair', sub: 'Shift start', status: 'available' },
+        { time: '1:00 PM', title: 'Break', sub: 'Lunch reset', status: 'break' },
+        { time: '3:30 PM', title: 'Christian Dizon', sub: 'The Full Ritual (₱620)', status: 'booked' }
+      ]
+    },
+    {
+      name: 'Friday',
+      date: 'Oct 16',
+      isToday: false,
+      onShift: true,
+      shiftHours: '9:00 AM – 8:00 PM',
+      events: [
+        { time: '9:00 AM', title: 'Weekend prep', sub: 'High traffic shift', status: 'available' },
+        { time: '10:00 AM', title: 'Kenneth Alcantara', sub: 'Signature Fade (₱420)', status: 'booked' },
+        { time: '1:00 PM', title: 'Break', sub: 'Rest period', status: 'break' },
+        { time: '5:00 PM', title: 'Gian Morales', sub: 'Classic Cut (₱380)', status: 'booked' }
+      ]
+    },
+    {
+      name: 'Saturday',
+      date: 'Oct 17',
+      isToday: false,
+      onShift: true,
+      shiftHours: '8:30 AM – 8:30 PM',
+      events: [
+        { time: '8:30 AM', title: 'Peak Saturday', sub: 'Full lineup', status: 'available' },
+        { time: '11:00 AM', title: 'Carl Mendoza', sub: 'Signature Fade (₱420)', status: 'booked' },
+        { time: '1:30 PM', title: 'Break', sub: 'Midday reset', status: 'break' },
+        { time: '4:00 PM', title: 'Dominic Soriano', sub: 'Beard Sculpt (₱280)', status: 'booked' }
+      ]
+    },
+    {
+      name: 'Sunday',
+      date: 'Oct 18',
+      isToday: false,
+      onShift: false,
+      shiftHours: 'Day Off',
+      events: [
+        { time: 'All day', title: 'Scheduled day off', sub: 'Rest & personal recharge', status: 'break' }
+      ]
+    }
+  ];
+
   return (
     <>
       <div className="schedule-header">
@@ -301,43 +394,79 @@ export function BarberSchedule() {
           <h2>My schedule</h2>
         </div>
         <div className="segmented">
-          <button className="active">Agenda</button>
-          <button>Week</button>
+          <button
+            type="button"
+            className={view === 'agenda' ? 'active' : ''}
+            onClick={() => setView('agenda')}
+          >
+            Agenda
+          </button>
+          <button
+            type="button"
+            className={view === 'week' ? 'active' : ''}
+            onClick={() => setView('week')}
+          >
+            Week
+          </button>
         </div>
       </div>
-      <div className="agenda-list">
-        {['Monday, Oct 12', 'Tuesday, Oct 13', 'Wednesday, Oct 14'].map((day, index) => (
-          <div className="agenda-day" key={day}>
-            <div className="agenda-date">
-              <strong>{day.split(',')[0]}</strong>
-              <span>{day.split(',')[1]}</span>
+
+      {view === 'agenda' ? (
+        <div className="agenda-list">
+          {days.map((day) => (
+            <div className="agenda-day" key={day.name}>
+              <div className="agenda-date">
+                <strong>{day.name}</strong>
+                <span>{day.date}</span>
+                {day.isToday && (
+                  <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '9px', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.06em' }}>
+                    TODAY
+                  </span>
+                )}
+              </div>
+              <div className="agenda-events">
+                {day.events.map((ev, index) => (
+                  <div className={`agenda-event ${ev.status}`} key={index}>
+                    <span className="event-time">{ev.time}</span>
+                    <span>
+                      <strong>{ev.title}</strong>
+                      <small>{ev.sub}</small>
+                    </span>
+                    <span className={`event-status ${ev.status === 'available' ? 'available' : ''}`}>
+                      {ev.status === 'available' ? 'Available' : ev.status === 'booked' ? 'Booked' : 'Unavailable'}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="agenda-events">
-              <div className="agenda-event">
-                <span className="event-time">9:00 AM</span>
-                <span>
-                  <strong>{index === 0 ? 'Open chair' : 'Working hours'}</strong>
-                  <small>{index === 0 ? 'Available for walk-ins' : '9:00 AM – 8:00 PM'}</small>
+          ))}
+        </div>
+      ) : (
+        <div className="week-schedule-grid">
+          {days.map((day) => (
+            <div className={`week-day-col ${day.isToday ? 'today' : ''}`} key={day.name}>
+              <div className="week-day-head">
+                <div className="week-day-head-left">
+                  <strong>{day.name.slice(0, 3)}</strong>
+                  <span>{day.date}</span>
+                </div>
+                <span className={`week-day-badge ${day.onShift ? 'on-shift' : 'off'}`}>
+                  {day.onShift ? 'On Shift' : 'Off'}
                 </span>
-                <span className="event-status available">Available</span>
               </div>
-              <div className="agenda-event booked">
-                <span className="event-time">10:30 AM</span>
-                <span>
-                  <strong>{index === 0 ? 'Miguel Santos' : 'Reserved slot'}</strong>
-                  <small>{index === 0 ? 'Signature Fade' : 'Online booking'}</small>
-                </span>
-                <span className="event-status">Booked</span>
-              </div>
-              <div className="agenda-event break">
-                <span className="event-time">1:00 PM</span>
-                <span><strong>Break</strong><small>Chair reset</small></span>
-                <span className="event-status">Unavailable</span>
+              <div className="week-events-stack">
+                {day.events.map((ev, index) => (
+                  <div className={`week-event-card ${ev.status}`} key={index}>
+                    <span className="week-event-time">{ev.time}</span>
+                    <span className="week-event-title">{ev.title}</span>
+                    <span className="week-event-sub">{ev.sub}</span>
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
