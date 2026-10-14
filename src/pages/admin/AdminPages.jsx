@@ -463,11 +463,8 @@ export function AdminManagementPage({ collection }) {
                       minLength={8}
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="Min. 8 characters + special character"
+                      placeholder="*********"
                     />
-                    <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
-                      At least 8 characters with at least one special character (!@#$%^&* etc.)
-                    </small>
                   </label>
                 </>
               )}

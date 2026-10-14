@@ -495,11 +495,8 @@ export function CustomerManagement() {
                   minLength={8}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Min. 8 characters + special character"
+                  placeholder="*********"
                 />
-                <small style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '4px', display: 'block' }}>
-                  At least 8 characters with at least one special character (!@#$%^&* etc.)
-                </small>
               </label>
               <label className="field-label">Hair preferences (optional)
                 <input
