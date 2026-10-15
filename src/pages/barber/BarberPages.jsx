@@ -95,7 +95,7 @@ export function BarberDashboard() {
                 <span className="avatar avatar-lg">
                   {(current.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
                 </span>
-                <div>
+                <div className="chair-focus-info">
                   <span className="eyebrow gold">In service · {current.number}</span>
                   <h2>{current.customerName}</h2>
                   <p>{current.serviceName} · {current.estimatedMinutes || 30} min</p>
@@ -106,7 +106,7 @@ export function BarberDashboard() {
                 <span className="avatar avatar-lg" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
                   {(next.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
                 </span>
-                <div>
+                <div className="chair-focus-info">
                   <span className="eyebrow gold">Next in line · {next.number}</span>
                   <h2>{next.customerName} is waiting</h2>
                   <p>{next.serviceName} · Ready to call to chair</p>
@@ -114,9 +114,11 @@ export function BarberDashboard() {
               </>
             ) : (
               <>
-                <div className="empty-illustration"><Scissors size={24} /></div>
-                <div>
-                  <span className="eyebrow">Chair is ready</span>
+                <span className="avatar avatar-lg chair-focus-avatar" style={{ background: 'var(--paper)', border: '1.5px solid var(--gold)', color: 'var(--gold)' }}>
+                  <Scissors size={26} />
+                </span>
+                <div className="chair-focus-info">
+                  <span className="eyebrow gold">Chair is ready</span>
                   <h2>Chair is open for {barberName}</h2>
                   <p>When reception marks an appointment as arrived or adds a walk-in, they appear here live.</p>
                 </div>

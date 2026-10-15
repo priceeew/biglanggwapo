@@ -1487,3 +1487,50 @@
   margin-top: 2px !important;
   text-align: center !important;
 }
+
+/* Barber Dashboard Chair Focus Card */
+.chair-focus {
+  display: flex !important;
+  align-items: center !important;
+  gap: 20px !important;
+  padding: 24px 26px !important;
+  min-height: 140px !important;
+}
+
+.chair-focus .avatar,
+.chair-focus .chair-focus-avatar {
+  width: 58px !important;
+  height: 58px !important;
+  border-radius: 50% !important;
+  display: grid !important;
+  place-items: center !important;
+  flex-shrink: 0 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+}
+
+.chair-focus-info {
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  flex: 1 !important;
+}
+
+.chair-focus-info .eyebrow {
+  margin-bottom: 3px !important;
+}
+
+.chair-focus-info h2 {
+  font-size: 22px !important;
+  letter-spacing: -0.04em !important;
+  margin: 3px 0 5px 0 !important;
+  line-height: 1.15 !important;
+  color: var(--ink) !important;
+}
+
+.chair-focus-info p {
+  font-size: 12px !important;
+  color: var(--muted) !important;
+  margin: 0 !important;
+  line-height: 1.5 !important;
+}
