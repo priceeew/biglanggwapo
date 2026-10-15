@@ -1,7 +1,8 @@
 import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
 import { getSlotAvailability, STANDARD_SCHEDULES } from './utils/scheduling';
 
-const STORAGE_KEY = 'biglanggwapo-demo-v3';
+const STORAGE_KEY = 'biglanggwapo-demo-v7';
+const PREV_STORAGE_KEY = 'biglanggwapo-demo-v6';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 export function getInitialDemoState() {
@@ -10,7 +11,21 @@ export function getInitialDemoState() {
 
 export function loadDemoState() {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    let stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      const prev = window.localStorage.getItem(PREV_STORAGE_KEY) || window.localStorage.getItem('biglanggwapo-demo-v5') || window.localStorage.getItem('biglanggwapo-demo-v4');
+      if (prev) {
+        try {
+          const prevParsed = JSON.parse(prev);
+          const migrated = {
+            ...prevParsed,
+            services: []
+          };
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          stored = JSON.stringify(migrated);
+        } catch {}
+      }
+    }
     if (!stored) return getInitialDemoState();
     const parsed = JSON.parse(stored);
     const initial = getInitialDemoState();
@@ -35,12 +50,7 @@ export function loadDemoState() {
     }
 
     let currentReceptionists = parsed.receptionists || initial.receptionists;
-    const existingSvcIds = new Set((parsed.services || []).map((s) => s.id));
-    const newSeedServices = initial.services.filter((s) => !existingSvcIds.has(s.id));
-    let currentServices = [...(parsed.services || initial.services).map((svc) => {
-      const seedMatch = initial.services.find((s) => s.id === svc.id);
-      return seedMatch ? { ...svc, category: seedMatch.category || svc.category, image: svc.image || seedMatch.image } : svc;
-    }), ...newSeedServices];
+    let currentServices = Array.isArray(parsed.services) ? parsed.services : [];
 
     return { ...initial, ...parsed, services: currentServices, inventory: currentInventory, reviews: currentReviews, receptionists: currentReceptionists };
   } catch {

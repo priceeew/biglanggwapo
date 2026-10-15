@@ -8,7 +8,7 @@ import {
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, deleteAccount, validatePassword, validatePhone } from '../../data';
-import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas } from '../../services/api';
+import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas, saveServiceToAtlas, deleteServiceFromAtlas, clearAllServicesFromAtlas, uploadImageFile } from '../../services/api';
 import { STANDARD_SCHEDULES, validateShiftWithinShopHours, findShiftConflicts } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
@@ -73,13 +73,17 @@ export function AdminDashboard() {
         </SectionCard>
         <SectionCard title="Popular services">
           <div className="rank-list">
-            {demo.services.slice(0, 4).map((service, index) => (
-              <div key={service.id}>
-                <span className="rank">0{index + 1}</span>
-                <span><strong>{service.name}</strong><small>{24 - index * 4} bookings</small></span>
-                <strong>{index === 0 ? '32%' : `${21 - index * 4}%`}</strong>
-              </div>
-            ))}
+            {demo.services.length > 0 ? (
+              demo.services.slice(0, 4).map((service, index) => (
+                <div key={service.id}>
+                  <span className="rank">0{index + 1}</span>
+                  <span><strong>{service.name}</strong><small>{24 - index * 4} bookings</small></span>
+                  <strong>{index === 0 ? '32%' : `${21 - index * 4}%`}</strong>
+                </div>
+              ))
+            ) : (
+              <p style={{ color: 'var(--muted)', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>No services added yet.</p>
+            )}
           </div>
         </SectionCard>
       </div>
@@ -100,6 +104,10 @@ export function AdminManagementPage({ collection }) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingBarber, setEditingBarber] = useState(null);
   const [editingService, setEditingService] = useState(null);
+  const [editingCustomer, setEditingCustomer] = useState(null);
+  const [editingReceptionist, setEditingReceptionist] = useState(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [editServiceData, setEditServiceData] = useState({
     name: '',
     category: 'Haircut',
@@ -116,6 +124,18 @@ export function AdminManagementPage({ collection }) {
     customSchedule: '',
     leaveStatus: 'Active / On Duty',
     leaveNotes: ''
+  });
+  const [editCustomerData, setEditCustomerData] = useState({
+    name: '',
+    phone: '',
+    preferences: '',
+    notes: '',
+    status: 'Active'
+  });
+  const [editReceptionistData, setEditReceptionistData] = useState({
+    name: '',
+    phone: '',
+    status: 'Active'
   });
   const [formData, setFormData] = useState({
     name: '',
@@ -182,6 +202,9 @@ export function AdminManagementPage({ collection }) {
       if (window.confirm(`${item.active === false || item.status === 'Inactive' ? 'Activate' : 'Deactivate'} this record?`)) {
         const field = collection === 'customers' ? 'status' : collection === 'barbers' ? 'working' : 'active';
         commit((state) => demoApi.toggleActive(state, collection, item.id, field));
+        if (collection === 'services') {
+          saveServiceToAtlas({ ...item, [field]: !item[field] });
+        }
         notify('Record status updated.');
       }
     }
@@ -193,6 +216,9 @@ export function AdminManagementPage({ collection }) {
       commit((state) => demoApi.deleteItem(state, collection, item.id));
       if (collection === 'barbers') {
         deleteBarberFromAtlas(item.id);
+      }
+      if (collection === 'services') {
+        deleteServiceFromAtlas(item.id);
       }
       if (item.email) {
         deleteAccount(item.email);
@@ -213,7 +239,7 @@ export function AdminManagementPage({ collection }) {
       status: 'On shift',
       preferences: '',
       notes: '',
-      category: 'Cuts',
+      category: 'Haircut',
       price: '',
       duration: '30',
       description: '',
@@ -234,11 +260,12 @@ export function AdminManagementPage({ collection }) {
     });
   };
 
-  const handleSubmitEditService = (e) => {
+  const handleSubmitEditService = async (e) => {
     e.preventDefault();
     if (!editServiceData.name.trim() || !editServiceData.price || !editServiceData.duration || !editServiceData.description.trim()) {
       return notify('Please complete all required fields.', 'error');
     }
+    setIsSavingEdit(true);
     const updated = {
       ...editingService,
       name: editServiceData.name.trim(),
@@ -248,9 +275,23 @@ export function AdminManagementPage({ collection }) {
       description: editServiceData.description.trim(),
       image: editServiceData.image || ''
     };
-    commit((state) => demoApi.updateItem(state, 'services', editingService.id, updated));
-    notify(`Service "${updated.name}" updated successfully!`, 'success');
-    setEditingService(null);
+
+    try {
+      const res = await saveServiceToAtlas(updated);
+      if (res && res.success === false) {
+        notify(`Failed to save to database: ${res.error || 'Server error'}`, 'error');
+        setIsSavingEdit(false);
+        return;
+      }
+      const saved = res?.service || updated;
+      commit((state) => demoApi.updateItem(state, 'services', editingService.id, saved));
+      notify(`Service "${saved.name}" updated in database!`, 'success');
+      setEditingService(null);
+    } catch (err) {
+      notify(`Error updating service: ${err.message}`, 'error');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const handleOpenEditBarber = (barber) => {
@@ -268,7 +309,7 @@ export function AdminManagementPage({ collection }) {
     });
   };
 
-  const handleSubmitEditBarber = (e) => {
+  const handleSubmitEditBarber = async (e) => {
     e.preventDefault();
     if (!editBarberData.name.trim()) return notify('Barber name is required.', 'error');
     if (!editBarberData.specialty.trim()) return notify('Specialty is required.', 'error');
@@ -319,29 +360,116 @@ export function AdminManagementPage({ collection }) {
       working: isWorking
     };
 
-    commit((state) => demoApi.updateBarber(state, editingBarber.id, updatedBarber));
-    saveBarberToAtlas(updatedBarber);
+    setIsSavingEdit(true);
+    try {
+      const res = await saveBarberToAtlas(updatedBarber);
+      if (res && res.success === false) {
+        notify(`Failed to update barber in database: ${res.error || 'Server error'}`, 'error');
+        setIsSavingEdit(false);
+        return;
+      }
+      const savedBarber = res?.barber || updatedBarber;
+      commit((state) => demoApi.updateBarber(state, editingBarber.id, savedBarber));
 
-    if (editingBarber.email) {
-      try {
-        const raw = window.localStorage.getItem('biglanggwapo-accounts');
-        if (raw) {
-          const list = JSON.parse(raw);
-          const idx = list.findIndex((a) => a.email?.toLowerCase() === editingBarber.email.toLowerCase());
-          if (idx !== -1) {
-            list[idx].name = updatedBarber.name;
-            list[idx].phone = updatedBarber.phone;
-            window.localStorage.setItem('biglanggwapo-accounts', JSON.stringify(list));
-          }
-        }
-      } catch {}
+      if (editingBarber.email) {
+        saveAccount({
+          email: editingBarber.email,
+          name: savedBarber.name,
+          phone: savedBarber.phone,
+          role: 'barber',
+          barberId: editingBarber.id
+        });
+      }
+
+      notify(`Barber "${savedBarber.name}" profile & shift schedule updated in database!`, 'success');
+      setEditingBarber(null);
+    } catch (err) {
+      notify(`Error updating barber: ${err.message}`, 'error');
+    } finally {
+      setIsSavingEdit(false);
     }
-
-    notify(`Barber "${updatedBarber.name}" profile & shift schedule updated!`, 'success');
-    setEditingBarber(null);
   };
 
-  const handleSubmitAdd = (e) => {
+  const handleOpenEditCustomer = (customer) => {
+    setEditingCustomer(customer);
+    setEditCustomerData({
+      name: customer.name || '',
+      phone: customer.phone || '',
+      preferences: customer.preferences || '',
+      notes: customer.notes || '',
+      status: customer.status || 'Active'
+    });
+  };
+
+  const handleSubmitEditCustomer = async (e) => {
+    e.preventDefault();
+    if (!editCustomerData.name.trim()) return notify('Customer name is required.', 'error');
+    if (editCustomerData.phone) {
+      const phoneErr = validatePhone(editCustomerData.phone);
+      if (phoneErr) return notify(phoneErr, 'error');
+    }
+    setIsSavingEdit(true);
+    const updatedCustomer = {
+      ...editingCustomer,
+      name: editCustomerData.name.trim(),
+      phone: editCustomerData.phone.trim(),
+      preferences: editCustomerData.preferences.trim(),
+      notes: editCustomerData.notes.trim(),
+      status: editCustomerData.status
+    };
+    commit((state) => demoApi.updateItem(state, 'customers', editingCustomer.id, updatedCustomer));
+    if (editingCustomer.email) {
+      saveAccount({
+        email: editingCustomer.email,
+        name: updatedCustomer.name,
+        phone: updatedCustomer.phone,
+        role: 'customer',
+        customerId: editingCustomer.id
+      });
+    }
+    setIsSavingEdit(false);
+    notify(`Customer "${updatedCustomer.name}" updated successfully in database!`, 'success');
+    setEditingCustomer(null);
+  };
+
+  const handleOpenEditReceptionist = (rec) => {
+    setEditingReceptionist(rec);
+    setEditReceptionistData({
+      name: rec.name || '',
+      phone: rec.phone || '',
+      status: rec.status || 'Active'
+    });
+  };
+
+  const handleSubmitEditReceptionist = async (e) => {
+    e.preventDefault();
+    if (!editReceptionistData.name.trim()) return notify('Receptionist name is required.', 'error');
+    if (editReceptionistData.phone) {
+      const phoneErr = validatePhone(editReceptionistData.phone);
+      if (phoneErr) return notify(phoneErr, 'error');
+    }
+    setIsSavingEdit(true);
+    const updatedRec = {
+      ...editingReceptionist,
+      name: editReceptionistData.name.trim(),
+      phone: editReceptionistData.phone.trim(),
+      status: editReceptionistData.status
+    };
+    commit((state) => demoApi.updateItem(state, 'receptionists', editingReceptionist.id, updatedRec));
+    if (editingReceptionist.email) {
+      saveAccount({
+        email: editingReceptionist.email,
+        name: updatedRec.name,
+        phone: updatedRec.phone,
+        role: 'receptionist'
+      });
+    }
+    setIsSavingEdit(false);
+    notify(`Receptionist "${updatedRec.name}" updated successfully in database!`, 'success');
+    setEditingReceptionist(null);
+  };
+
+  const handleSubmitAdd = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) return notify('Please enter a name.', 'error');
 
@@ -380,6 +508,7 @@ export function AdminManagementPage({ collection }) {
         if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Invitation email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
+      setIsAdding(false);
     } else if (collection === 'barbers') {
       if (!formData.email.trim() || !formData.phone.trim() || !formData.password || !formData.specialty.trim() || !formData.schedule) {
         return notify('All fields (Name, Email, Phone, Password, Specialty, Permanent schedule) are required.', 'error');
@@ -437,6 +566,7 @@ export function AdminManagementPage({ collection }) {
         if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Invitation email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
+      setIsAdding(false);
     } else if (collection === 'customers') {
       if (!formData.email.trim() || !formData.phone.trim() || !formData.password) {
         return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
@@ -476,25 +606,43 @@ export function AdminManagementPage({ collection }) {
         if (res.success) notify(res.previewUrl ? 'Email sent in TEST mode (Gmail not configured in .env).' : `Welcome email sent to ${cleanEmail}!`, res.previewUrl ? 'warning' : 'success');
         else notify(`Email failed: ${res.error || res.message}`, 'error');
       });
+      setIsAdding(false);
     } else if (collection === 'services') {
       if (!formData.name.trim() || !formData.price || !formData.duration || !formData.description.trim()) {
         return notify('All fields (Name, Category, Price, Duration, Description) are required.', 'error');
       }
-      commit((state) => demoApi.addItem(state, 'services', {
+      const rawImage = (formData.image || '').trim();
+      const newService = {
+        id: `ser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         name: formData.name.trim(),
-        category: formData.category || 'Cuts',
+        category: formData.category || 'Haircut',
         price: Number(formData.price),
         duration: Number(formData.duration),
         description: formData.description.trim(),
-        image: formData.image.trim() || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80',
+        image: rawImage || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80',
         active: true
-      }));
-      notify(`Service "${formData.name}" added to menu!`);
+      };
+      setIsSavingEdit(true);
+      try {
+        const res = await saveServiceToAtlas(newService);
+        if (res && res.success === false) {
+          notify(`Failed to save to database: ${res.error || 'Server error'}`, 'error');
+          setIsSavingEdit(false);
+          return;
+        }
+        const savedService = res?.service || newService;
+        commit((state) => ({ ...state, services: [savedService, ...state.services.filter(s => s.id !== savedService.id)] }));
+        notify(`Service "${savedService.name}" saved to database menu!`, 'success');
+        setIsAdding(false);
+      } catch (err) {
+        notify(`Error saving service: ${err.message}`, 'error');
+      } finally {
+        setIsSavingEdit(false);
+      }
     } else {
       notify(`Record for "${formData.name}" created.`);
+      setIsAdding(false);
     }
-
-    setIsAdding(false);
   };
 
   return (
@@ -526,6 +674,21 @@ export function AdminManagementPage({ collection }) {
                   <Trash2 size={13} /> Clear all barbers
                 </button>
               )}
+              {collection === 'services' && current.data.length > 0 && (
+                <button
+                  className="button button-ghost button-small"
+                  style={{ color: '#d9534f', borderColor: 'rgba(217, 83, 79, 0.4)' }}
+                  onClick={() => {
+                    if (window.confirm('Clear all services? This will remove all services from the database and menu.')) {
+                      clearAllServicesFromAtlas();
+                      commit((state) => ({ ...state, services: [] }));
+                      notify('All services cleared.', 'success');
+                    }
+                  }}
+                >
+                  <Trash2 size={13} /> Clear all services
+                </button>
+              )}
               <button className="button button-dark button-small" onClick={handleOpenAdd}>
                 <Plus size={15} /> Add new
               </button>
@@ -546,7 +709,38 @@ export function AdminManagementPage({ collection }) {
               <tr key={item.id}>
                 <td>
                   <div className="table-person">
-                    <span className="avatar avatar-xs">{(item.initials || item.name || item.customerName || item.receipt || 'BG').slice(0, 2).toUpperCase()}</span>
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name || 'Thumbnail'}
+                        style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: collection === 'services' ? '8px' : '50%',
+                          objectFit: 'cover',
+                          border: '1px solid var(--line)',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                          flexShrink: 0,
+                          background: '#f5f2eb'
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling;
+                          if (fallback) fallback.style.display = 'inline-grid';
+                        }}
+                      />
+                    ) : null}
+                    <span
+                      className="avatar avatar-xs"
+                      style={{
+                        display: item.image ? 'none' : 'inline-grid',
+                        width: collection === 'services' ? '44px' : undefined,
+                        height: collection === 'services' ? '44px' : undefined,
+                        borderRadius: collection === 'services' ? '8px' : undefined
+                      }}
+                    >
+                      {(item.initials || item.name || item.customerName || item.receipt || 'BG').slice(0, 2).toUpperCase()}
+                    </span>
                     <span><strong>{item.name || item.customerName || item.receipt}</strong><small>{item.email || item.description || item.serviceName || item.category || item.access || ''}</small></span>
                   </div>
                 </td>
@@ -572,8 +766,12 @@ export function AdminManagementPage({ collection }) {
                           handleOpenEditBarber(item);
                         } else if (collection === 'services') {
                           handleOpenEditService(item);
+                        } else if (collection === 'customers') {
+                          handleOpenEditCustomer(item);
+                        } else if (collection === 'receptionists') {
+                          handleOpenEditReceptionist(item);
                         } else {
-                          notify('Edit form opened in this demo build.');
+                          notify('Edit is not available for this record type.');
                         }
                       }}
                     >
@@ -600,7 +798,12 @@ export function AdminManagementPage({ collection }) {
             ))}
           </tbody>
         </DataTable>
-        {!filtered.length && <EmptyState title="No records match" copy="Try a different search phrase." />}
+        {!filtered.length && (
+          <EmptyState
+            title={query ? "No records match" : `No ${collection} added yet`}
+            copy={query ? "Try a different search phrase." : `Click "Add new" above to add your first ${collection === 'services' ? 'service' : 'entry'}.`}
+          />
+        )}
       </SectionCard>
 
       {isAdding && (
@@ -788,27 +991,45 @@ export function AdminManagementPage({ collection }) {
                         </div>
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="button button-soft button-small" style={{ margin: 0, cursor: 'pointer', display: 'inline-flex' }}>
-                          <Upload size={14} /> Choose local photo
+                        <label className="button button-soft button-small" style={{ margin: 0, cursor: isUploadingImage ? 'wait' : 'pointer', display: 'inline-flex', opacity: isUploadingImage ? 0.7 : 1 }}>
+                          <Upload size={14} /> {isUploadingImage ? 'Uploading image...' : 'Choose local photo'}
                           <input
                             type="file"
-                            accept="image/*"
+                            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                            disabled={isUploadingImage}
                             style={{ display: 'none' }}
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                if (file.size > 3 * 1024 * 1024) return notify('Image must be under 3MB', 'error');
-                                const reader = new FileReader();
-                                reader.onload = (evt) => {
-                                  setFormData({ ...formData, image: evt.target.result });
-                                  notify('Image selected from device!');
-                                };
-                                reader.readAsDataURL(file);
+                                const validTypes = ['image/jpeg', 'image/png'];
+                                const validExt = /\.(jpe?g|png)$/i;
+                                if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+                                  e.target.value = '';
+                                  return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+                                }
+                                if (file.size > 10 * 1024 * 1024) {
+                                  e.target.value = '';
+                                  return notify('Image must be under 10MB', 'error');
+                                }
+                                setIsUploadingImage(true);
+                                notify('Uploading image to cloud...');
+                                uploadImageFile(file).then((result) => {
+                                  setIsUploadingImage(false);
+                                  e.target.value = '';
+                                  if (result.success && result.url) {
+                                    setFormData({ ...formData, image: result.url });
+                                    notify(result.provider === 'imgbb' ? 'Image uploaded to ImgBB cloud URL!' : 'Image optimized and uploaded successfully!');
+                                  } else {
+                                    notify(result.error || 'Failed to upload image', 'error');
+                                  }
+                                });
                               }
                             }}
                           />
                         </label>
-                        <small style={{ color: 'var(--muted)', fontSize: '10px' }}>Upload PNG, JPG, or WEBP from local files.</small>
+                        <small style={{ color: 'var(--muted)', fontSize: '11px', lineHeight: 1.3 }}>
+                          <strong>Notice:</strong> Only JPEG, JPG, and PNG allowed (max 10MB).
+                        </small>
                       </div>
                     </div>
                   </div>
@@ -825,11 +1046,11 @@ export function AdminManagementPage({ collection }) {
               )}
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="button" className="button button-ghost button-full" onClick={() => setIsAdding(false)}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setIsAdding(false)} disabled={isSavingEdit}>
                   Cancel
                 </button>
-                <button type="submit" className="button button-dark button-full">
-                  Create record <ArrowRight size={16} />
+                <button type="submit" className="button button-dark button-full" disabled={isSavingEdit}>
+                  {isSavingEdit ? 'Saving...' : (collection === 'services' ? 'Save Service' : 'Create record')} <ArrowRight size={16} />
                 </button>
               </div>
             </form>
@@ -948,11 +1169,11 @@ export function AdminManagementPage({ collection }) {
               )}
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="button" className="button button-ghost button-full" onClick={() => setEditingBarber(null)}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setEditingBarber(null)} disabled={isSavingEdit}>
                   Cancel
                 </button>
-                <button type="submit" className="button button-dark button-full">
-                  Save changes
+                <button type="submit" className="button button-dark button-full" disabled={isSavingEdit}>
+                  {isSavingEdit ? 'Saving changes...' : 'Save changes'}
                 </button>
               </div>
             </form>
@@ -1036,27 +1257,45 @@ export function AdminManagementPage({ collection }) {
                     </div>
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label className="button button-soft button-small" style={{ margin: 0, cursor: 'pointer', display: 'inline-flex' }}>
-                      <Upload size={14} /> Choose local photo
+                    <label className="button button-soft button-small" style={{ margin: 0, cursor: isUploadingImage ? 'wait' : 'pointer', display: 'inline-flex', opacity: isUploadingImage ? 0.7 : 1 }}>
+                      <Upload size={14} /> {isUploadingImage ? 'Uploading image...' : 'Choose local photo'}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                        disabled={isUploadingImage}
                         style={{ display: 'none' }}
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            if (file.size > 3 * 1024 * 1024) return notify('Image must be under 3MB', 'error');
-                            const reader = new FileReader();
-                            reader.onload = (evt) => {
-                              setEditServiceData({ ...editServiceData, image: evt.target.result });
-                              notify('Image selected from device!');
-                            };
-                            reader.readAsDataURL(file);
+                            const validTypes = ['image/jpeg', 'image/png'];
+                            const validExt = /\.(jpe?g|png)$/i;
+                            if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+                              e.target.value = '';
+                              return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+                            }
+                            if (file.size > 10 * 1024 * 1024) {
+                              e.target.value = '';
+                              return notify('Image must be under 10MB', 'error');
+                            }
+                            setIsUploadingImage(true);
+                            notify('Uploading image to cloud...');
+                            uploadImageFile(file).then((result) => {
+                              setIsUploadingImage(false);
+                              e.target.value = '';
+                              if (result.success && result.url) {
+                                setEditServiceData({ ...editServiceData, image: result.url });
+                                notify(result.provider === 'imgbb' ? 'Image uploaded to ImgBB cloud URL!' : 'Image optimized and uploaded successfully!');
+                              } else {
+                                notify(result.error || 'Failed to upload image', 'error');
+                              }
+                            });
                           }
                         }}
                       />
                     </label>
-                    <small style={{ color: 'var(--muted)', fontSize: '10px' }}>Upload PNG, JPG, or WEBP from local files.</small>
+                    <small style={{ color: 'var(--muted)', fontSize: '11px', lineHeight: 1.3 }}>
+                      <strong>Notice:</strong> Only JPEG, JPG, and PNG allowed (max 10MB).
+                    </small>
                   </div>
                 </div>
               </div>
@@ -1072,11 +1311,149 @@ export function AdminManagementPage({ collection }) {
               </label>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="button" className="button button-ghost button-full" onClick={() => setEditingService(null)}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setEditingService(null)} disabled={isSavingEdit}>
                   Cancel
                 </button>
-                <button type="submit" className="button button-dark button-full">
-                  Save changes
+                <button type="submit" className="button button-dark button-full" disabled={isSavingEdit}>
+                  {isSavingEdit ? 'Saving changes...' : 'Save changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT CUSTOMER MODAL */}
+      {editingCustomer && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditingCustomer(null)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setEditingCustomer(null)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <span className="eyebrow gold">EDIT CUSTOMER</span>
+              <h2>Edit {editingCustomer.name}</h2>
+              <p>Update customer details, phone number, styling preferences, or account status.</p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleSubmitEditCustomer}>
+              <label className="field-label">Full name
+                <input
+                  className="input"
+                  required
+                  value={editCustomerData.name}
+                  onChange={(e) => setEditCustomerData({ ...editCustomerData, name: e.target.value })}
+                  placeholder="e.g. Juan Dela Cruz"
+                />
+              </label>
+
+              <label className="field-label">Phone number
+                <input
+                  className="input"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={11}
+                  value={editCustomerData.phone}
+                  onChange={(e) => setEditCustomerData({ ...editCustomerData, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  placeholder="09170000000"
+                />
+              </label>
+
+              <label className="field-label">Haircut & Styling preferences
+                <input
+                  className="input"
+                  value={editCustomerData.preferences}
+                  onChange={(e) => setEditCustomerData({ ...editCustomerData, preferences: e.target.value })}
+                  placeholder="e.g. Low skin fade, scissors on top, matte finish"
+                />
+              </label>
+
+              <label className="field-label">Internal notes
+                <textarea
+                  className="input textarea"
+                  value={editCustomerData.notes}
+                  onChange={(e) => setEditCustomerData({ ...editCustomerData, notes: e.target.value })}
+                  placeholder="Customer notes, appointment habits..."
+                />
+              </label>
+
+              <label className="field-label">Account status
+                <select
+                  className="input"
+                  value={editCustomerData.status}
+                  onChange={(e) => setEditCustomerData({ ...editCustomerData, status: e.target.value })}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </label>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setEditingCustomer(null)} disabled={isSavingEdit}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full" disabled={isSavingEdit}>
+                  {isSavingEdit ? 'Saving changes...' : 'Save changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT RECEPTIONIST MODAL */}
+      {editingReceptionist && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditingReceptionist(null)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setEditingReceptionist(null)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <span className="eyebrow gold">EDIT RECEPTIONIST</span>
+              <h2>Edit {editingReceptionist.name}</h2>
+              <p>Update front-desk staff details, contact information, or status.</p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleSubmitEditReceptionist}>
+              <label className="field-label">Full name
+                <input
+                  className="input"
+                  required
+                  value={editReceptionistData.name}
+                  onChange={(e) => setEditReceptionistData({ ...editReceptionistData, name: e.target.value })}
+                  placeholder="e.g. Bea Dizon"
+                />
+              </label>
+
+              <label className="field-label">Phone number
+                <input
+                  className="input"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={11}
+                  value={editReceptionistData.phone}
+                  onChange={(e) => setEditReceptionistData({ ...editReceptionistData, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  placeholder="09170000000"
+                />
+              </label>
+
+              <label className="field-label">Status
+                <select
+                  className="input"
+                  value={editReceptionistData.status}
+                  onChange={(e) => setEditReceptionistData({ ...editReceptionistData, status: e.target.value })}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </label>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setEditingReceptionist(null)} disabled={isSavingEdit}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full" disabled={isSavingEdit}>
+                  {isSavingEdit ? 'Saving changes...' : 'Save changes'}
                 </button>
               </div>
             </form>

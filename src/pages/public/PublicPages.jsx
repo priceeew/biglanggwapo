@@ -99,9 +99,15 @@ export function HomePage() {
           action={<Link to="/booking" className="text-link">View all services <ArrowRight size={15} /></Link>}
         />
         <div className="service-grid">
-          {demo.services.slice(0, 4).map((service, index) => (
-            <ServiceCard key={service.id} service={service} index={index} />
-          ))}
+          {demo.services.length > 0 ? (
+            demo.services.slice(0, 4).map((service, index) => (
+              <ServiceCard key={service.id} service={service} index={index} />
+            ))
+          ) : (
+            <div style={{ textAlign: 'center', padding: '48px 20px', gridColumn: '1 / -1', background: 'var(--white)', border: '1px solid var(--line)', borderRadius: '10px' }}>
+              <p style={{ color: 'var(--muted)', margin: 0 }}>No services published yet. Please add services from Admin → Services.</p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -168,11 +174,18 @@ export function ServicesPage() {
       title="Services made for the regulars."
       description="No overthinking. Pick your service, choose your barber, and we’ll take it from there."
     >
-      <div className="service-list">
-        {demo.services.map((service, index) => (
-          <ServiceCard key={service.id} service={service} index={index} detailed />
-        ))}
-      </div>
+      {demo.services.length > 0 ? (
+        <div className="service-list">
+          {demo.services.map((service, index) => (
+            <ServiceCard key={service.id} service={service} index={index} detailed />
+          ))}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--white)', border: '1px solid var(--line)', borderRadius: '10px' }}>
+          <h3 style={{ fontSize: '18px', marginBottom: '8px' }}>No services available yet</h3>
+          <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Services added from Admin → Services will appear here.</p>
+        </div>
+      )}
       <div className="notice-bar">
         <CircleHelp size={17} />
         <span>Prices are demo values in Philippine pesos. Final service details can be updated from Admin → Services.</span>
@@ -414,9 +427,13 @@ export function BookingPage() {
                   }
                 }}
               >
-                Haircuts
+                {selection.haircutId ? <Check size={14} className="cat-btn-icon" /> : <Scissors size={14} className="cat-btn-icon" />}
+                <span>Haircuts</span>
+                {selection.haircutId && <span className="cat-btn-badge">Selected</span>}
               </button>
-              <div className="subtle-cat-divider" />
+              <div className="subtle-cat-divider">
+                <ChevronRight size={14} />
+              </div>
               <button
                 type="button"
                 className={`subtle-cat-btn ${selection.shaveId ? 'has-pick' : ''}`}
@@ -428,9 +445,13 @@ export function BookingPage() {
                   }
                 }}
               >
-                Shave
+                {selection.shaveId ? <Check size={14} className="cat-btn-icon" /> : <Sparkles size={14} className="cat-btn-icon" />}
+                <span>Shave</span>
+                {selection.shaveId && <span className="cat-btn-badge">Selected</span>}
               </button>
-              <div className="subtle-cat-divider" />
+              <div className="subtle-cat-divider">
+                <ChevronRight size={14} />
+              </div>
               <button
                 type="button"
                 className={`subtle-cat-btn ${selection.treatmentIds.length > 0 ? 'has-pick' : ''}`}
@@ -442,14 +463,21 @@ export function BookingPage() {
                   }
                 }}
               >
-                Treatment
+                {selection.treatmentIds.length > 0 ? <Check size={14} className="cat-btn-icon" /> : <Zap size={14} className="cat-btn-icon" />}
+                <span>Treatment</span>
+                {selection.treatmentIds.length > 0 && <span className="cat-btn-badge">{selection.treatmentIds.length}</span>}
               </button>
-          
             </div>
           )}
 
           {step === 1 && (
             <div className="services-categorized-container">
+              {demo.services.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px 20px', background: 'var(--white)', border: '1px solid var(--line)', borderRadius: '10px', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '16px', marginBottom: '6px' }}>No services currently on the menu</h3>
+                  <p style={{ color: 'var(--muted)', fontSize: '13px', margin: 0 }}>Please add services via Admin → Services to begin booking.</p>
+                </div>
+              )}
               {/* SECTION 1: HAIRCUTS (Pick 1) */}
               <div className="service-category-group" id="sec-haircuts">
                 <div className="service-category-header">
@@ -730,7 +758,7 @@ export function BookingPage() {
                   </div>
                   <div className="slot-grid">
                     {slots.map((slot) => {
-                      const slotCheck = getSlotAvailability(slot, service?.duration || 45, barber, selection.date, demo.appointments);
+                      const slotCheck = getSlotAvailability(slot, totalDuration, barber, selection.date, demo.appointments);
                       const isSelected = selection.time === slot;
                       return (
                         <button

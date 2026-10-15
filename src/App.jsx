@@ -141,11 +141,94 @@ export function AppRouter() {
   );
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('App Error caught by ErrorBoundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          padding: '24px',
+          background: '#151310',
+          color: '#f5f2eb',
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        }}>
+          <div style={{
+            maxWidth: '480px',
+            background: '#1f1b16',
+            border: '1px solid #332b21',
+            borderRadius: '12px',
+            padding: '32px',
+            textAlign: 'center'
+          }}>
+            <h2 style={{ fontSize: '20px', marginBottom: '8px', color: '#e5c378' }}>Something went wrong</h2>
+            <p style={{ color: '#a6a39b', fontSize: '14px', lineHeight: 1.5, marginBottom: '20px' }}>
+              We encountered an unexpected display error. Your session and saved data are safe.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  background: '#c5a059',
+                  color: '#151310',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Reload page
+              </button>
+              <button
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.href = '/';
+                }}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  background: 'transparent',
+                  color: '#f5f2eb',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  border: '1px solid #332b21',
+                  cursor: 'pointer'
+                }}
+              >
+                Back to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   return (
-    <StoreProvider>
-      <AppRouter />
-    </StoreProvider>
+    <ErrorBoundary>
+      <StoreProvider>
+        <AppRouter />
+      </StoreProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -22,9 +22,10 @@ export default async function handler(req, res) {
       if (!barber || !barber.id) {
         return res.status(400).json({ success: false, message: 'Missing barber id' });
       }
+      const { _id, ...cleanBarber } = barber;
       const saved = await Barber.findOneAndUpdate(
         { id: barber.id },
-        barber,
+        { $set: cleanBarber },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
       return res.status(200).json({ success: true, barber: saved });

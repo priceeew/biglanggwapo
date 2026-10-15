@@ -1,18 +1,5 @@
-export const services = [
-  // Haircuts (pick 1)
-  { id: 'svc-fade', name: 'Signature Fade', description: 'Clean taper, tailored finish, and a hot towel reset.', price: 420, duration: 45, category: 'Haircut', image: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80', active: true },
-  { id: 'svc-classic', name: 'Classic Cut', description: 'Scissor work and a timeless, easy-to-style finish.', price: 380, duration: 40, category: 'Haircut', image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80', active: true },
-  { id: 'svc-kids', name: 'Junior Cut', description: 'A patient, tidy cut for our younger clients.', price: 300, duration: 35, category: 'Haircut', image: 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?auto=format&fit=crop&w=600&q=80', active: true },
+export const services = [];
 
-  // Shave (pick 1)
-  { id: 'svc-beard', name: 'Beard Sculpt & Line-Up', description: 'Precision razor edging, shaping, conditioning, and a crisp outline.', price: 280, duration: 25, category: 'Shave', image: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=600&q=80', active: true },
-  { id: 'svc-hotshave', name: 'Traditional Hot Towel Shave', description: 'Straight razor shave, pre-shave oil, and soothing eucalyptus steam towel.', price: 320, duration: 30, category: 'Shave', image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80', active: true },
-
-  // Treatments (pick many)
-  { id: 'svc-scalp', name: 'Deep Scalp Therapy', description: 'Invigorating tea tree massage, exfoliation, and clarifying rinse.', price: 250, duration: 20, category: 'Treatment', image: 'https://images.unsplash.com/photo-1519699047748-de8e457a634e?auto=format&fit=crop&w=600&q=80', active: true },
-  { id: 'svc-facial', name: 'Charcoal Face Detox', description: 'Pore-clearing black mask, steam towel, and restorative cold balm.', price: 290, duration: 20, category: 'Treatment', image: 'https://images.unsplash.com/photo-1512290900672-1f02e604f323?auto=format&fit=crop&w=600&q=80', active: true },
-  { id: 'svc-haircolor', name: 'Hair Tint & Grey Coverage', description: 'Natural toning and ammonia-free grey blending.', price: 450, duration: 35, category: 'Treatment', image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=600&q=80', active: true }
-];
 
 export const barbers = [];
 

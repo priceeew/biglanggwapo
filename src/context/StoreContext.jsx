@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { loadDemoState, persistDemoState, resetDemoState } from '../mockService';
-import { fetchBarbersFromAtlas, fetchAppointmentsFromAtlas } from '../services/api';
+import { fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
 
 const StoreContext = createContext(null);
@@ -35,6 +35,16 @@ export function StoreProvider({ children }) {
       if (barbers && Array.isArray(barbers)) {
         setDemo((prev) => {
           const updated = { ...prev, barbers };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    fetchServicesFromAtlas().then((services) => {
+      if (services && Array.isArray(services)) {
+        setDemo((prev) => {
+          const updated = { ...prev, services };
           persistDemoState(updated);
           return updated;
         });
