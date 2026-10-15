@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loadDemoState, persistDemoState, resetDemoState } from '../mockService';
+import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState } from '../mockService';
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
   fetchReviewsFromAtlas, fetchInventoryFromAtlas
 } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
-import { getAccounts } from '../data';
+import { getAccounts, syncAccountsFromAtlas } from '../data';
 
 const StoreContext = createContext(null);
 
@@ -91,6 +91,50 @@ export function StoreProvider({ children }) {
       }
     });
 
+    syncAccountsFromAtlas().then((latestAccounts) => {
+      const accMap = latestAccounts || getAccounts();
+      if (accMap && typeof accMap === 'object') {
+        setDemo((prev) => {
+          const updated = syncAccountsIntoDemoState(prev, accMap);
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    const handleAccountsUpdated = (e) => {
+      const accMap = e.detail || getAccounts();
+      setDemo((prev) => {
+        const updated = syncAccountsIntoDemoState(prev, accMap);
+        persistDemoState(updated);
+        return updated;
+      });
+    };
+    window.addEventListener('biglanggwapo-accounts-updated', handleAccountsUpdated);
+
+    const handleWindowFocus = () => {
+      syncAccountsFromAtlas().then((latestAccounts) => {
+        if (latestAccounts) {
+          setDemo((prev) => {
+            const updated = syncAccountsIntoDemoState(prev, latestAccounts);
+            persistDemoState(updated);
+            return updated;
+          });
+        }
+      });
+    };
+    const syncInterval = setInterval(() => {
+      syncAccountsFromAtlas().then((latestAccounts) => {
+        if (latestAccounts) {
+          setDemo((prev) => {
+            const updated = syncAccountsIntoDemoState(prev, latestAccounts);
+            persistDemoState(updated);
+            return updated;
+          });
+        }
+      });
+    }, 15000);
+
     const handleStorageChange = (e) => {
       if (e.key === 'biglanggwapo-revoked-session') {
         try {
@@ -113,11 +157,17 @@ export function StoreProvider({ children }) {
       }
 
       if (!e.key || e.key === 'biglanggwapo-demo-v10' || e.key === 'biglanggwapo-accounts-v2') {
-        setDemo(loadDemoState());
+        const rawAccounts = getAccounts();
+        setDemo((prev) => syncAccountsIntoDemoState(loadDemoState(), rawAccounts));
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('biglanggwapo-accounts-updated', handleAccountsUpdated);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   }, []);
 
   // Proactive check: automatically sign out if logged-in account was deleted or deactivated

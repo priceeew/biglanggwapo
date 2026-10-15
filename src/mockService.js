@@ -45,7 +45,7 @@ export function loadDemoState() {
     let currentTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     let currentServices = Array.isArray(parsed.services) ? parsed.services : [];
 
-    return {
+    const baseState = {
       ...initial,
       ...parsed,
       services: currentServices,
@@ -58,9 +58,123 @@ export function loadDemoState() {
       queue: currentQueue,
       transactions: currentTransactions
     };
+
+    try {
+      const storedAcc = typeof window !== 'undefined' ? window.localStorage.getItem('biglanggwapo-accounts-v2') : null;
+      if (storedAcc) {
+        return syncAccountsIntoDemoState(baseState, JSON.parse(storedAcc));
+      }
+    } catch {}
+
+    return baseState;
   } catch {
     return getInitialDemoState();
   }
+}
+
+export function syncAccountsIntoDemoState(state, accountsMap) {
+  if (!state) return state;
+  const accountsList = Object.values(accountsMap || {}).filter(Boolean);
+
+  // 1. Receptionists (from accounts with role: 'receptionist')
+  const recAccounts = accountsList.filter((a) => a.role === 'receptionist');
+  const existingRecs = Array.isArray(state.receptionists) ? [...state.receptionists] : [];
+  const updatedRecs = recAccounts.map((acc) => {
+    const cleanEmail = (acc.email || '').toLowerCase().trim();
+    const existing = existingRecs.find(
+      (r) => (r.email && r.email.toLowerCase().trim() === cleanEmail) || r.id === acc._id || r.id === acc.id
+    );
+    const initials = acc.initials || (acc.name ? acc.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'RC');
+    return {
+      id: existing?.id || acc._id || acc.id || ('rec-' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '')),
+      name: acc.name || existing?.name || 'Receptionist',
+      initials,
+      email: cleanEmail,
+      phone: acc.phone || existing?.phone || '',
+      image: acc.image || existing?.image || '',
+      status: acc.status || existing?.status || (acc.active === false ? 'Inactive' : 'Active'),
+      access: 'Receptionist',
+      lastVisit: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : (existing?.lastVisit || 'Today')
+    };
+  });
+  existingRecs.forEach((r) => {
+    if (!r.email) updatedRecs.push(r);
+  });
+
+  // 2. Customers (from accounts with role: 'customer')
+  const custAccounts = accountsList.filter((a) => a.role === 'customer');
+  const existingCusts = Array.isArray(state.customers) ? [...state.customers] : [];
+  const updatedCusts = custAccounts.map((acc) => {
+    const cleanEmail = (acc.email || '').toLowerCase().trim();
+    const existing = existingCusts.find(
+      (c) => (c.email && c.email.toLowerCase().trim() === cleanEmail) || c.id === acc.customerId || c.id === acc._id
+    );
+    const initials = acc.initials || (acc.name ? acc.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'CU');
+    return {
+      id: existing?.id || acc.customerId || acc._id || acc.id || ('cust-' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '')),
+      name: acc.name || existing?.name || 'Customer',
+      initials,
+      email: cleanEmail,
+      phone: acc.phone || existing?.phone || '',
+      preferences: acc.preferences || existing?.preferences || '',
+      notes: acc.notes || existing?.notes || '',
+      status: acc.status || existing?.status || (acc.active === false ? 'Inactive' : 'Active'),
+      image: acc.image || existing?.image || '',
+      lastVisit: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : (existing?.lastVisit || 'Today')
+    };
+  });
+  existingCusts.forEach((c) => {
+    if (!c.email) updatedCusts.push(c);
+  });
+
+  // 3. Barbers (from accounts with role: 'barber')
+  const barberAccounts = accountsList.filter((a) => a.role === 'barber');
+  const existingBarbers = Array.isArray(state.barbers) ? [...state.barbers] : [];
+  const updatedBarbers = [...existingBarbers];
+
+  barberAccounts.forEach((acc) => {
+    const cleanEmail = (acc.email || '').toLowerCase().trim();
+    const idx = updatedBarbers.findIndex(
+      (b) => (b.email && b.email.toLowerCase().trim() === cleanEmail) || (acc.barberId && b.id === acc.barberId) || (acc.name && b.name.toLowerCase() === acc.name.toLowerCase())
+    );
+    const initials = acc.initials || (acc.name ? acc.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'BR');
+    if (idx >= 0) {
+      updatedBarbers[idx] = {
+        ...updatedBarbers[idx],
+        name: acc.name || updatedBarbers[idx].name,
+        email: cleanEmail,
+        phone: acc.phone || updatedBarbers[idx].phone,
+        image: acc.image || updatedBarbers[idx].image,
+        status: acc.status || updatedBarbers[idx].status,
+        working: acc.status ? acc.status !== 'Inactive' : updatedBarbers[idx].working
+      };
+    } else {
+      updatedBarbers.push({
+        id: acc.barberId || acc._id || acc.id || ('bar-' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '')),
+        name: acc.name || 'Barber',
+        initials,
+        email: cleanEmail,
+        phone: acc.phone || '',
+        image: acc.image || '',
+        specialty: acc.specialty || 'All-around cuts',
+        rating: acc.rating || 5.0,
+        schedule: acc.schedule || STANDARD_SCHEDULES[0],
+        status: acc.status || 'On shift',
+        leaveStatus: acc.leaveStatus || 'Active / On Duty',
+        leaveNotes: acc.leaveNotes || '',
+        bio: acc.bio || 'Skilled professional barber at Biglang Gwapo.',
+        working: acc.status !== 'Inactive' && acc.active !== false,
+        commissionEnabled: false
+      });
+    }
+  });
+
+  return {
+    ...state,
+    receptionists: updatedRecs,
+    customers: updatedCusts,
+    barbers: updatedBarbers
+  };
 }
 
 export function persistDemoState(state) {

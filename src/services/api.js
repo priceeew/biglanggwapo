@@ -19,6 +19,17 @@ export async function sendInviteNotification({ to, name, role, password }) {
   }
 }
 
+export async function fetchAccountsFromAtlas() {
+  try {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.accounts : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchBarbersFromAtlas() {
   try {
     const res = await fetch('/api/barbers');

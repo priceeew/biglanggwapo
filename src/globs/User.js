@@ -33,15 +33,23 @@ export async function syncAccountsFromAtlas() {
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.accounts) {
+        Object.keys(accounts).forEach((k) => {
+          if (k !== 'admin@biglanggwapo.com' && !data.accounts[k]) {
+            delete accounts[k];
+          }
+        });
         Object.assign(accounts, data.accounts);
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+          window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: accounts }));
         }
+        return accounts;
       }
     }
   } catch {
     // Offline or server not ready, fallback to localStorage
   }
+  return accounts;
 }
 
 if (typeof window !== 'undefined') {
@@ -73,6 +81,7 @@ export function saveAccount(account) {
   try {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+      window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: accounts }));
       if (account.status === 'Inactive' || account.active === false) {
         revokeSession({ email: cleanEmail, reason: 'deactivated' });
       }
@@ -101,6 +110,7 @@ export function deleteAccount(email) {
   try {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+      window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: accounts }));
       revokeSession({ email: cleanEmail, reason: 'deleted' });
     }
   } catch (err) {

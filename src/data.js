@@ -68,7 +68,7 @@ export const settings = {
 
 export const receptionists = [];
 
-export { accounts, saveAccount, deleteAccount, getAccounts, revokeSession, validatePassword, validatePhone } from './globs/User';
+export { accounts, saveAccount, deleteAccount, getAccounts, syncAccountsFromAtlas, revokeSession, validatePassword, validatePhone } from './globs/User';
 
 export const staffUsers = {
   admin: { name: 'Admin Desk', initials: 'AD', role: 'Admin' }

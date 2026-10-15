@@ -10,6 +10,11 @@ const AccountSchema = new mongoose.Schema({
   image: { type: String, default: '' },
   barberId: { type: String },
   customerId: { type: String },
+  status: { type: String, default: 'Active' },
+  active: { type: Boolean, default: true },
+  specialty: { type: String, default: '' },
+  preferences: { type: String, default: '' },
+  notes: { type: String, default: '' },
   redirectPath: { type: String, default: '/' },
   createdAt: { type: Date, default: Date.now }
 });

@@ -6,8 +6,8 @@ import {
   Trash2, TrendingUp, Upload, Users, X
 } from 'lucide-react';
 import { useStore, currency, humanDate } from '../../context/StoreContext';
-import { demoApi } from '../../mockService';
-import { saveAccount, deleteAccount, validatePassword, validatePhone, revokeSession } from '../../data';
+import { demoApi, syncAccountsIntoDemoState } from '../../mockService';
+import { saveAccount, deleteAccount, validatePassword, validatePhone, revokeSession, syncAccountsFromAtlas } from '../../data';
 import {
   sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas,
   saveServiceToAtlas, deleteServiceFromAtlas, clearAllServicesFromAtlas, uploadImageFile,
@@ -240,19 +240,21 @@ export function AdminManagementPage({ collection }) {
   const filtered = current.data.filter((item) => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()));
 
   const toggle = (item) => {
-    if (collection === 'barbers' || collection === 'services' || collection === 'customers') {
+    if (collection === 'barbers' || collection === 'services' || collection === 'customers' || collection === 'receptionists') {
       if (window.confirm(`${item.active === false || item.status === 'Inactive' ? 'Activate' : 'Deactivate'} this record?`)) {
-        const field = collection === 'customers' ? 'status' : collection === 'barbers' ? 'working' : 'active';
-        const willBeInactive = collection === 'customers' ? item.status !== 'Inactive' : collection === 'barbers' ? item.working : item.active;
+        const field = (collection === 'customers' || collection === 'receptionists') ? 'status' : collection === 'barbers' ? 'working' : 'active';
+        const willBeInactive = (collection === 'customers' || collection === 'receptionists') ? item.status !== 'Inactive' : collection === 'barbers' ? item.working : item.active;
         commit((state) => demoApi.toggleActive(state, collection, item.id, field));
         if (collection === 'services') {
           saveServiceToAtlas({ ...item, [field]: !item[field] });
         }
-        if (willBeInactive && (collection === 'barbers' || collection === 'customers')) {
+        if (willBeInactive && (collection === 'barbers' || collection === 'customers' || collection === 'receptionists')) {
           revokeSession({ email: item.email, id: item.id, name: item.name, reason: 'deactivated' });
           if (item.email) {
             saveAccount({ email: item.email, status: 'Inactive', active: false });
           }
+        } else if (!willBeInactive && item.email) {
+          saveAccount({ email: item.email, status: 'Active', active: true });
         }
         notify('Record status updated.');
       }
@@ -762,6 +764,23 @@ export function AdminManagementPage({ collection }) {
                   <Trash2 size={13} /> Clear all services
                 </button>
               )}
+              <button
+                className="button button-ghost button-small"
+                title="Sync and refresh latest database records"
+                onClick={async () => {
+                  try {
+                    const latest = await syncAccountsFromAtlas();
+                    if (latest) {
+                      commit((state) => syncAccountsIntoDemoState(state, latest));
+                    }
+                    notify('Synchronized latest accounts from database!', 'success');
+                  } catch (err) {
+                    notify('Sync failed: ' + err.message, 'error');
+                  }
+                }}
+              >
+                <RefreshCcw size={13} /> Refresh
+              </button>
               <button className="button button-dark button-small" onClick={handleOpenAdd}>
                 <Plus size={15} /> Add new
               </button>
@@ -893,7 +912,7 @@ export function AdminManagementPage({ collection }) {
                     >
                       <Pencil size={16} />
                     </button>
-                    {['barbers', 'services', 'customers'].includes(collection) && (
+                    {['barbers', 'services', 'customers', 'receptionists'].includes(collection) && (
                       <button className="button button-soft button-small" onClick={() => toggle(item)}>
                         {item.active === false || item.status === 'Inactive' || item.working === false ? 'Activate' : 'Deactivate'}
                       </button>
