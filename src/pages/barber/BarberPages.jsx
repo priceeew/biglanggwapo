@@ -63,6 +63,13 @@ export function BarberDashboard() {
   const activeApts = myAppointments.filter((item) => !['Cancelled', 'No-show'].includes(item.status));
   const completed = myAppointments.filter((item) => item.status === 'Completed').length;
 
+  const myReviews = (demo.reviews || []).filter(
+    (r) => r.barber && barberName && r.barber.toLowerCase().includes(barberName.toLowerCase())
+  );
+  const avgRating = myReviews.length > 0
+    ? (myReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / myReviews.length).toFixed(1)
+    : '—';
+
   return (
     <>
       <BentoStats
@@ -119,9 +126,9 @@ export function BarberDashboard() {
         </SectionCard>
         <SectionCard title="Today at a glance">
           <div className="mini-metrics">
-            <span><strong>{activeApts[0]?.time || '09:00'}</strong><small>First chair</small></span>
+            <span><strong>{activeApts.length > 0 ? (activeApts[0].time || '—') : '—'}</strong><small>First chair</small></span>
             <span><strong>{activeApts.length}</strong><small>Booked today</small></span>
-            <span><strong>{barber?.rating || '5.0'}</strong><small>Rating</small></span>
+            <span><strong>{avgRating}</strong><small>Rating</small></span>
           </div>
           <div className="progress-line">
             <span style={{ width: activeApts.length > 0 ? `${Math.min(100, Math.round((completed / activeApts.length) * 100))}%` : '0%' }} />
