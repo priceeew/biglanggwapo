@@ -449,6 +449,10 @@ export function CustomerDashboard() {
   const queueEntry = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const cancel = (id) => {
+    const targetApt = demo.appointments.find((a) => a.id === id);
+    if (targetApt?.status === 'In Service') {
+      return notify('Haircut has already started! In-service appointments cannot be cancelled.', 'error');
+    }
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
       commit((state) => {
         const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
@@ -575,6 +579,10 @@ export function CustomerAppointments() {
   const queueEntry = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const cancel = (id) => {
+    const targetApt = demo.appointments.find((a) => a.id === id);
+    if (targetApt?.status === 'In Service') {
+      return notify('Haircut has already started! In-service appointments cannot be cancelled.', 'error');
+    }
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
       commit((state) => {
         const prevQueueItem = state.queue.find((q) => q.appointmentId === id);

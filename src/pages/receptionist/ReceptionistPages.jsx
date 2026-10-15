@@ -2,17 +2,21 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronRight, Download,
-  FileText, ListOrdered, MoreHorizontal, Plus, Search, ShoppingBag, UserPlus,
-  WalletCards, X, Zap
+  FileText, ListOrdered, MoreHorizontal, Package, Plus, Search, ShoppingBag, Star,
+  Tag, Trash2, UserPlus, WalletCards, X, Zap
 } from 'lucide-react';
-import { useStore, currency, today, humanDate } from '../../context/StoreContext';
+import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, validatePassword, validatePhone } from '../../data';
-import { sendInviteNotification, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
+import {
+  sendInviteNotification, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
+  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas
+} from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
   StatusBadge, EmptyState, StatCard
 } from '../../components/common/UIComponents';
+import { ReviewsManagement } from '../../components/common/ReviewsManagement';
 
 export function ReceptionistPage({ path }) {
   if (path === '/receptionist') return <ReceptionistDashboard />;
@@ -21,6 +25,8 @@ export function ReceptionistPage({ path }) {
   if (path === '/receptionist/queue') return <QueueManagement />;
   if (path === '/receptionist/customers') return <CustomerManagement />;
   if (path === '/receptionist/payments') return <PaymentPage />;
+  if (path === '/receptionist/products') return <ReceptionistProductsPage />;
+  if (path === '/receptionist/reviews') return <ReceptionistReviewsPage />;
   return <TransactionsPage />;
 }
 
@@ -193,7 +199,35 @@ export function ReceptionistAppointments() {
                     >
                       {(item.barberName || 'BR').slice(0, 2).toUpperCase()}
                     </span>
-                    <span>{item.barberName}</span>
+                    <div>
+                      <span><strong>{item.barberName}</strong></span>
+                      {(() => {
+                        const bObj = (demo.barbers || []).find((b) => b.id === item.barberId || b.name === item.barberName);
+                        if (bObj && (bObj.isUnavailable || bObj.status === 'Unavailable')) {
+                          return (
+                            <div style={{ marginTop: '2px' }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  color: '#b91c1c',
+                                  background: '#fee2e2',
+                                  border: '1px solid #fca5a5',
+                                  borderRadius: '4px',
+                                  padding: '1px 5px'
+                                }}
+                              >
+                                ● Unavailable
+                              </span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </div>
                 </td>
                 <td><StatusBadge status={item.status} /></td>
@@ -229,12 +263,13 @@ export function ReceptionistAppointments() {
 
 export function WalkInPage() {
   const { demo, commit, notify } = useStore();
+  const defaultBarber = demo.barbers?.find((b) => b.working && !b.isUnavailable && b.status !== 'Unavailable') || demo.barbers?.[0];
   const [form, setForm] = useState({
     customerId: '',
     customerName: '',
     phone: '',
     serviceId: demo.services[0]?.id || '',
-    barberId: demo.barbers[0]?.id || ''
+    barberId: defaultBarber?.id || ''
   });
   const [created, setCreated] = useState(null);
 
@@ -312,9 +347,14 @@ export function WalkInPage() {
             <label className="field-label">Preferred barber
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <select className="input" style={{ flex: 1 }} value={form.barberId} onChange={(e) => setForm({ ...form, barberId: e.target.value })}>
-                  {demo.barbers.filter((b) => b.working).map((barber) => (
-                    <option key={barber.id} value={barber.id}>{barber.name}</option>
-                  ))}
+                  {demo.barbers.filter((b) => b.working).map((barber) => {
+                    const isUnavail = Boolean(barber.isUnavailable || barber.status === 'Unavailable');
+                    return (
+                      <option key={barber.id} value={barber.id} disabled={isUnavail}>
+                        {barber.name} {isUnavail ? '(Unavailable)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
                 {(() => {
                   const selBarber = demo.barbers?.find((b) => b.id === form.barberId);
@@ -672,9 +712,11 @@ export function PaymentPage() {
         const next = demoApi.recordPayment(state, item.id, method, cash);
         const apt = next.appointments.find((a) => a.id === item.id);
         if (apt) saveAppointmentToAtlas(apt);
+        const newTxn = next.transactions?.[0];
+        if (newTxn) saveTransactionToAtlas(newTxn);
         return next;
       });
-      notify('Payment recorded and receipt generated.');
+      notify('Payment recorded and transaction saved to database.');
       setSelected('');
       setCash('');
     } catch (error) {
@@ -731,13 +773,322 @@ export function PaymentPage() {
   );
 }
 
+export function ReceptionistProductsPage() {
+  const { demo, commit, notify } = useStore();
+  const [query, setQuery] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [quantity, setQuantity] = useState(1);
+  const [customerName, setCustomerName] = useState('Walk-in Customer');
+  const [method, setMethod] = useState('Cash');
+  const [cashReceived, setCashReceived] = useState('');
+
+  // Retail products for sale
+  const products = (demo.inventory || []).filter((item) =>
+    (item.category || '').toLowerCase().includes('sale') ||
+    (item.category || '').toLowerCase().includes('product') ||
+    (item.category || '').toLowerCase().includes('retail')
+  );
+
+  const displayList = products.length > 0 ? products : (demo.inventory || []);
+
+  const filtered = displayList.filter((item) =>
+    `${item.name} ${item.category} ${item.notes || ''}`.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const totalCost = selectedProduct ? (Number(selectedProduct.cost) || 0) * Number(quantity) : 0;
+  const change = method === 'Cash' ? Math.max(0, Number(cashReceived || 0) - totalCost) : 0;
+
+  const handleOpenSale = (prod) => {
+    if (Number(prod.stock) <= 0) {
+      return notify(`"${prod.name}" is out of stock!`, 'error');
+    }
+    setSelectedProduct(prod);
+    setQuantity(1);
+    setCustomerName('Walk-in Customer');
+    setMethod('Cash');
+    setCashReceived(String(prod.cost || ''));
+  };
+
+  const handleCompleteSale = async (e) => {
+    e.preventDefault();
+    if (!selectedProduct) return;
+    const qty = Number(quantity);
+    if (qty <= 0 || qty > Number(selectedProduct.stock)) {
+      return notify(`Quantity must be between 1 and ${selectedProduct.stock}.`, 'error');
+    }
+    if (method === 'Cash' && Number(cashReceived) < totalCost) {
+      return notify('Cash received must cover the purchase total.', 'error');
+    }
+
+    const newStock = Number(selectedProduct.stock) - qty;
+    const updatedProduct = { ...selectedProduct, stock: newStock };
+
+    const newTxn = {
+      id: 'txn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      receipt: `BG-RET-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`,
+      customerName: customerName.trim() || 'Walk-in Customer',
+      serviceName: `${selectedProduct.name} (x${qty})`,
+      amount: totalCost,
+      method,
+      status: 'Paid',
+      type: 'Retail',
+      date: today,
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      cashReceived: method === 'Cash' ? Number(cashReceived) : undefined,
+      change: method === 'Cash' ? change : undefined,
+      items: [{ id: selectedProduct.id, name: selectedProduct.name, quantity: qty, price: selectedProduct.cost }]
+    };
+
+    // Update local state immediately
+    commit((state) => ({
+      ...state,
+      inventory: (state.inventory || []).map((p) => p.id === selectedProduct.id ? updatedProduct : p),
+      transactions: [newTxn, ...(state.transactions || [])]
+    }));
+
+    // Synchronize to Atlas
+    await Promise.all([
+      saveInventoryToAtlas(updatedProduct).catch((err) => console.error('Failed to update inventory:', err)),
+      saveTransactionToAtlas(newTxn).catch((err) => console.error('Failed to save transaction:', err))
+    ]);
+
+    notify(`Sold ${qty}x ${selectedProduct.name}! Stock updated to ${newStock} and transaction logged to database.`);
+    setSelectedProduct(null);
+  };
+
+  return (
+    <>
+      <BentoStats
+        items={[
+          ['Retail Products', `${displayList.length} items`, ShoppingBag, 'Products available for onsite purchase'],
+          ['Total in Stock', `${displayList.reduce((sum, p) => sum + (Number(p.stock) || 0), 0)} units`, Package, 'Across all retail items'],
+          ['Low Stock Alerts', `${displayList.filter((p) => Number(p.stock) <= Number(p.threshold || 5)).length} items`, Tag, 'At or below restock threshold'],
+          ["Today's Retail Sales", currency((demo.transactions || []).filter((t) => t.date === today && t.type === 'Retail').reduce((sum, t) => sum + (Number(t.amount) || 0), 0)), WalletCards, 'Collected onsite today']
+        ]}
+      />
+
+      <Toolbar
+        title="Products & Retail (Onsite Sales)"
+        count={filtered.length}
+        query={query}
+        setQuery={setQuery}
+        description="Sell hair care products, pomades, and grooming goods directly to customers onsite."
+      />
+
+      <div className="choice-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+        {filtered.map((item) => {
+          const isOut = Number(item.stock) <= 0;
+          const isLow = Number(item.stock) <= Number(item.threshold || 5);
+          return (
+            <div
+              key={item.id}
+              className="choice-card retail-card"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                alignItems: 'stretch',
+                width: '100%',
+                padding: '20px',
+                border: isOut ? '1px solid #fee2e2' : '1px solid var(--line)',
+                background: isOut ? '#fef2f2' : 'var(--white)',
+                borderRadius: '10px'
+              }}
+            >
+              <div style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px' }}>
+                  <span className="eyebrow gold" style={{ fontSize: '10px' }}>{item.category}</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '3px 9px',
+                    borderRadius: '20px',
+                    whiteSpace: 'nowrap',
+                    background: isOut ? '#fee2e2' : isLow ? '#fef3c7' : '#ecfdf5',
+                    color: isOut ? '#b91c1c' : isLow ? '#b45309' : '#047857'
+                  }}>
+                    {isOut ? 'Out of stock' : `${item.stock} ${item.unit || 'units'} left`}
+                  </span>
+                </div>
+                <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 700, color: 'var(--ink)' }}>{item.name}</h3>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)', lineHeight: 1.45 }}>{item.notes || 'Premium salon-grade shop merchandise.'}</p>
+              </div>
+
+              <div style={{
+                marginTop: '18px',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderTop: '1px solid var(--line)',
+                paddingTop: '14px',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexShrink: 0 }}>
+                  <small style={{ color: 'var(--muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, display: 'block', marginBottom: '2px' }}>Price</small>
+                  <strong style={{ fontSize: '18px', color: 'var(--charcoal)', fontWeight: 800, whiteSpace: 'nowrap' }}>{currency(item.cost)}</strong>
+                </div>
+                <button
+                  type="button"
+                  disabled={isOut}
+                  className={`button button-small ${isOut ? 'button-ghost' : 'button-dark'}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: isOut ? 'not-allowed' : 'pointer'
+                  }}
+                  onClick={() => handleOpenSale(item)}
+                >
+                  <ShoppingBag size={14} />
+                  <span>{isOut ? 'Out of stock' : 'Sell Onsite'}</span>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {!filtered.length && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <EmptyState
+              icon={ShoppingBag}
+              title="No retail products found"
+              copy="Add items under category 'Products for Sale' in Admin → Inventory to sell them at the front desk."
+            />
+          </div>
+        )}
+      </div>
+
+      {selectedProduct && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setSelectedProduct(null)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setSelectedProduct(null)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <div className="modal-mark"><ShoppingBag size={20} /></div>
+              <span className="eyebrow gold">Front Desk Retail Checkout</span>
+              <h2>Sell Product Onsite</h2>
+              <p>Decrements stock from Atlas and logs transaction directly to database.</p>
+            </div>
+
+            <form className="form-stack" onSubmit={handleCompleteSale}>
+              <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '14px', borderRadius: '8px' }}>
+                <span className="eyebrow">{selectedProduct.category}</span>
+                <h3 style={{ margin: '2px 0 4px', fontSize: '16px' }}>{selectedProduct.name}</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                  <span>Price per unit: <strong>{currency(selectedProduct.cost)}</strong></span>
+                  <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Available: {selectedProduct.stock} {selectedProduct.unit}</span>
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <label className="field-label">Quantity to sell
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max={selectedProduct.stock}
+                    required
+                    value={quantity}
+                    onChange={(e) => {
+                      const val = Math.min(Number(selectedProduct.stock), Math.max(1, Number(e.target.value)));
+                      setQuantity(val);
+                      if (method === 'Cash') setCashReceived(String(val * Number(selectedProduct.cost)));
+                    }}
+                  />
+                </label>
+                <label className="field-label">Customer name
+                  <input
+                    className="input"
+                    required
+                    placeholder="e.g. Walk-in Guest / Juan"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div className="field-label">Payment Method
+                <div className="method-tabs" style={{ marginTop: '6px' }}>
+                  {['Cash', 'GCash', 'Card'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className={method === m ? 'active' : ''}
+                      onClick={() => setMethod(m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {method === 'Cash' && (
+                <label className="field-label">Cash received (₱)
+                  <input
+                    className="input"
+                    type="number"
+                    min={totalCost}
+                    required
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    placeholder={totalCost}
+                  />
+                  <small className="change-hint" style={{ display: 'block', marginTop: '4px', color: '#166534', fontWeight: 600 }}>
+                    Change due: {currency(change)}
+                  </small>
+                </label>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'var(--charcoal)', color: '#fff', borderRadius: '8px', marginTop: '10px' }}>
+                <span style={{ fontSize: '13px', opacity: 0.9 }}>Total Amount</span>
+                <strong style={{ fontSize: '20px', color: 'var(--gold)' }}>{currency(totalCost)}</strong>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setSelectedProduct(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full">
+                  Confirm & Print Receipt <Check size={16} />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function ReceptionistReviewsPage() {
+  return <ReviewsManagement role="receptionist" />;
+}
+
 export function TransactionsPage() {
-  const { demo } = useStore();
+  const { demo, commit, notify } = useStore();
   const [query, setQuery] = useState('');
 
-  const filtered = demo.transactions.filter((item) =>
-    `${item.customerName} ${item.serviceName} ${item.receipt}`.toLowerCase().includes(query.toLowerCase())
+  const filtered = (demo.transactions || []).filter((item) =>
+    `${item.customerName || ''} ${item.serviceName || ''} ${item.receipt || ''} ${item.type || ''}`.toLowerCase().includes(query.toLowerCase())
   );
+
+  const handleDelete = async (id, receipt) => {
+    if (window.confirm(`Delete transaction ${receipt} from database?`)) {
+      commit((state) => ({
+        ...state,
+        transactions: (state.transactions || []).filter((t) => t.id !== id)
+      }));
+      await deleteTransactionFromAtlas(id);
+      notify('Transaction removed from database.');
+    }
+  };
 
   return (
     <>
@@ -747,31 +1098,72 @@ export function TransactionsPage() {
         query={query}
         setQuery={setQuery}
         action={
-          <button className="button button-ghost button-small">
+          <button
+            className="button button-ghost button-small"
+            onClick={() => {
+              const headers = 'Receipt,Customer,Service/Product,Type,Method,Amount,Date,Time\n';
+              const rows = filtered.map((t) => `"${t.receipt || ''}","${t.customerName || ''}","${t.serviceName || ''}","${t.type || 'Service'}","${t.method || 'Cash'}",${t.amount},"${t.date}","${t.time || ''}"`).join('\n');
+              const blob = new Blob([headers + rows], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `transactions-${today}.csv`;
+              a.click();
+            }}
+          >
             <Download size={15} /> Export CSV
           </button>
         }
       />
       <div className="stats-row small-stats">
-        <StatCard label="Gross sales" value={currency(demo.transactions.reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} />
-        <StatCard label="Cash" value={currency(demo.transactions.filter((item) => item.method === 'Cash').reduce((sum, item) => sum + item.amount, 0))} icon={ShoppingBag} />
-        <StatCard label="Digital" value={currency(demo.transactions.filter((item) => item.method !== 'Cash').reduce((sum, item) => sum + item.amount, 0))} icon={Zap} />
+        <StatCard label="Gross sales" value={currency((demo.transactions || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} icon={WalletCards} />
+        <StatCard label="Cash" value={currency((demo.transactions || []).filter((item) => item.method === 'Cash').reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} icon={ShoppingBag} />
+        <StatCard label="Digital" value={currency((demo.transactions || []).filter((item) => item.method !== 'Cash').reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} icon={Zap} />
       </div>
       <SectionCard>
-        <DataTable columns={['Receipt', 'Customer', 'Service', 'Method', 'Amount', 'Date']}>
+        <DataTable columns={['Receipt', 'Customer', 'Service / Item', 'Type', 'Method', 'Amount', 'Date & Time', 'Action']}>
           <tbody>
             {filtered.map((item) => (
               <tr key={item.id}>
                 <td><strong>{item.receipt}</strong></td>
                 <td>{item.customerName}</td>
                 <td>{item.serviceName}</td>
+                <td>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: item.type === 'Retail' ? 'rgba(197, 160, 89, 0.15)' : 'var(--paper)',
+                    color: item.type === 'Retail' ? 'var(--gold)' : 'var(--charcoal)'
+                  }}>
+                    {item.type || 'Service'}
+                  </span>
+                </td>
                 <td><span className="method-label">{item.method}</span></td>
                 <td><strong>{currency(item.amount)}</strong></td>
                 <td>{humanDate(item.date)}<small className="table-sub">{item.time}</small></td>
+                <td>
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: '#d92d20', cursor: 'pointer', padding: '4px' }}
+                    onClick={() => handleDelete(item.id, item.receipt)}
+                    title="Delete transaction"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </DataTable>
+        {!filtered.length && (
+          <EmptyState
+            icon={WalletCards}
+            title="No transactions found"
+            copy="Completed service payments and retail onsite sales will be recorded here live into MongoDB Atlas."
+          />
+        )}
       </SectionCard>
     </>
   );

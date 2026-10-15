@@ -15,6 +15,7 @@ const ReviewSchema = new mongoose.Schema({
   appointmentId: { type: String, default: '' },
   date: { type: String, default: () => new Date().toISOString().slice(0, 10) },
   public: { type: Boolean, default: true },
+  hidden: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

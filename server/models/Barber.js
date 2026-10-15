@@ -15,6 +15,7 @@ const BarberSchema = new mongoose.Schema({
   working: { type: Boolean, default: true },
   email: { type: String, lowercase: true, trim: true },
   phone: { type: String, default: '' },
+  isUnavailable: { type: Boolean, default: false },
   commissionEnabled: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });

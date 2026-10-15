@@ -374,3 +374,103 @@ export async function uploadImageFile(file) {
   });
 }
 
+export async function fetchDiscountsFromAtlas() {
+  try {
+    const res = await fetch('/api/discounts');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.discounts : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDiscountToAtlas(item) {
+  try {
+    const res = await fetch('/api/discounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || data.message || `Server error (${res.status})` };
+    }
+    return { success: true, discount: data.discount };
+  } catch (err) {
+    console.error('Failed to save discount to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteDiscountFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/discounts/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to delete discount from database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearDiscountsInAtlas() {
+  try {
+    const res = await fetch('/api/discounts', { method: 'DELETE' });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function fetchTransactionsFromAtlas() {
+  try {
+    const res = await fetch('/api/transactions');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.transactions : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveTransactionToAtlas(item) {
+  try {
+    const res = await fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || data.message || `Server error (${res.status})` };
+    }
+    return { success: true, transaction: data.transaction };
+  } catch (err) {
+    console.error('Failed to save transaction to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteTransactionFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/transactions/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to delete transaction from database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearTransactionsInAtlas() {
+  try {
+    const res = await fetch('/api/transactions', { method: 'DELETE' });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+

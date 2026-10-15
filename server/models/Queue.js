@@ -10,7 +10,7 @@ const QueueSchema = new mongoose.Schema({
   serviceName: { type: String, required: true },
   status: {
     type: String,
-    enum: ['Waiting', 'In Service', 'Completed', 'Skipped', 'Removed'],
+    enum: ['Waiting', 'Called', 'In Service', 'Completed', 'Skipped', 'Removed'],
     default: 'Waiting'
   },
   joinedAt: { type: String, default: '' },

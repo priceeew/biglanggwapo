@@ -358,7 +358,13 @@ export function AppointmentCard({ appointment, onCancel, onReschedule }) {
         <strong>{currency(appointment.price)}</strong>
         <small>{appointment.paymentStatus}</small>
       </div>
-      {!['Completed', 'Cancelled'].includes(appointment.status) && (
+      {appointment.status === 'In Service' ? (
+        <div className="appointment-actions">
+          <span style={{ fontSize: '12px', padding: '6px 12px', background: 'rgba(197, 160, 89, 0.15)', color: 'var(--gold)', fontWeight: 600, borderRadius: '6px', border: '1px solid rgba(197, 160, 89, 0.3)' }}>
+            In Chair · Haircut in progress
+          </span>
+        </div>
+      ) : !['Completed', 'Cancelled'].includes(appointment.status) && (
         <div className="appointment-actions">
           <button className="button button-ghost button-small" onClick={onReschedule}>Reschedule</button>
           <button className="text-button danger-text" onClick={() => onCancel(appointment.id)}>Cancel</button>

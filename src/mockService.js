@@ -1,7 +1,7 @@
 import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
 import { getSlotAvailability, STANDARD_SCHEDULES } from './utils/scheduling';
 
-const STORAGE_KEY = 'biglanggwapo-demo-v10';
+const STORAGE_KEY = 'biglanggwapo-demo-v12';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 export function getInitialDemoState() {
@@ -25,7 +25,7 @@ export function loadDemoState() {
     let stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) {
       // Clear legacy localStorage keys that held old mock records
-      ['biglanggwapo-demo-v9', 'biglanggwapo-demo-v8', 'biglanggwapo-demo-v7', 'biglanggwapo-demo-v6', 'biglanggwapo-demo-v5', 'biglanggwapo-demo-v4', 'biglanggwapo-accounts-v2'].forEach((k) => {
+      ['biglanggwapo-demo-v11', 'biglanggwapo-demo-v10', 'biglanggwapo-demo-v9', 'biglanggwapo-demo-v8', 'biglanggwapo-demo-v7', 'biglanggwapo-demo-v6', 'biglanggwapo-demo-v5', 'biglanggwapo-demo-v4', 'biglanggwapo-accounts-v2'].forEach((k) => {
         try { window.localStorage.removeItem(k); } catch {}
       });
       const fresh = getInitialDemoState();
@@ -227,7 +227,7 @@ export const demoApi = {
         }
       }
     } else {
-      const alreadyBooked = state.appointments.some((item) => item.barberId === payload.barberId && item.date === payload.date && item.time === payload.time && !['Cancelled', 'No-show'].includes(item.status));
+      const alreadyBooked = state.appointments.some((item) => item.barberId === payload.barberId && item.date === payload.date && item.time === payload.time && !['Completed', 'Cancelled', 'No-show'].includes(item.status));
       if (alreadyBooked) throw new Error('That slot was just taken. Please choose another time.');
     }
 
@@ -314,7 +314,7 @@ export const demoApi = {
         }
       }
     } else {
-      const conflict = state.appointments.some((item) => item.id !== appointmentId && item.barberId === existingApt.barberId && item.date === date && item.time === time && !['Cancelled', 'No-show'].includes(item.status));
+      const conflict = state.appointments.some((item) => item.id !== appointmentId && item.barberId === existingApt.barberId && item.date === date && item.time === time && !['Completed', 'Cancelled', 'No-show'].includes(item.status));
       if (conflict) throw new Error('That barber is already booked for this time.');
     }
     return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, date, time, status: 'Pending' } : item) };
@@ -380,6 +380,15 @@ export const demoApi = {
       customers: payload.customerId ? state.customers : [customer, ...state.customers],
       appointments: [appointment, ...state.appointments],
       queue: [queueEntry, ...state.queue]
+    };
+  },
+  callNext(state, queueId) {
+    const entry = state.queue.find((item) => item.id === queueId);
+    if (!entry) return state;
+    return {
+      ...state,
+      queue: state.queue.map((item) => item.id === queueId ? { ...item, status: 'Called', calledAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) } : item),
+      appointments: state.appointments.map((item) => item.id === entry.appointmentId ? { ...item, status: 'Called' } : item)
     };
   },
   startService(state, queueId) {

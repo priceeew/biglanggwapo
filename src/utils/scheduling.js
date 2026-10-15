@@ -258,10 +258,15 @@ export function isRestDay(barber, dateStr) {
 export function isBarberOnLeave(barber) {
   if (!barber) return { onLeave: false, reason: '' };
   const leave = barber.leaveStatus || barber.status;
-  if (['Sick Leave', 'Vacation Leave', 'Day Off', 'Inactive'].includes(leave) || barber.working === false) {
+  if (
+    ['Sick Leave', 'Vacation Leave', 'Day Off', 'Inactive', 'Unavailable'].includes(leave) ||
+    barber.working === false ||
+    Boolean(barber.isUnavailable) ||
+    barber.status === 'Unavailable'
+  ) {
     return {
       onLeave: true,
-      reason: leave || 'On leave'
+      reason: (leave === 'Unavailable' || barber.isUnavailable || barber.status === 'Unavailable') ? 'Unavailable' : (leave || 'On leave')
     };
   }
   return { onLeave: false, reason: '' };
@@ -295,7 +300,7 @@ export function getSlotAvailability(slotTime, serviceDuration, barber, dateStr, 
     }
   }
 
-  // 2. Approved time off / leave check
+  // 2. Approved time off / leave / unavailable check
   const leaveCheck = isBarberOnLeave(barber);
   if (leaveCheck.onLeave) {
     return { available: false, reason: leaveCheck.reason };
@@ -325,12 +330,12 @@ export function getSlotAvailability(slotTime, serviceDuration, barber, dateStr, 
     return { available: false, reason: 'Break' };
   }
 
-  // 5. Existing appointments overlap check
+  // 5. Existing appointments overlap check (Completed, Cancelled, and No-show appointments do NOT block the slot)
   const hasOverlap = (appointments || []).some((apt) => {
     if (excludeAptId && apt.id === excludeAptId) return false;
     if (apt.barberId !== barber.id) return false;
     if (apt.date !== dateStr) return false;
-    if (['Cancelled', 'No-show'].includes(apt.status)) return false;
+    if (['Completed', 'Cancelled', 'No-show'].includes(apt.status)) return false;
 
     const aptStart = timeToMinutes(apt.time);
     const aptDuration = Number(apt.duration) || 45;

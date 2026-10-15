@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState } from '../mockService';
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
-  fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas
+  fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas,
+  fetchDiscountsFromAtlas, fetchTransactionsFromAtlas
 } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
 import { getAccounts, syncAccountsFromAtlas } from '../data';
@@ -86,9 +87,29 @@ export function StoreProvider({ children }) {
     });
 
     fetchInventoryFromAtlas().then((inventory) => {
-      if (inventory && Array.isArray(inventory) && inventory.length > 0) {
+      if (inventory && Array.isArray(inventory)) {
         setDemo((prev) => {
           const updated = { ...prev, inventory };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    fetchDiscountsFromAtlas().then((discounts) => {
+      if (discounts && Array.isArray(discounts)) {
+        setDemo((prev) => {
+          const updated = { ...prev, promotions: discounts };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    fetchTransactionsFromAtlas().then((transactions) => {
+      if (transactions && Array.isArray(transactions)) {
+        setDemo((prev) => {
+          const updated = { ...prev, transactions };
           persistDemoState(updated);
           return updated;
         });
@@ -116,14 +137,22 @@ export function StoreProvider({ children }) {
     };
     window.addEventListener('biglanggwapo-accounts-updated', handleAccountsUpdated);
 
-    // Periodic synchronization across devices for accounts, queue, reviews, and appointments
+    // Aggressive periodic synchronization across devices for all Atlas collections
     const syncAtlasData = async () => {
       try {
-        const [latestAccounts, latestQueue, latestReviews, latestAppointments] = await Promise.all([
+        const [
+          latestAccounts, latestQueue, latestReviews, latestAppointments,
+          latestInventory, latestDiscounts, latestTransactions, latestBarbers, latestServices
+        ] = await Promise.all([
           syncAccountsFromAtlas().catch(() => null),
           fetchQueueFromAtlas().catch(() => null),
           fetchReviewsFromAtlas().catch(() => null),
-          fetchAppointmentsFromAtlas().catch(() => null)
+          fetchAppointmentsFromAtlas().catch(() => null),
+          fetchInventoryFromAtlas().catch(() => null),
+          fetchDiscountsFromAtlas().catch(() => null),
+          fetchTransactionsFromAtlas().catch(() => null),
+          fetchBarbersFromAtlas().catch(() => null),
+          fetchServicesFromAtlas().catch(() => null)
         ]);
 
         setDemo((prev) => {
@@ -146,6 +175,26 @@ export function StoreProvider({ children }) {
             updated.appointments = latestAppointments;
             changed = true;
           }
+          if (latestInventory && Array.isArray(latestInventory)) {
+            updated.inventory = latestInventory;
+            changed = true;
+          }
+          if (latestDiscounts && Array.isArray(latestDiscounts)) {
+            updated.promotions = latestDiscounts;
+            changed = true;
+          }
+          if (latestTransactions && Array.isArray(latestTransactions)) {
+            updated.transactions = latestTransactions;
+            changed = true;
+          }
+          if (latestBarbers && Array.isArray(latestBarbers)) {
+            updated.barbers = latestBarbers;
+            changed = true;
+          }
+          if (latestServices && Array.isArray(latestServices)) {
+            updated.services = latestServices;
+            changed = true;
+          }
 
           if (changed) {
             persistDemoState(updated);
@@ -160,11 +209,19 @@ export function StoreProvider({ children }) {
     const handleWindowFocus = () => {
       syncAtlasData();
     };
-    window.addEventListener('focus', handleWindowFocus);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncAtlasData();
+      }
+    };
 
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Fast polling interval (3.5 seconds) so actions sync across users without page reloads
     const syncInterval = setInterval(() => {
       syncAtlasData();
-    }, 8000);
+    }, 3500);
 
     const handleStorageChange = (e) => {
       if (e.key === 'biglanggwapo-revoked-session') {
@@ -187,7 +244,7 @@ export function StoreProvider({ children }) {
         } catch {}
       }
 
-      if (!e.key || e.key === 'biglanggwapo-demo-v10' || e.key === 'biglanggwapo-accounts-v2') {
+      if (!e.key || e.key === 'biglanggwapo-demo-v12' || e.key === 'biglanggwapo-demo-v10' || e.key === 'biglanggwapo-accounts-v2') {
         const rawAccounts = getAccounts();
         setDemo((prev) => syncAccountsIntoDemoState(loadDemoState(), rawAccounts));
       }
@@ -198,6 +255,7 @@ export function StoreProvider({ children }) {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('biglanggwapo-accounts-updated', handleAccountsUpdated);
       window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

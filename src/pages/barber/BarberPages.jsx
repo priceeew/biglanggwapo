@@ -4,12 +4,13 @@ import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
   ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
 } from 'lucide-react';
-import { useStore, currency, humanDate, today } from '../../context/StoreContext';
+import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAppointmentToAtlas, saveQueueItemToAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState
 } from '../../components/common/UIComponents';
+import { ReviewsManagement } from '../../components/common/ReviewsManagement';
 
 export function useCurrentBarber() {
   const { demo, session } = useStore();
@@ -48,6 +49,7 @@ export function BarberPage({ path }) {
   if (path === '/barber/customer-details') return <BarberCustomerDetails />;
   if (path === '/barber/service-session') return <ServiceSession />;
   if (path === '/barber/schedule') return <BarberSchedule />;
+  if (path === '/barber/reviews') return <BarberReviewsPage />;
   return <BarberPerformance />;
 }
 
@@ -170,11 +172,33 @@ export function BarberDashboard() {
 
 export function BarberAppointments() {
   const { demo } = useStore();
-  const { barberName, matchesBarber } = useCurrentBarber();
+  const { barberName, matchesBarber, barber } = useCurrentBarber();
   const list = (demo.appointments || []).filter(matchesBarber);
+  const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
 
   return (
     <>
+      {isUnavail && (
+        <div
+          style={{
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            color: '#991b1b',
+            fontSize: '13px'
+          }}
+        >
+          <span style={{ fontSize: '16px' }}>⚠️</span>
+          <span>
+            <strong>Your chair is currently marked as Unavailable.</strong> Customers cannot select your chair for new online bookings. An administrator can toggle your status back to available from Admin → Barbers.
+          </span>
+        </div>
+      )}
       <Toolbar
         title={`${barberName}’s Bookings`}
         count={list.length}
@@ -218,6 +242,18 @@ export function BarberQueue() {
   const { barberName, matchesBarber } = useCurrentBarber();
   const list = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
+  const callNextClient = (item) => {
+    commit((state) => {
+      const next = demoApi.callNext(state, item.id);
+      const updatedQueue = next.queue.find((q) => q.id === item.id);
+      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      const apt = next.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) saveAppointmentToAtlas(apt);
+      return next;
+    });
+    notify(`Called ${item.customerName} to the chair!`);
+  };
+
   const start = (item) => {
     commit((state) => {
       const next = demoApi.startService(state, item.id);
@@ -246,13 +282,16 @@ export function BarberQueue() {
             <span className="queue-number-small">{item.number}</span>
             <span className="avatar avatar-md">{(item.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
             <div>
-              <span className="eyebrow">{item.status === 'In Service' ? 'Current in chair' : index === 0 ? 'Now / next' : `In line · position ${index + 1}`}</span>
+              <span className="eyebrow">{item.status === 'In Service' ? 'Current in chair' : item.status === 'Called' ? 'Called to chair' : index === 0 ? 'Now / next' : `In line · position ${index + 1}`}</span>
               <h3>{item.customerName}</h3>
               <p>{item.serviceName} · Joined {item.joinedAt || 'recently'}</p>
             </div>
             <StatusBadge status={item.status} />
             {item.status === 'Waiting' && (
-              <button className="button button-dark button-small" onClick={() => start(item)}>Start</button>
+              <button className="button button-soft button-small" onClick={() => callNextClient(item)}>Call next</button>
+            )}
+            {item.status === 'Called' && (
+              <button className="button button-dark button-small" onClick={() => start(item)}>Start service</button>
             )}
             {item.status === 'In Service' && (
               <Link to="/barber/service-session" className="button button-soft button-small">Open chair</Link>
@@ -339,6 +378,16 @@ export function ServiceSession() {
     if (!current) return notify('No active customer in your queue.', 'error');
     if (current.status === 'Waiting') {
       commit((state) => {
+        const next = demoApi.callNext(state, current.id);
+        const updatedQueue = next.queue.find((q) => q.id === current.id);
+        if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+        const apt = next.appointments.find((a) => a.id === current.appointmentId);
+        if (apt) saveAppointmentToAtlas(apt);
+        return next;
+      });
+      notify(`Called ${current.customerName} to the chair!`);
+    } else if (current.status === 'Called') {
+      commit((state) => {
         const next = demoApi.startService(state, current.id);
         const updatedQueue = next.queue.find((q) => q.id === current.id);
         if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
@@ -379,7 +428,13 @@ export function ServiceSession() {
             </div>
             <div className="session-timer">
               <Clock3 size={20} />
-              <span>{current.status === 'In Service' ? 'Service is in progress' : 'Customer arrived and ready to start in chair'}</span>
+              <span>
+                {current.status === 'In Service'
+                  ? 'Service is in progress'
+                  : current.status === 'Called'
+                  ? 'Customer called to chair — ready to begin haircut'
+                  : 'Customer arrived — please call next before starting service'}
+              </span>
             </div>
             <label className="field-label">Service notes & finish
               <textarea
@@ -390,7 +445,7 @@ export function ServiceSession() {
               />
             </label>
             <button className="button button-dark button-large button-full" onClick={act}>
-              {current.status === 'Waiting' ? 'Start service' : 'Complete service'} <CheckCircle2 size={18} />
+              {current.status === 'Waiting' ? 'Call next' : current.status === 'Called' ? 'Start service' : 'Complete service'} <CheckCircle2 size={18} />
             </button>
           </>
         ) : (
@@ -408,6 +463,13 @@ export function ServiceSession() {
           <div>
             <strong>Customer arrived</strong>
             <small>Checked in at front desk.</small>
+          </div>
+        </div>
+        <div className={`checklist-row ${current?.status === 'Called' || current?.status === 'In Service' || current?.status === 'Completed' ? 'done' : ''}`}>
+          <span><Clock3 size={14} /></span>
+          <div>
+            <strong>Customer called</strong>
+            <small>Called to your barber station.</small>
           </div>
         </div>
         <div className={`checklist-row ${current?.status === 'In Service' || current?.status === 'Completed' ? 'done' : ''}`}>
@@ -517,7 +579,7 @@ export function BarberPerformance() {
           <div className="rating-summary">
             <strong>{myReviews.length > 0 ? avgRating : '—'}</strong>
             <div>
-              <span className="stars">{myReviews.length > 0 ? '★★★★★' : '☆☆☆☆☆'}</span>
+              <span className="stars">{myReviews.length > 0 ? stars(Number(avgRating)) : '☆☆☆☆☆'}</span>
               <small>{myReviews.length ? `${myReviews.length} client review${myReviews.length > 1 ? 's' : ''}` : 'No client reviews yet'}</small>
             </div>
           </div>
@@ -528,6 +590,55 @@ export function BarberPerformance() {
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard title={`All Client Reviews & Ratings (${myReviews.length})`} description="Feedback and ratings left by clients who sat in your chair.">
+        <DataTable columns={['Client & Date', 'Service', 'Rating', 'Feedback']}>
+          <tbody>
+            {myReviews.map((r) => (
+              <tr key={r.id}>
+                <td>
+                  <div className="table-person">
+                    <span className="avatar avatar-xs">{(r.customer || 'CU').slice(0, 2).toUpperCase()}</span>
+                    <div>
+                      <strong>{r.customer || 'Anonymous'}</strong>
+                      <small className="table-sub">{humanDate(r.date)}</small>
+                    </div>
+                  </div>
+                </td>
+                <td>{r.service || 'Haircut'}</td>
+                <td>
+                  <span style={{ color: 'var(--gold)', letterSpacing: '1px' }}>{stars(r.rating || 5)}</span>
+                  <small className="table-sub">{Number(r.rating || 5).toFixed(1)} / 5.0</small>
+                </td>
+                <td style={{ maxWidth: '320px' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--charcoal)', lineHeight: '1.4' }}>
+                    {r.comment ? `“${r.comment}”` : 'No written feedback.'}
+                  </p>
+                  {r.image && (
+                    <img
+                      src={r.image}
+                      alt="Customer review photo"
+                      style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', marginTop: '6px', border: '1px solid var(--line)' }}
+                    />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+        {!myReviews.length && (
+          <EmptyState
+            icon={Star}
+            title="No client reviews yet"
+            copy="When clients leave reviews and ratings for your haircuts, they will appear here in real time."
+          />
+        )}
+      </SectionCard>
     </>
   );
+}
+
+export function BarberReviewsPage() {
+  const { barber, barberName } = useCurrentBarber();
+  return <ReviewsManagement role="barber" barberFilter={barber || { name: barberName }} />;
 }

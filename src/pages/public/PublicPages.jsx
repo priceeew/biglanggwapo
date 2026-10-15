@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
-  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Zap
+  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Tag, Zap
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
@@ -45,14 +45,6 @@ export function HomePage() {
               Book your chair <ArrowRight size={18} />
             </button>
             <a href="#services" className="button button-ghost button-large">Explore services</a>
-          </div>
-          <div className="hero-note">
-            <span className="avatar-stack">
-              <span className="avatar avatar-xs">MR</span>
-              <span className="avatar avatar-xs">PS</span>
-              <span className="avatar avatar-xs">ND</span>
-            </span>
-            <span>Trusted by 400+ local regulars</span>
           </div>
         </div>
         <div className="hero-art">
@@ -132,8 +124,8 @@ export function HomePage() {
             }
           />
           <div className="reviews-scroll-container" ref={reviewsContainerRef}>
-            {demo.reviews && demo.reviews.length > 0 ? (
-              demo.reviews.map((review) => (
+            {demo.reviews && demo.reviews.filter((r) => !r.hidden && r.public !== false).length > 0 ? (
+              demo.reviews.filter((r) => !r.hidden && r.public !== false).map((review) => (
                 <div className="reviews-scroll-item" key={review.id}>
                   <ReviewCard
                     review={review}
@@ -252,6 +244,9 @@ export function BookingPage() {
     notes: ''
   });
   const [confirmed, setConfirmed] = useState(null);
+  const [discountCode, setDiscountCode] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [discountError, setDiscountError] = useState('');
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -271,6 +266,43 @@ export function BookingPage() {
   const totalDuration = allSelectedServices.reduce((sum, item) => sum + (Number(item.duration) || 0), 0) || 45;
   const totalPrice = allSelectedServices.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
   const combinedServiceName = allSelectedServices.map((s) => s.name).join(' + ') || 'Service Booking';
+
+  const discountAmount = appliedDiscount
+    ? (appliedDiscount.type === 'Percentage'
+        ? Math.round((totalPrice * (Number(appliedDiscount.value) || 0)) / 100)
+        : Math.min(totalPrice, Number(appliedDiscount.value) || 0))
+    : 0;
+  const finalPrice = Math.max(0, totalPrice - discountAmount);
+
+  const handleApplyPromo = (codeOverride) => {
+    const rawCode = (codeOverride !== undefined ? codeOverride : discountCode).trim().toUpperCase();
+    if (!rawCode) {
+      setAppliedDiscount(null);
+      setDiscountError('');
+      return;
+    }
+    const found = (demo.promotions || []).find(
+      (p) => (p.code && p.code.trim().toUpperCase() === rawCode) || (p.title && p.title.trim().toUpperCase() === rawCode)
+    );
+    if (!found) {
+      setAppliedDiscount(null);
+      setDiscountError('Invalid promo code');
+      return;
+    }
+    if (found.active === false) {
+      setAppliedDiscount(null);
+      setDiscountError('This promotion is inactive');
+      return;
+    }
+    if (found.validTo && found.validTo < today) {
+      setAppliedDiscount(null);
+      setDiscountError('This promo has expired');
+      return;
+    }
+    setAppliedDiscount(found);
+    setDiscountError('');
+    notify(`Promo "${found.title}" applied successfully!`);
+  };
 
   const barber = demo.barbers.find((item) => item.id === selection.barberId);
   const slots = [
@@ -357,7 +389,10 @@ export function BookingPage() {
         barberName: barber.name,
         barberImage: barber.image || '',
         duration: totalDuration,
-        price: totalPrice,
+        price: finalPrice,
+        originalPrice: totalPrice,
+        discountCode: appliedDiscount ? (appliedDiscount.code || appliedDiscount.title) : '',
+        discountAmount,
         status: 'Pending',
         paymentStatus: 'Unpaid',
         source: 'Online',
@@ -370,7 +405,10 @@ export function BookingPage() {
         serviceName: combinedServiceName,
         barberName: barber.name,
         barberImage: barber.image || '',
-        price: totalPrice,
+        price: finalPrice,
+        originalPrice: totalPrice,
+        discountCode: appliedDiscount ? (appliedDiscount.code || appliedDiscount.title) : '',
+        discountAmount,
         duration: totalDuration,
         selectedServicesList: allSelectedServices
       });
@@ -653,11 +691,16 @@ export function BookingPage() {
               <div className="choice-grid">
                 {demo.barbers.filter((item) => item.working).map((item) => {
                   const isBlocked = hasActiveBookingWithBarber(item.id);
+                  const isUnavail = Boolean(item.isUnavailable || item.status === 'Unavailable' || item.leaveStatus === 'Unavailable');
                   return (
                     <button
-                      className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''} ${isBlocked ? 'disabled-choice' : ''}`}
+                      className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''} ${isBlocked || isUnavail ? 'disabled-choice' : ''}`}
                       key={item.id}
                       onClick={() => {
+                        if (isUnavail) {
+                          notify(`${item.name} is currently marked as Unavailable. Please select another barber.`, 'error');
+                          return;
+                        }
                         if (isBlocked) {
                           notify(`You already have an active appointment with ${item.name}. Please select another barber or complete your current booking first.`, 'error');
                           return;
@@ -691,7 +734,11 @@ export function BookingPage() {
                       </span>
                       <strong>{item.name}</strong>
                       <small>{item.specialty}</small>
-                      {isBlocked ? (
+                      {isUnavail ? (
+                        <span className="active-booking-badge" style={{ color: '#b91c1c', background: '#fee2e2', borderColor: '#fca5a5' }}>
+                          ● Unavailable
+                        </span>
+                      ) : isBlocked ? (
                         <span className="active-booking-badge">
                           ● Active booking exists
                         </span>
@@ -852,7 +899,98 @@ export function BookingPage() {
                   </div>
                 </span>
                 <span><small>Schedule</small><strong>{humanDate(selection.date)} · {selection.time}</strong></span>
-                <span><small>Total ({totalDuration} mins)</small><strong>{currency(totalPrice)}</strong></span>
+                {appliedDiscount ? (
+                  <>
+                    <span><small>Subtotal</small><span>{currency(totalPrice)}</span></span>
+                    <span><small>Promo ({appliedDiscount.code || appliedDiscount.title})</small><span style={{ color: '#16a34a', fontWeight: 600 }}>- {currency(discountAmount)}</span></span>
+                    <span><small>Total after discount</small><strong>{currency(finalPrice)}</strong></span>
+                  </>
+                ) : (
+                  <span><small>Total ({totalDuration} mins)</small><strong>{currency(totalPrice)}</strong></span>
+                )}
+              </div>
+
+              {/* Promo & Discount Box */}
+              <div style={{
+                background: 'var(--paper)',
+                border: '1px solid var(--line)',
+                borderRadius: '8px',
+                padding: '14px 16px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <Tag size={15} style={{ color: 'var(--gold)' }} />
+                  <strong style={{ fontSize: '13px' }}>Promo / Discount Code</strong>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    className="input"
+                    style={{ textTransform: 'uppercase', flex: 1, padding: '7px 12px', fontSize: '13px' }}
+                    placeholder="Enter code (e.g. WELCOME20)"
+                    value={discountCode}
+                    onChange={(e) => {
+                      setDiscountCode(e.target.value);
+                      if (discountError) setDiscountError('');
+                    }}
+                  />
+                  {appliedDiscount ? (
+                    <button
+                      type="button"
+                      className="button button-ghost button-small"
+                      onClick={() => {
+                        setAppliedDiscount(null);
+                        setDiscountCode('');
+                        setDiscountError('');
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="button button-dark button-small"
+                      onClick={() => handleApplyPromo()}
+                    >
+                      Apply
+                    </button>
+                  )}
+                </div>
+                {discountError && (
+                  <p style={{ margin: '6px 0 0', color: '#d92d20', fontSize: '12px' }}>{discountError}</p>
+                )}
+                {appliedDiscount && (
+                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 10px', borderRadius: '6px' }}>
+                    <span><strong>{appliedDiscount.title}</strong> ({appliedDiscount.type === 'Percentage' ? `${appliedDiscount.value}% off` : `₱${appliedDiscount.value} off`})</span>
+                    <span>- {currency(discountAmount)}</span>
+                  </div>
+                )}
+                {(demo.promotions || []).filter((p) => p.active !== false && (!p.validTo || p.validTo >= today)).length > 0 && (
+                  <div style={{ marginTop: '10px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <small style={{ color: 'var(--muted)', fontSize: '11px' }}>Available promos:</small>
+                    {(demo.promotions || []).filter((p) => p.active !== false && (!p.validTo || p.validTo >= today)).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        style={{
+                          background: appliedDiscount?.id === p.id ? 'var(--gold)' : 'var(--white)',
+                          color: appliedDiscount?.id === p.id ? '#fff' : 'var(--charcoal)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '4px',
+                          padding: '2px 8px',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                        onClick={() => {
+                          setDiscountCode(p.code || p.title);
+                          handleApplyPromo(p.code || p.title);
+                        }}
+                      >
+                        {p.code || p.title} ({p.type === 'Percentage' ? `${p.value}%` : `₱${p.value}`})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <label className="field-label">
                 Notes for your barber

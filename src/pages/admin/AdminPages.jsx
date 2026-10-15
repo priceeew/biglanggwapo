@@ -2,27 +2,30 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, CalendarDays, Check, Download, Image as ImageIcon, Layers,
-  Package, Pencil, Plus, RefreshCcw, Scissors, ShoppingBag, Tag,
+  Package, Pencil, Plus, RefreshCcw, Scissors, ShoppingBag, Star, Tag,
   Trash2, TrendingUp, Upload, Users, X
 } from 'lucide-react';
-import { useStore, currency, humanDate } from '../../context/StoreContext';
+import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
 import { demoApi, syncAccountsIntoDemoState } from '../../mockService';
 import { saveAccount, deleteAccount, validatePassword, validatePhone, revokeSession, syncAccountsFromAtlas } from '../../data';
 import {
   sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas,
   saveServiceToAtlas, deleteServiceFromAtlas, clearAllServicesFromAtlas, uploadImageFile,
-  saveInventoryToAtlas, deleteInventoryFromAtlas
+  saveInventoryToAtlas, deleteInventoryFromAtlas, saveDiscountToAtlas, deleteDiscountFromAtlas,
+  deleteReviewFromAtlas, deleteTransactionFromAtlas
 } from '../../services/api';
 import { STANDARD_SCHEDULES, validateShiftWithinShopHours, findShiftConflicts } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
 } from '../../components/common/UIComponents';
+import { ReviewsManagement } from '../../components/common/ReviewsManagement';
 
 export function AdminPage({ path }) {
   if (path === '/admin') return <AdminDashboard />;
   if (path === '/admin/reports') return <ReportsPage />;
   if (path === '/admin/inventory') return <InventoryPage />;
   if (path === '/admin/promotions') return <PromotionsPage />;
+  if (path === '/admin/reviews') return <AdminReviewsPage />;
   if (path === '/admin/settings') return <SettingsPage />;
   const collection = path.split('/')[2];
   return <AdminManagementPage collection={collection} />;
@@ -276,6 +279,27 @@ export function AdminManagementPage({ collection }) {
       }
       revokeSession({ email: item.email, id: item.id, name: item.name || item.customerName, reason: 'deleted' });
       notify(`"${itemName}" has been deleted.`, 'success');
+    }
+  };
+
+  const handleToggleUnavailable = async (barber) => {
+    const isCurrentlyUnavailable = Boolean(barber.isUnavailable || barber.status === 'Unavailable');
+    const actionText = isCurrentlyUnavailable ? 'set as available' : 'mark as unavailable';
+    if (!window.confirm(`Are you sure you want to ${actionText} for barber "${barber.name}"?`)) {
+      return;
+    }
+    const updated = {
+      ...barber,
+      isUnavailable: !isCurrentlyUnavailable,
+      status: !isCurrentlyUnavailable ? 'Unavailable' : (barber.working ? 'Available' : 'Inactive'),
+      leaveStatus: !isCurrentlyUnavailable ? 'Unavailable' : 'On shift'
+    };
+    commit((state) => demoApi.updateItem(state, 'barbers', barber.id, updated));
+    try {
+      await saveBarberToAtlas(updated);
+      notify(`Barber "${barber.name}" is now marked as ${!isCurrentlyUnavailable ? 'Unavailable' : 'Available'}.`, 'success');
+    } catch (err) {
+      notify(`Error updating barber: ${err.message}`, 'error');
     }
   };
 
@@ -884,12 +908,40 @@ export function AdminManagementPage({ collection }) {
                       >
                         {(item.barberName || 'BR').slice(0, 2).toUpperCase()}
                       </span>
-                      <span><strong>{item.barberName}</strong></span>
+                      <div>
+                        <strong>{item.barberName}</strong>
+                        {(() => {
+                          const bObj = (demo.barbers || []).find((b) => b.id === item.barberId || b.name === item.barberName);
+                          if (bObj && (bObj.isUnavailable || bObj.status === 'Unavailable')) {
+                            return (
+                              <div style={{ marginTop: '2px' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    color: '#b91c1c',
+                                    background: '#fee2e2',
+                                    border: '1px solid #fca5a5',
+                                    borderRadius: '4px',
+                                    padding: '1px 5px'
+                                  }}
+                                >
+                                  ● Unavailable
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </div>
                   </td>
                 )}
                 <td>{collection === 'services' ? `${item.duration} min` : collection === 'appointments' ? <StatusBadge status={item.status} /> : collection === 'transactions' ? humanDate(item.date) : collection === 'barbers' ? (
-                  <StatusBadge status={item.leaveStatus || item.status || (item.working ? 'Active / On Duty' : 'Inactive')} />
+                  <StatusBadge status={item.isUnavailable || item.status === 'Unavailable' ? 'Unavailable' : (item.leaveStatus || item.status || (item.working ? 'Active / On Duty' : 'Inactive'))} />
                 ) : item.lastVisit || 'Today'}</td>
                 <td>
                   <div className="row-actions">
@@ -912,6 +964,20 @@ export function AdminManagementPage({ collection }) {
                     >
                       <Pencil size={16} />
                     </button>
+                    {collection === 'barbers' && (
+                      <button
+                        className="button button-small"
+                        style={
+                          item.isUnavailable || item.status === 'Unavailable'
+                            ? { background: '#ef4444', borderColor: '#dc2626', color: '#fff', fontWeight: 600 }
+                            : { background: '#fff', borderColor: '#fca5a5', color: '#b91c1c', fontWeight: 600 }
+                        }
+                        onClick={() => handleToggleUnavailable(item)}
+                        title={item.isUnavailable || item.status === 'Unavailable' ? 'Click to make this barber available' : 'Click to mark this barber unavailable'}
+                      >
+                        {item.isUnavailable || item.status === 'Unavailable' ? 'Set Available' : 'Unavailable'}
+                      </button>
+                    )}
                     {['barbers', 'services', 'customers', 'receptionists'].includes(collection) && (
                       <button className="button button-soft button-small" onClick={() => toggle(item)}>
                         {item.active === false || item.status === 'Inactive' || item.working === false ? 'Activate' : 'Deactivate'}
@@ -2137,17 +2203,6 @@ export function InventoryPage() {
         ))}
       </div>
 
-      <div className="inventory-callout">
-        <div>{categoryDescriptions[selectedCategory] || categoryDescriptions['All']}</div>
-        <button
-          className="button button-soft button-small"
-          style={{ marginLeft: 'auto', flexShrink: 0 }}
-          onClick={() => handleOpenAdd(selectedCategory !== 'All' ? selectedCategory : 'Products for Sale')}
-        >
-          <Plus size={14} /> Add to {selectedCategory === 'All' ? 'Inventory' : selectedCategory}
-        </button>
-      </div>
-
       <SectionCard>
         <DataTable columns={['Item & Details', 'Category', 'Current Stock', 'Alert Threshold', 'Status', 'Actions']}>
           <tbody>
@@ -2339,7 +2394,7 @@ export function InventoryPage() {
               </label>
 
               <button className="button button-dark button-full" type="submit">
-                Add item to inventory <Check size={16} />
+                Add item to inventory
               </button>
             </form>
           </div>
@@ -2504,45 +2559,248 @@ export function InventoryPage() {
 
 export function PromotionsPage() {
   const { demo, commit, notify } = useStore();
+  const [isAdding, setIsAdding] = useState(false);
+  const [form, setForm] = useState({
+    code: '',
+    title: '',
+    description: '',
+    type: 'Percentage',
+    value: 15,
+    validFrom: new Date().toISOString().slice(0, 10),
+    validTo: '2026-12-31',
+    active: true
+  });
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    if (!form.code || !form.title) {
+      return notify('Please enter a promo code and title.', 'error');
+    }
+    const newPromo = {
+      id: 'promo-' + Date.now().toString(36),
+      code: form.code.trim().toUpperCase(),
+      title: form.title.trim(),
+      description: form.description.trim(),
+      type: form.type,
+      value: Number(form.value) || 10,
+      validFrom: form.validFrom,
+      validTo: form.validTo,
+      active: true
+    };
+
+    commit((state) => ({
+      ...state,
+      promotions: [newPromo, ...(state.promotions || [])]
+    }));
+
+    const res = await saveDiscountToAtlas(newPromo);
+    if (res?.success) {
+      notify(`Promotion "${newPromo.code}" saved to database!`);
+    } else {
+      notify(`Saved locally (Database sync: ${res?.error || 'queued'})`, 'warning');
+    }
+
+    setIsAdding(false);
+    setForm({
+      code: '',
+      title: '',
+      description: '',
+      type: 'Percentage',
+      value: 15,
+      validFrom: new Date().toISOString().slice(0, 10),
+      validTo: '2026-12-31',
+      active: true
+    });
+  };
+
+  const handleToggle = async (promo) => {
+    const updated = { ...promo, active: !promo.active };
+    commit((state) => ({
+      ...state,
+      promotions: (state.promotions || []).map((p) => p.id === promo.id ? updated : p)
+    }));
+    await saveDiscountToAtlas(updated);
+    notify(`Promotion "${promo.title}" is now ${updated.active ? 'active' : 'inactive'}.`);
+  };
+
+  const handleDelete = async (id, title) => {
+    if (window.confirm(`Delete promotion "${title}" from the database?`)) {
+      commit((state) => ({
+        ...state,
+        promotions: (state.promotions || []).filter((p) => p.id !== id)
+      }));
+      await deleteDiscountFromAtlas(id);
+      notify(`Promotion deleted from database.`);
+    }
+  };
+
   return (
     <>
       <Toolbar
         title="Promotions & discounts"
-        description="Active offers are automatically featured on the public homepage."
+        description="Active offers saved in MongoDB Atlas are automatically featured and redeemable during booking."
         action={
-          <button className="button button-dark button-small" onClick={() => notify('Promotion form opened in this demo build.')}>
+          <button className="button button-dark button-small" onClick={() => setIsAdding(true)}>
             <Plus size={15} /> Create promotion
           </button>
         }
       />
       <div className="promo-admin-grid">
-        {demo.promotions.map((promo) => (
+        {(demo.promotions || []).map((promo) => (
           <div className={`promo-admin-card ${promo.active ? 'active' : ''}`} key={promo.id}>
             <div className="promo-admin-top">
               <span className="promo-symbol"><Tag size={18} /></span>
-              <StatusBadge status={promo.active ? 'Active' : 'Inactive'} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <StatusBadge status={promo.active ? 'Active' : 'Inactive'} />
+                <button
+                  type="button"
+                  style={{ background: 'none', border: 'none', color: '#d92d20', cursor: 'pointer', padding: '4px' }}
+                  onClick={() => handleDelete(promo.id, promo.title)}
+                  title="Delete promotion"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
-            <span className="eyebrow">{promo.type} discount</span>
+            <span className="eyebrow gold">CODE: <strong>{promo.code || promo.title}</strong></span>
             <h2>{promo.title}</h2>
-            <p>{promo.description}</p>
+            <p>{promo.description || 'Applies discount to total haircut service bill.'}</p>
             <div className="promo-admin-meta">
-              <span><small>Value</small><strong>{promo.type === 'Percentage' ? `${promo.value}%` : currency(promo.value)}</strong></span>
+              <span><small>Value</small><strong>{promo.type === 'Percentage' ? `${promo.value}% OFF` : `${currency(promo.value)} OFF`}</strong></span>
               <span><small>Validity</small><strong>{promo.validFrom} → {promo.validTo}</strong></span>
             </div>
             <button
               className="button button-ghost button-small"
-              onClick={() => {
-                commit((state) => demoApi.toggleActive(state, 'promotions', promo.id));
-                notify('Promotion status updated.');
-              }}
+              onClick={() => handleToggle(promo)}
             >
               {promo.active ? 'Deactivate' : 'Activate'} <ArrowRight size={14} />
             </button>
           </div>
         ))}
+        {(!demo.promotions || demo.promotions.length === 0) && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <EmptyState
+              icon={Tag}
+              title="No discounts or promotions found"
+              copy="Click 'Create promotion' to add promotional offers to your MongoDB Atlas database."
+              action={
+                <button className="button button-dark" onClick={() => setIsAdding(true)}>
+                  <Plus size={15} /> Add first promo
+                </button>
+              }
+            />
+          </div>
+        )}
       </div>
+
+      {isAdding && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setIsAdding(false)}>
+          <div className="modal-card">
+            <button className="modal-close" onClick={() => setIsAdding(false)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+            <div className="modal-heading">
+              <div className="modal-mark"><Tag size={20} /></div>
+              <span className="eyebrow gold">Atlas Promotion Record</span>
+              <h2>Create New Discount</h2>
+              <p>Add a functional promo code that customers can apply during booking.</p>
+            </div>
+            <form className="form-stack" onSubmit={handleCreate}>
+              <div className="form-grid">
+                <label className="field-label">Promo code (uppercase)
+                  <input
+                    className="input"
+                    required
+                    style={{ textTransform: 'uppercase' }}
+                    placeholder="e.g. SUMMER20"
+                    value={form.code}
+                    onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                    autoFocus
+                  />
+                </label>
+                <label className="field-label">Discount type
+                  <select
+                    className="input"
+                    value={form.type}
+                    onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  >
+                    <option value="Percentage">Percentage (%)</option>
+                    <option value="Fixed">Fixed Amount (₱)</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="form-grid">
+                <label className="field-label">Discount title
+                  <input
+                    className="input"
+                    required
+                    placeholder="e.g. Summer Fade Special"
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  />
+                </label>
+                <label className="field-label">{form.type === 'Percentage' ? 'Discount Value (%)' : 'Discount Value (₱)'}
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max={form.type === 'Percentage' ? '100' : '10000'}
+                    required
+                    value={form.value}
+                    onChange={(e) => setForm({ ...form, value: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <label className="field-label">Description (optional)
+                <input
+                  className="input"
+                  placeholder="e.g. Enjoy 20% off all haircuts this season."
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                />
+              </label>
+
+              <div className="form-grid">
+                <label className="field-label">Valid From
+                  <input
+                    className="input"
+                    type="date"
+                    required
+                    value={form.validFrom}
+                    onChange={(e) => setForm({ ...form, validFrom: e.target.value })}
+                  />
+                </label>
+                <label className="field-label">Valid Until
+                  <input
+                    className="input"
+                    type="date"
+                    required
+                    value={form.validTo}
+                    onChange={(e) => setForm({ ...form, validTo: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="button button-ghost button-full" onClick={() => setIsAdding(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button button-dark button-full">
+                  Save to Database <ArrowRight size={16} />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
+}
+
+export function AdminReviewsPage() {
+  return <ReviewsManagement role="admin" />;
 }
 
 export function SettingsPage() {

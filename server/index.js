@@ -13,6 +13,8 @@ import { Service } from './models/Service.js';
 import { Review } from './models/Review.js';
 import { Inventory } from './models/Inventory.js';
 import { Queue } from './models/Queue.js';
+import { Discount } from './models/Discount.js';
+import { Transaction } from './models/Transaction.js';
 import { sendInvitationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
@@ -428,6 +430,108 @@ app.delete('/api/queue', async (req, res) => {
     await connectDB();
     await Queue.deleteMany({});
     res.json({ success: true, message: 'All queue cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Discounts API (MongoDB Atlas)
+app.get('/api/discounts', async (req, res) => {
+  try {
+    await connectDB();
+    const discounts = await Discount.find().sort({ createdAt: -1 }).lean();
+    res.json({ success: true, discounts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/discounts', async (req, res) => {
+  try {
+    await connectDB();
+    const discount = req.body;
+    if (!discount || !discount.id) {
+      return res.status(400).json({ success: false, message: 'Missing discount id' });
+    }
+    const { _id, ...cleanDiscount } = discount;
+    const saved = await Discount.findOneAndUpdate(
+      { id: discount.id },
+      { $set: cleanDiscount },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, discount: saved });
+  } catch (err) {
+    console.error('Error saving discount:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/discounts/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Discount.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Discount deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/discounts', async (req, res) => {
+  try {
+    await connectDB();
+    await Discount.deleteMany({});
+    res.json({ success: true, message: 'All discounts cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Transactions API (MongoDB Atlas)
+app.get('/api/transactions', async (req, res) => {
+  try {
+    await connectDB();
+    const transactions = await Transaction.find().sort({ createdAt: -1 }).lean();
+    res.json({ success: true, transactions });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/transactions', async (req, res) => {
+  try {
+    await connectDB();
+    const txn = req.body;
+    if (!txn || !txn.id) {
+      return res.status(400).json({ success: false, message: 'Missing transaction id' });
+    }
+    const { _id, ...cleanTxn } = txn;
+    const saved = await Transaction.findOneAndUpdate(
+      { id: txn.id },
+      { $set: cleanTxn },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, transaction: saved });
+  } catch (err) {
+    console.error('Error saving transaction:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/transactions/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Transaction.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Transaction deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/transactions', async (req, res) => {
+  try {
+    await connectDB();
+    await Transaction.deleteMany({});
+    res.json({ success: true, message: 'All transactions cleared' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
