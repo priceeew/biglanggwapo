@@ -282,7 +282,7 @@ export function StaffLayout({ role, children }) {
   const items = navItems[role] || [];
   const location = useLocation();
   const title = routeManifest.find((item) => item.path === location.pathname)?.title || 'Workspace';
-  const deskLabel = role === 'customer' ? 'customer portal' : `${role} desk`;
+  const deskLabel = role === 'customer' ? 'customer portal' : role === 'receptionist' ? 'reception desk' : `${role} desk`;
   const workspaceEyebrow = role === 'customer' ? 'customer workspace' : `${role} workspace`;
 
   const handleSignOut = () => {
@@ -295,20 +295,20 @@ export function StaffLayout({ role, children }) {
       <aside className={`staff-sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="sidebar-top">
           {role === 'customer' ? (
-            <Link to="/" className="brand-lockup">
+            <Link to="/" className="brand-lockup workspace-brand-lockup" aria-label="Biglang Gwapo workspace home">
               <img src="/logo.png" alt="Biglang Gwapo Logo" className="brand-logo" />
-              <span>
+              <div className="workspace-brand-text">
                 <strong>Biglang Gwapo</strong>
                 <small>{deskLabel}</small>
-              </span>
+              </div>
             </Link>
           ) : (
-            <div className="brand-lockup" style={{ cursor: 'default' }}>
+            <div className="brand-lockup workspace-brand-lockup" style={{ cursor: 'default' }}>
               <img src="/logo.png" alt="Biglang Gwapo Logo" className="brand-logo" />
-              <span>
+              <div className="workspace-brand-text">
                 <strong>Biglang Gwapo</strong>
                 <small>{deskLabel}</small>
-              </span>
+              </div>
             </div>
           )}
           <button className="icon-button mobile-only" onClick={() => setMobileOpen(false)} aria-label="Close navigation">
