@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState } from '../mockService';
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
-  fetchReviewsFromAtlas, fetchInventoryFromAtlas
+  fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas
 } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
 import { getAccounts, syncAccountsFromAtlas } from '../data';
@@ -58,10 +58,7 @@ export function StoreProvider({ children }) {
     fetchAppointmentsFromAtlas().then((appointments) => {
       if (appointments && Array.isArray(appointments)) {
         setDemo((prev) => {
-          const updated = {
-            ...prev,
-            appointments
-          };
+          const updated = { ...prev, appointments };
           persistDemoState(updated);
           return updated;
         });
@@ -71,10 +68,17 @@ export function StoreProvider({ children }) {
     fetchReviewsFromAtlas().then((reviews) => {
       if (reviews && Array.isArray(reviews)) {
         setDemo((prev) => {
-          const updated = {
-            ...prev,
-            reviews
-          };
+          const updated = { ...prev, reviews };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    fetchQueueFromAtlas().then((queue) => {
+      if (queue && Array.isArray(queue)) {
+        setDemo((prev) => {
+          const updated = { ...prev, queue };
           persistDemoState(updated);
           return updated;
         });
@@ -112,28 +116,55 @@ export function StoreProvider({ children }) {
     };
     window.addEventListener('biglanggwapo-accounts-updated', handleAccountsUpdated);
 
-    const handleWindowFocus = () => {
-      syncAccountsFromAtlas().then((latestAccounts) => {
-        if (latestAccounts) {
-          setDemo((prev) => {
-            const updated = syncAccountsIntoDemoState(prev, latestAccounts);
+    // Periodic synchronization across devices for accounts, queue, reviews, and appointments
+    const syncAtlasData = async () => {
+      try {
+        const [latestAccounts, latestQueue, latestReviews, latestAppointments] = await Promise.all([
+          syncAccountsFromAtlas().catch(() => null),
+          fetchQueueFromAtlas().catch(() => null),
+          fetchReviewsFromAtlas().catch(() => null),
+          fetchAppointmentsFromAtlas().catch(() => null)
+        ]);
+
+        setDemo((prev) => {
+          let updated = { ...prev };
+          let changed = false;
+
+          if (latestAccounts && typeof latestAccounts === 'object') {
+            updated = syncAccountsIntoDemoState(updated, latestAccounts);
+            changed = true;
+          }
+          if (latestQueue && Array.isArray(latestQueue)) {
+            updated.queue = latestQueue;
+            changed = true;
+          }
+          if (latestReviews && Array.isArray(latestReviews)) {
+            updated.reviews = latestReviews;
+            changed = true;
+          }
+          if (latestAppointments && Array.isArray(latestAppointments)) {
+            updated.appointments = latestAppointments;
+            changed = true;
+          }
+
+          if (changed) {
             persistDemoState(updated);
-            return updated;
-          });
-        }
-      });
+          }
+          return updated;
+        });
+      } catch (err) {
+        console.warn('Atlas periodic sync error:', err);
+      }
     };
+
+    const handleWindowFocus = () => {
+      syncAtlasData();
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
     const syncInterval = setInterval(() => {
-      syncAccountsFromAtlas().then((latestAccounts) => {
-        if (latestAccounts) {
-          setDemo((prev) => {
-            const updated = syncAccountsIntoDemoState(prev, latestAccounts);
-            persistDemoState(updated);
-            return updated;
-          });
-        }
-      });
-    }, 15000);
+      syncAtlasData();
+    }, 8000);
 
     const handleStorageChange = (e) => {
       if (e.key === 'biglanggwapo-revoked-session') {

@@ -12,6 +12,7 @@ import { Appointment } from './models/Appointment.js';
 import { Service } from './models/Service.js';
 import { Review } from './models/Review.js';
 import { Inventory } from './models/Inventory.js';
+import { Queue } from './models/Queue.js';
 import { sendInvitationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
@@ -376,6 +377,57 @@ app.delete('/api/inventory', async (req, res) => {
     await connectDB();
     await Inventory.deleteMany({});
     res.json({ success: true, message: 'All inventory cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Queue API (MongoDB Atlas)
+app.get('/api/queue', async (req, res) => {
+  try {
+    await connectDB();
+    const queue = await Queue.find().sort({ createdAt: 1 }).lean();
+    res.json({ success: true, queue });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/queue', async (req, res) => {
+  try {
+    await connectDB();
+    const entry = req.body;
+    if (!entry || !entry.id) {
+      return res.status(400).json({ success: false, message: 'Missing queue id' });
+    }
+    const { _id, ...cleanEntry } = entry;
+    const saved = await Queue.findOneAndUpdate(
+      { id: entry.id },
+      { $set: cleanEntry },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, queueItem: saved });
+  } catch (err) {
+    console.error('Error saving queue item:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/queue/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Queue.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Queue item deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/queue', async (req, res) => {
+  try {
+    await connectDB();
+    await Queue.deleteMany({});
+    res.json({ success: true, message: 'All queue cleared' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

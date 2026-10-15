@@ -8,7 +8,7 @@ import {
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, validatePassword, validatePhone } from '../../data';
-import { sendInviteNotification, saveAppointmentToAtlas } from '../../services/api';
+import { sendInviteNotification, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
   StatusBadge, EmptyState, StatCard
@@ -112,10 +112,19 @@ export function ReceptionistAppointments() {
     const updater = action === 'confirm' ? demoApi.confirmAppointment : action === 'arrived' ? demoApi.markArrived : demoApi.cancelAppointment;
     if (action === 'cancel' && !window.confirm('Cancel this appointment?')) return;
     commit((state) => {
+      const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
       const next = updater(state, id);
       const updatedApt = next.appointments.find((a) => a.id === id);
       if (updatedApt) {
         saveAppointmentToAtlas(updatedApt);
+      }
+      if (action === 'arrived') {
+        const queueEntry = next.queue.find((q) => q.appointmentId === id);
+        if (queueEntry) {
+          saveQueueItemToAtlas(queueEntry);
+        }
+      } else if (action === 'cancel' && prevQueueItem) {
+        deleteQueueItemFromAtlas(prevQueueItem.id);
       }
       return next;
     });
@@ -247,6 +256,7 @@ export function WalkInPage() {
       }
       if (newQueue) {
         assignedNumber = newQueue.number;
+        saveQueueItemToAtlas(newQueue);
       }
       return next;
     });
@@ -358,6 +368,9 @@ export function QueueManagement() {
     commit((state) => {
       const next = api(state, id);
       const queueItem = next.queue.find((q) => q.id === id);
+      if (queueItem) {
+        saveQueueItemToAtlas(queueItem);
+      }
       if (queueItem?.appointmentId) {
         const apt = next.appointments.find((a) => a.id === queueItem.appointmentId);
         if (apt) saveAppointmentToAtlas(apt);
@@ -655,7 +668,12 @@ export function PaymentPage() {
     if (!item) return notify('Choose a completed service to check out.', 'error');
     if (method === 'Cash' && Number(cash) < item.price) return notify('Cash received must cover the total.', 'error');
     try {
-      commit((state) => demoApi.recordPayment(state, item.id, method, cash));
+      commit((state) => {
+        const next = demoApi.recordPayment(state, item.id, method, cash);
+        const apt = next.appointments.find((a) => a.id === item.id);
+        if (apt) saveAppointmentToAtlas(apt);
+        return next;
+      });
       notify('Payment recorded and receipt generated.');
       setSelected('');
       setCash('');

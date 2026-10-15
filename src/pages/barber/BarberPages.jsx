@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, humanDate, today } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAppointmentToAtlas } from '../../services/api';
+import { saveAppointmentToAtlas, saveQueueItemToAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState
 } from '../../components/common/UIComponents';
@@ -219,6 +219,8 @@ export function BarberQueue() {
   const start = (item) => {
     commit((state) => {
       const next = demoApi.startService(state, item.id);
+      const updatedQueue = next.queue.find((q) => q.id === item.id);
+      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
       const apt = next.appointments.find((a) => a.id === item.appointmentId);
       if (apt) saveAppointmentToAtlas(apt);
       return next;
@@ -336,6 +338,8 @@ export function ServiceSession() {
     if (current.status === 'Waiting') {
       commit((state) => {
         const next = demoApi.startService(state, current.id);
+        const updatedQueue = next.queue.find((q) => q.id === current.id);
+        if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
         const apt = next.appointments.find((a) => a.id === current.appointmentId);
         if (apt) saveAppointmentToAtlas(apt);
         return next;
@@ -344,6 +348,8 @@ export function ServiceSession() {
     } else if (current.status === 'In Service') {
       commit((state) => {
         const next = demoApi.completeService(state, current.id, notes);
+        const updatedQueue = next.queue.find((q) => q.id === current.id);
+        if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
         const apt = next.appointments.find((a) => a.id === current.appointmentId);
         if (apt) saveAppointmentToAtlas(apt);
         return next;

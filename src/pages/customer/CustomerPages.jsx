@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { uploadImageFile, saveReviewToAtlas } from '../../services/api';
+import { uploadImageFile, saveReviewToAtlas, saveAppointmentToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
 import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
@@ -450,7 +450,14 @@ export function CustomerDashboard() {
 
   const cancel = (id) => {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
-      commit((state) => demoApi.cancelAppointment(state, id));
+      commit((state) => {
+        const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
+        const next = demoApi.cancelAppointment(state, id);
+        const apt = next.appointments.find((a) => a.id === id);
+        if (apt) saveAppointmentToAtlas(apt);
+        if (prevQueueItem) deleteQueueItemFromAtlas(prevQueueItem.id);
+        return next;
+      });
       notify('Appointment cancelled.');
     }
   };
@@ -569,7 +576,14 @@ export function CustomerAppointments() {
 
   const cancel = (id) => {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
-      commit((state) => demoApi.cancelAppointment(state, id));
+      commit((state) => {
+        const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
+        const next = demoApi.cancelAppointment(state, id);
+        const apt = next.appointments.find((a) => a.id === id);
+        if (apt) saveAppointmentToAtlas(apt);
+        if (prevQueueItem) deleteQueueItemFromAtlas(prevQueueItem.id);
+        return next;
+      });
       notify('Appointment cancelled.');
     }
   };
@@ -904,6 +918,7 @@ export function CustomerReviews() {
       initials: currentInitials,
       customerId: currentCustomerId,
       barber: eligible.barberName,
+      barberId: eligible.barberId || '',
       serviceName: eligible.serviceName,
       service: eligible.serviceName,
       rating,
@@ -913,7 +928,7 @@ export function CustomerReviews() {
       date: new Date().toISOString().slice(0, 10),
       public: true
     };
-    saveReviewToAtlas(newReview);
+    saveReviewToAtlas(newReview).catch((err) => console.warn('Failed saving review to Atlas:', err));
     commit((state) => demoApi.addReview(state, newReview));
     setRating(0);
     setComment('');

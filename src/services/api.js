@@ -291,6 +291,57 @@ export async function clearInventoryInAtlas() {
   }
 }
 
+// Queue Atlas integration
+export async function fetchQueueFromAtlas() {
+  try {
+    const res = await fetch('/api/queue');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.queue : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveQueueItemToAtlas(item) {
+  try {
+    const res = await fetch('/api/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || data.message || `Server error (${res.status})` };
+    }
+    return { success: true, queueItem: data.queueItem };
+  } catch (err) {
+    console.error('Failed to save queue item to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteQueueItemFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/queue/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to delete queue item from database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearQueueInAtlas() {
+  try {
+    const res = await fetch('/api/queue', { method: 'DELETE' });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function uploadImageFile(file) {
   return new Promise((resolve) => {
     if (!file) return resolve({ success: false, error: 'No file selected' });
