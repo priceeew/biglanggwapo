@@ -7,6 +7,7 @@ const AccountSchema = new mongoose.Schema({
   name: { type: String, required: true },
   initials: { type: String, default: '' },
   phone: { type: String, default: '' },
+  image: { type: String, default: '' },
   barberId: { type: String },
   customerId: { type: String },
   redirectPath: { type: String, default: '/' },

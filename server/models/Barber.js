@@ -11,6 +11,7 @@ const BarberSchema = new mongoose.Schema({
   leaveStatus: { type: String, default: 'Active / On Duty' },
   leaveNotes: { type: String, default: '' },
   bio: { type: String, default: 'Skilled professional barber at Biglang Gwapo.' },
+  image: { type: String, default: '' },
   working: { type: Boolean, default: true },
   email: { type: String, lowercase: true, trim: true },
   phone: { type: String, default: '' },

@@ -9,51 +9,15 @@ export const promotions = [
   { id: 'promo-old', title: 'Back-to-school ritual', description: 'A past demo offer kept for reporting history.', type: 'Fixed', value: 40, validFrom: '2026-08-01', validTo: '2026-09-15', services: ['svc-kids'], active: false }
 ];
 
-export const reviews = [
-  { id: 'rev-1', customer: 'Andrea Lim', initials: 'AL', barber: 'Marco Reyes', rating: 5, comment: 'The fade was sharp and the whole visit felt effortless.', date: '2026-10-08', public: true },
-  { id: 'rev-2', customer: 'Jonas Villanueva', initials: 'JV', barber: 'Paolo Santos', rating: 5, comment: 'Exactly the classic cut I described. I will be back.', date: '2026-10-05', public: true },
-  { id: 'rev-3', customer: 'Kyla Ramos', initials: 'KR', barber: 'Nico Dela Cruz', rating: 4, comment: 'Great beard sculpt and a very friendly consultation.', date: '2026-09-29', public: true },
-  { id: 'rev-4', customer: 'Christian Dizon', initials: 'CD', barber: 'Marco Reyes', rating: 5, comment: 'Best tapers in Bulacan. Clean shop, cold drinks, and zero rush.', date: '2026-10-09', public: true },
-  { id: 'rev-5', customer: 'Rafael Cruz', initials: 'RC', barber: 'Paolo Santos', rating: 5, comment: 'The hot towel shave and scissor work here is unbeatable.', date: '2026-10-06', public: true },
-  { id: 'rev-6', customer: 'Dave Bautista', initials: 'DB', barber: 'Nico Dela Cruz', rating: 5, comment: 'Consistent quality every single time. My go-to barbershop in Pulilan.', date: '2026-10-03', public: true },
-  { id: 'rev-7', customer: 'Mark Anthony Tan', initials: 'MT', barber: 'Marco Reyes', rating: 5, comment: 'Smooth booking system and my haircut turned out immaculate.', date: '2026-10-01', public: true },
-  { id: 'rev-8', customer: 'Lorenzo Gabriel', initials: 'LG', barber: 'Paolo Santos', rating: 4, comment: 'Clean lineup and solid styling advice from Paolo. Highly recommend!', date: '2026-09-27', public: true },
-  { id: 'rev-9', customer: 'Kenneth Alcantara', initials: 'KA', barber: 'Nico Dela Cruz', rating: 5, comment: 'Super accommodating crew and great ambience. Worth every peso.', date: '2026-09-24', public: true },
-  { id: 'rev-10', customer: 'Gian Carlo Morales', initials: 'GM', barber: 'Marco Reyes', rating: 5, comment: 'First time here and Marco gave me the cleanest low taper fade I’ve ever had. Will definitely become a regular!', date: '2026-10-10', public: true },
-  { id: 'rev-11', customer: 'Patrick De Jesus', initials: 'PJ', barber: 'Paolo Santos', rating: 5, comment: 'Top-tier scissor cut. Paolo pays extreme attention to symmetry and detail.', date: '2026-10-07', public: true },
-  { id: 'rev-12', customer: 'Adrian Mercado', initials: 'AM', barber: 'Nico Dela Cruz', rating: 5, comment: 'The hot towel treatment and beard grooming package was pure relaxation. 10/10 service.', date: '2026-10-04', public: true },
-  { id: 'rev-13', customer: 'Joshua Fernandez', initials: 'JF', barber: 'Marco Reyes', rating: 5, comment: 'Crisp hairline, modern styling, and very welcoming atmosphere. Biglang Gwapo never disappoints.', date: '2026-09-30', public: true },
-  { id: 'rev-14', customer: 'Carl Mendoza', initials: 'CM', barber: 'Paolo Santos', rating: 5, comment: 'Quick wait time, smooth process, and my pompadour styling looks sharp.', date: '2026-09-26', public: true },
-  { id: 'rev-15', customer: 'Dominic Soriano', initials: 'DS', barber: 'Nico Dela Cruz', rating: 5, comment: 'Great music, cold aircon, and expertly blended fade. Easily the best barbershop in town.', date: '2026-09-21', public: true }
-];
+export const reviews = [];
 
-export const customers = [
-  { id: 'cust-demo', name: 'Miguel Santos', initials: 'MS', email: 'miguel@example.com', phone: '+63 917 555 0142', status: 'Active', visits: 4, lastVisit: '2026-10-04', preferences: 'Low fade, matte finish', notes: 'Prefers afternoon appointments.' },
-  { id: 'cust-ana', name: 'Ana Villanueva', initials: 'AV', email: 'ana@example.com', phone: '+63 917 555 1093', status: 'Active', visits: 7, lastVisit: '2026-10-08', preferences: 'Classic scissor cut', notes: 'Usually books Paolo.' },
-  { id: 'cust-jordan', name: 'Jordan Lim', initials: 'JL', email: 'jordan@example.com', phone: '+63 905 777 2230', status: 'Active', visits: 2, lastVisit: '2026-09-22', preferences: 'Beard sculpt', notes: 'Likes hot towel finish.' },
-  { id: 'cust-paolo', name: 'Paolo Mendoza', initials: 'PM', email: 'paolo@example.com', phone: '+63 908 441 0871', status: 'Inactive', visits: 1, lastVisit: '2026-06-18', preferences: 'Junior Cut', notes: '' }
-];
+export const customers = [];
 
-const _d = new Date();
-const _today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
+export const appointments = [];
 
-export const appointments = [
-  { id: 'apt-demo', customerId: 'cust-demo', customerName: 'Miguel Santos', serviceId: 'svc-fade', serviceName: 'Signature Fade', barberId: 'bar-marco', barberName: 'Marco Reyes', date: _today, time: '10:00 AM', duration: 45, price: 420, status: 'Pending', paymentStatus: 'Unpaid', source: 'Online', notes: 'Low fade, matte finish.' },
-  { id: 'apt-ana', customerId: 'cust-ana', customerName: 'Ana Villanueva', serviceId: 'svc-classic', serviceName: 'Classic Cut', barberId: 'bar-paolo', barberName: 'Paolo Santos', date: _today, time: '10:45 AM', duration: 40, price: 380, status: 'Confirmed', paymentStatus: 'Unpaid', source: 'Online', notes: '' },
-  { id: 'apt-jordan', customerId: 'cust-jordan', customerName: 'Jordan Lim', serviceId: 'svc-beard', serviceName: 'Beard Sculpt', barberId: 'bar-nico', barberName: 'Nico Dela Cruz', date: '2026-10-11', time: '2:00 PM', duration: 25, price: 280, status: 'Completed', paymentStatus: 'Paid', source: 'Walk-in', notes: 'Hot towel finish.' },
-  { id: 'apt-complete', customerId: 'cust-demo', customerName: 'Miguel Santos', serviceId: 'svc-classic', serviceName: 'Classic Cut', barberId: 'bar-paolo', barberName: 'Paolo Santos', date: '2026-10-04', time: '3:00 PM', duration: 40, price: 380, status: 'Completed', paymentStatus: 'Paid', source: 'Online', notes: '' }
-];
+export const queue = [];
 
-export const queue = [
-  { id: 'queue-ana', number: 'Q-014', customerId: 'cust-ana', customerName: 'Ana Villanueva', barberId: 'bar-paolo', barberName: 'Paolo Santos', serviceName: 'Classic Cut', status: 'Waiting', joinedAt: '10:12 AM', estimatedMinutes: 20, appointmentId: 'apt-ana' },
-  { id: 'queue-jordan', number: 'Q-013', customerId: 'cust-jordan', customerName: 'Jordan Lim', barberId: 'bar-nico', barberName: 'Nico Dela Cruz', serviceName: 'Beard Sculpt', status: 'In Service', joinedAt: '9:50 AM', estimatedMinutes: 0, appointmentId: 'apt-jordan' }
-];
-
-export const transactions = [
-  { id: 'txn-1042', appointmentId: 'apt-jordan', customerName: 'Jordan Lim', serviceName: 'Beard Sculpt', amount: 280, method: 'GCash', status: 'Paid', date: '2026-10-11', time: '2:41 PM', receipt: 'BG-20261011-1042' },
-  { id: 'txn-1041', appointmentId: 'apt-complete', customerName: 'Miguel Santos', serviceName: 'Classic Cut', amount: 380, method: 'Cash', status: 'Paid', date: '2026-10-04', time: '3:49 PM', receipt: 'BG-20261004-1041' },
-  { id: 'txn-1040', appointmentId: 'apt-old', customerName: 'Ana Villanueva', serviceName: 'Signature Fade', amount: 420, method: 'Cash', status: 'Paid', date: '2026-10-03', time: '5:10 PM', receipt: 'BG-20261003-1040' }
-];
+export const transactions = [];
 
 export const inventory = [
   // Products for Sale (Retail - binebenta sa shop)
@@ -102,15 +66,11 @@ export const settings = {
   commissionTracking: false
 };
 
-export const receptionists = [
-  { id: 'rec-1', name: 'Bea Dizon', email: 'bea@biglanggwapo.com', phone: '+63 917 111 2233', status: 'Active', access: 'Receptionist' }
-];
+export const receptionists = [];
 
-export { accounts, saveAccount, deleteAccount, validatePassword, validatePhone } from './globs/User';
+export { accounts, saveAccount, deleteAccount, getAccounts, revokeSession, validatePassword, validatePhone } from './globs/User';
 
 export const staffUsers = {
-  receptionist: { name: 'Bea Dizon', initials: 'BD', role: 'Receptionist' },
-  barber: { name: 'Marco Reyes', initials: 'MR', role: 'Barber', barberId: 'bar-marco' },
   admin: { name: 'Admin Desk', initials: 'AD', role: 'Admin' }
 };
 

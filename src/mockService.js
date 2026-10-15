@@ -1,58 +1,63 @@
 import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
 import { getSlotAvailability, STANDARD_SCHEDULES } from './utils/scheduling';
 
-const STORAGE_KEY = 'biglanggwapo-demo-v7';
-const PREV_STORAGE_KEY = 'biglanggwapo-demo-v6';
+const STORAGE_KEY = 'biglanggwapo-demo-v10';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 export function getInitialDemoState() {
-  return clone({ services, barbers, customers, receptionists, promotions, reviews, appointments: seedAppointments, queue: seedQueue, transactions, inventory, settings });
+  return clone({
+    services,
+    barbers,
+    customers: [],
+    receptionists,
+    promotions,
+    reviews: [],
+    appointments: [],
+    queue: [],
+    transactions: [],
+    inventory,
+    settings
+  });
 }
 
 export function loadDemoState() {
   try {
     let stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) {
-      const prev = window.localStorage.getItem(PREV_STORAGE_KEY) || window.localStorage.getItem('biglanggwapo-demo-v5') || window.localStorage.getItem('biglanggwapo-demo-v4');
-      if (prev) {
-        try {
-          const prevParsed = JSON.parse(prev);
-          const migrated = {
-            ...prevParsed,
-            services: []
-          };
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-          stored = JSON.stringify(migrated);
-        } catch {}
-      }
+      // Clear legacy localStorage keys that held old mock records
+      ['biglanggwapo-demo-v9', 'biglanggwapo-demo-v8', 'biglanggwapo-demo-v7', 'biglanggwapo-demo-v6', 'biglanggwapo-demo-v5', 'biglanggwapo-demo-v4', 'biglanggwapo-accounts-v2'].forEach((k) => {
+        try { window.localStorage.removeItem(k); } catch {}
+      });
+      const fresh = getInitialDemoState();
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+      return fresh;
     }
-    if (!stored) return getInitialDemoState();
     const parsed = JSON.parse(stored);
     const initial = getInitialDemoState();
 
     let currentInventory = parsed.inventory || initial.inventory;
-    const hasRichCategories = currentInventory.some((item) => {
-      const c = (item.category || '').toLowerCase();
-      return c.includes('tool') || c.includes('furnitur') || c.includes('accessor') || c.includes('sale');
-    });
-
-    if (!hasRichCategories) {
-      const existingNames = new Set(currentInventory.map((i) => i.name.toLowerCase()));
-      const additional = initial.inventory.filter((i) => !existingNames.has(i.name.toLowerCase()));
-      currentInventory = [...currentInventory, ...additional];
-    }
-
-    let currentReviews = parsed.reviews || initial.reviews;
-    if (currentReviews.length < initial.reviews.length) {
-      const existingIds = new Set(currentReviews.map((r) => r.id));
-      const newReviews = initial.reviews.filter((r) => !existingIds.has(r.id));
-      currentReviews = [...currentReviews, ...newReviews];
-    }
-
-    let currentReceptionists = parsed.receptionists || initial.receptionists;
+    let currentReviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
+    let currentReceptionists = Array.isArray(parsed.receptionists) ? parsed.receptionists : [];
+    let currentBarbers = Array.isArray(parsed.barbers) ? parsed.barbers : [];
+    let currentCustomers = Array.isArray(parsed.customers) ? parsed.customers : [];
+    let currentAppointments = Array.isArray(parsed.appointments) ? parsed.appointments : [];
+    let currentQueue = Array.isArray(parsed.queue) ? parsed.queue : [];
+    let currentTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     let currentServices = Array.isArray(parsed.services) ? parsed.services : [];
 
-    return { ...initial, ...parsed, services: currentServices, inventory: currentInventory, reviews: currentReviews, receptionists: currentReceptionists };
+    return {
+      ...initial,
+      ...parsed,
+      services: currentServices,
+      inventory: currentInventory,
+      reviews: currentReviews,
+      receptionists: currentReceptionists,
+      barbers: currentBarbers,
+      customers: currentCustomers,
+      appointments: currentAppointments,
+      queue: currentQueue,
+      transactions: currentTransactions
+    };
   } catch {
     return getInitialDemoState();
   }
@@ -137,9 +142,29 @@ export const demoApi = {
     if (!appointment) return state;
     const exists = state.queue.some((item) => item.appointmentId === appointmentId && !['Removed', 'Completed', 'Skipped'].includes(item.status));
     if (exists) return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Arrived' } : item) };
-    const assigned = state.queue.filter((item) => item.status !== 'Completed' && item.status !== 'Removed').length + 1;
-    const entry = { id: id('queue'), number: `Q-${String(assigned + 14).padStart(3, '0')}`, customerId: appointment.customerId, customerName: appointment.customerName, barberId: appointment.barberId, barberName: appointment.barberName, serviceName: appointment.serviceName, status: 'Waiting', joinedAt: 'Just now', estimatedMinutes: 20, appointmentId, };
-    return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Arrived' } : item), queue: [entry, ...state.queue] };
+    const maxNum = (state.queue || []).reduce((max, q) => {
+      const n = parseInt((q.number || '').replace(/\D/g, ''), 10);
+      return !isNaN(n) && n > max ? n : max;
+    }, 0);
+    const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+    const entry = {
+      id: id('queue'),
+      number: `Q-${String(nextNum).padStart(3, '0')}`,
+      customerId: appointment.customerId,
+      customerName: appointment.customerName,
+      barberId: appointment.barberId,
+      barberName: appointment.barberName,
+      serviceName: appointment.serviceName,
+      status: 'Waiting',
+      joinedAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      estimatedMinutes: appointment.duration || 30,
+      appointmentId
+    };
+    return {
+      ...state,
+      appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Arrived' } : item),
+      queue: [entry, ...state.queue]
+    };
   },
   cancelAppointment(state, appointmentId) {
     return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Cancelled' } : item), queue: state.queue.filter((item) => item.appointmentId !== appointmentId) };
@@ -182,13 +207,66 @@ export const demoApi = {
   },
   addWalkIn(state, payload) {
     const customerId = payload.customerId || id('cust');
-    const customer = payload.customerId ? state.customers.find((item) => item.id === payload.customerId) : { id: customerId, name: payload.customerName, initials: payload.customerName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), email: payload.email || 'walkin@example.com', phone: payload.phone || 'Not provided', status: 'Active', visits: 0, lastVisit: 'Today', preferences: '', notes: '' };
-    const service = state.services.find((item) => item.id === payload.serviceId);
-    const barber = state.barbers.find((item) => item.id === payload.barberId);
+    const customer = payload.customerId
+      ? state.customers.find((item) => item.id === payload.customerId)
+      : {
+          id: customerId,
+          name: payload.customerName,
+          initials: (payload.customerName || 'CU').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+          email: payload.email || 'walkin@example.com',
+          phone: payload.phone || 'Not provided',
+          status: 'Active',
+          visits: 1,
+          lastVisit: 'Today',
+          preferences: '',
+          notes: ''
+        };
+    const customerName = customer?.name || payload.customerName || 'Walk-in Guest';
+    const service = state.services.find((item) => item.id === payload.serviceId) || state.services[0] || { id: 'ser-default', name: 'Standard Cut', duration: 30, price: 350 };
+    const barber = state.barbers.find((item) => item.id === payload.barberId) || state.barbers[0] || { id: 'bar-default', name: 'On-Duty Barber' };
     const appointmentId = id('apt');
-    const appointment = { id: appointmentId, customerId, customerName: customer.name, serviceId: service.id, serviceName: service.name, barberId: barber.id, barberName: barber.name, date: new Date().toISOString().slice(0, 10), time: 'Walk-in', duration: service.duration, price: service.price, status: 'Arrived', paymentStatus: 'Unpaid', source: 'Walk-in', notes: '' };
-    const queueEntry = { id: id('queue'), number: `Q-${String(state.queue.length + 15).padStart(3, '0')}`, customerId, customerName: customer.name, barberId: barber.id, barberName: barber.name, serviceName: service.name, status: 'Waiting', joinedAt: 'Just now', estimatedMinutes: 25, appointmentId };
-    return { ...state, customers: payload.customerId ? state.customers : [customer, ...state.customers], appointments: [appointment, ...state.appointments], queue: [queueEntry, ...state.queue] };
+    const appointment = {
+      id: appointmentId,
+      customerId,
+      customerName,
+      serviceId: service.id,
+      serviceName: service.name,
+      barberId: barber.id,
+      barberName: barber.name,
+      barberImage: barber.image || '',
+      date: new Date().toISOString().slice(0, 10),
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      duration: service.duration || 30,
+      price: service.price || 0,
+      status: 'Arrived',
+      paymentStatus: 'Unpaid',
+      source: 'Walk-in',
+      notes: ''
+    };
+    const maxNum = (state.queue || []).reduce((max, q) => {
+      const n = parseInt((q.number || '').replace(/\D/g, ''), 10);
+      return !isNaN(n) && n > max ? n : max;
+    }, 0);
+    const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+    const queueEntry = {
+      id: id('queue'),
+      number: `Q-${String(nextNum).padStart(3, '0')}`,
+      customerId,
+      customerName,
+      barberId: barber.id,
+      barberName: barber.name,
+      serviceName: service.name,
+      status: 'Waiting',
+      joinedAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      estimatedMinutes: service.duration || 30,
+      appointmentId
+    };
+    return {
+      ...state,
+      customers: payload.customerId ? state.customers : [customer, ...state.customers],
+      appointments: [appointment, ...state.appointments],
+      queue: [queueEntry, ...state.queue]
+    };
   },
   startService(state, queueId) {
     const entry = state.queue.find((item) => item.id === queueId);
@@ -221,11 +299,14 @@ export const demoApi = {
   toggleActive(state, collection, itemId, field = 'active') { return { ...state, [collection]: state[collection].map((item) => item.id === itemId ? { ...item, [field]: !item[field] } : item) }; },
   addItem(state, collection, item) { return { ...state, [collection]: [{ id: id(collection.slice(0, 3)), ...item }, ...state[collection]] }; },
   addReceptionist(state, payload) {
+    const initials = payload.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'RC';
     const newRec = {
-      id: id('rec'),
+      id: payload.id || id('rec'),
       name: payload.name,
+      initials,
       email: payload.email,
       phone: payload.phone || '',
+      image: payload.image || '',
       status: 'Active',
       access: 'Receptionist'
     };
@@ -247,6 +328,7 @@ export const demoApi = {
       working: payload.working !== undefined ? payload.working : true,
       email: payload.email,
       phone: payload.phone || '',
+      image: payload.image || '',
       commissionEnabled: false
     };
     return { ...state, barbers: [newBarber, ...(state.barbers || [])] };

@@ -1,9 +1,10 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Scissors, ArrowRight, FileText, CheckCircle2, CircleHelp, Search, Filter
+  Scissors, ArrowRight, FileText, CheckCircle2, CircleHelp, Search, Filter, TrendingUp,
+  ZoomIn, X
 } from 'lucide-react';
-import { currency, humanDate, stars } from '../../context/StoreContext';
+import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
 
 export function Toast({ toast }) {
   if (!toast) return null;
@@ -78,7 +79,29 @@ export function BarberCard({ barber, compact = false }) {
   return (
     <article className={`barber-card ${compact ? 'compact' : ''}`}>
       <div className="barber-card-top">
-        <span className="avatar avatar-lg">{barber.initials}</span>
+        {barber.image ? (
+          <img
+            src={barber.image}
+            alt={barber.name}
+            style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              objectFit: 'cover',
+              border: '2px solid var(--line)',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
+            }}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              if (e.currentTarget.nextElementSibling) {
+                e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+              }
+            }}
+          />
+        ) : null}
+        <span className="avatar avatar-lg" style={{ display: barber.image ? 'none' : 'inline-grid' }}>
+          {barber.initials || (barber.name || '').slice(0, 2).toUpperCase()}
+        </span>
         <span className={`availability ${barber.working ? 'online' : ''}`}>
           <i />{barber.status}
         </span>
@@ -103,24 +126,207 @@ export function BarberCard({ barber, compact = false }) {
   );
 }
 
-export function ReviewCard({ review }) {
+export function ReviewPhotoModal({ modalData, onClose }) {
+  if (!modalData) return null;
+  const { image, review } = modalData;
+  const { demo } = useStore();
+  const appointment = demo?.appointments?.find((a) => a.id === review?.appointmentId);
+  const serviceName = review?.serviceName || review?.service || appointment?.serviceName;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.88)',
+        backdropFilter: 'blur(8px)',
+        zIndex: 99999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px'
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          position: 'relative',
+          maxWidth: '680px',
+          width: '100%',
+          maxHeight: '90vh',
+          backgroundColor: '#161616',
+          borderRadius: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '14px',
+            right: '14px',
+            background: 'rgba(0, 0, 0, 0.65)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+            color: '#fff',
+            borderRadius: '50%',
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            zIndex: 10,
+            transition: 'background 0.2s'
+          }}
+          aria-label="Close photo preview"
+        >
+          <X size={18} />
+        </button>
+
+        <div
+          style={{
+            flex: 1,
+            backgroundColor: '#0a0a0a',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            maxHeight: '65vh',
+            minHeight: '260px',
+            overflow: 'hidden'
+          }}
+        >
+          <img
+            src={image}
+            alt={review?.customer ? `${review.customer}'s haircut` : 'Customer haircut review photo'}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '65vh',
+              objectFit: 'contain',
+              display: 'block'
+            }}
+          />
+        </div>
+
+        {review && (
+          <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div>
+                <strong style={{ fontSize: '15px', color: '#fff', display: 'block' }}>{review.customer}</strong>
+                <small style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '3px' }}>
+                  {serviceName && (
+                    <span style={{ color: 'var(--gold, #d4af37)', fontWeight: 600, background: 'rgba(212,175,55,0.12)', padding: '1px 7px', borderRadius: '4px', border: '1px solid rgba(212,175,55,0.3)' }}>
+                      {serviceName}
+                    </span>
+                  )}
+                  {review.barber ? <span>Barber: {review.barber}</span> : null}
+                  {review.date ? <span>• {humanDate(review.date)}</span> : null}
+                </small>
+              </div>
+              <div style={{ display: 'flex', color: 'var(--gold, #d4af37)' }}>
+                {stars(review.rating || 5)}
+              </div>
+            </div>
+            {review.comment && (
+              <p style={{ margin: 0, color: 'rgba(255,255,255,0.85)', fontSize: '13.5px', fontStyle: 'italic', lineHeight: 1.4, marginTop: '8px' }}>
+                “{review.comment}”
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ReviewCard({ review, onImageClick }) {
+  const { demo } = useStore();
+  const appointment = demo?.appointments?.find((a) => a.id === review.appointmentId);
+  const serviceName = review.serviceName || review.service || appointment?.serviceName;
+
   return (
     <article className="review-card">
       <div className="review-top">
         <span className="avatar avatar-sm">{review.initials}</span>
         <div>
           <strong>{review.customer}</strong>
-          <small>{review.barber ? `Barber: ${review.barber}` : ''}</small>
+          <small style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
+            {serviceName && (
+              <span style={{ color: 'var(--gold, #d4af37)', fontWeight: 600, fontSize: '12px' }}>
+                {serviceName}
+              </span>
+            )}
+            {review.barber ? <span>Barber: {review.barber}</span> : null}
+          </small>
         </div>
         <span className="stars">{stars(review.rating)}</span>
       </div>
       <p>“{review.comment}”</p>
+      {review.image && (
+        <div style={{ marginTop: '10px', marginBottom: '8px' }}>
+          <div
+            onClick={() => onImageClick?.(review.image, review)}
+            style={{
+              display: 'inline-flex',
+              position: 'relative',
+              cursor: onImageClick ? 'pointer' : 'default',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1.5px solid var(--gold, #d4af37)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.18)'
+            }}
+            title={onImageClick ? 'Click to view full image' : undefined}
+          >
+            <img
+              src={review.image}
+              alt="Haircut review thumbnail"
+              style={{
+                width: '68px',
+                height: '68px',
+                objectFit: 'cover',
+                display: 'block',
+                transition: 'transform 0.2s ease'
+              }}
+              onMouseEnter={(e) => { if (onImageClick) e.currentTarget.style.transform = 'scale(1.08)'; }}
+              onMouseLeave={(e) => { if (onImageClick) e.currentTarget.style.transform = 'scale(1)'; }}
+            />
+            {onImageClick && (
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: 2,
+                  right: 2,
+                  background: 'rgba(0,0,0,0.7)',
+                  color: '#fff',
+                  borderRadius: '4px',
+                  padding: '2px 4px',
+                  fontSize: '9.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  pointerEvents: 'none'
+                }}
+              >
+                <ZoomIn size={10} /> View
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       <small className="review-date">{humanDate(review.date)}</small>
     </article>
   );
 }
 
 export function AppointmentCard({ appointment, onCancel, onReschedule }) {
+  const { demo } = useStore();
+  const matchedBarber = demo?.barbers?.find((b) => b.id === appointment.barberId || b.name === appointment.barberName);
+  const barberPhoto = appointment.barberImage || matchedBarber?.image;
+
   return (
     <article className="appointment-card">
       <div className="appointment-date">
@@ -133,7 +339,20 @@ export function AppointmentCard({ appointment, onCancel, onReschedule }) {
           <StatusBadge status={appointment.status} />
         </div>
         <h3>{appointment.serviceName}</h3>
-        <p>with {appointment.barberName} · {appointment.duration} min</p>
+        <p style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {barberPhoto ? (
+            <img
+              src={barberPhoto}
+              alt={appointment.barberName}
+              style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)', flexShrink: 0 }}
+            />
+          ) : (
+            <span className="avatar avatar-xs" style={{ width: '22px', height: '22px', fontSize: '9px', flexShrink: 0 }}>
+              {(appointment.barberName || 'BR').slice(0, 2).toUpperCase()}
+            </span>
+          )}
+          <span>with {appointment.barberName} · {appointment.duration} min</span>
+        </p>
       </div>
       <div className="appointment-price">
         <strong>{currency(appointment.price)}</strong>
@@ -280,11 +499,43 @@ export function EmptyState({ icon: EmptyIcon = FileText, title, copy, action }) 
   );
 }
 
-export function MiniChart({ tall = false }) {
+export function MiniChart({ tall = false, transactions = [] }) {
+  const hasData = transactions && transactions.length > 0;
+
+  if (!hasData) {
+    return (
+      <div className={`mini-chart ${tall ? 'tall' : ''}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: tall ? '240px' : '180px', textAlign: 'center', padding: '24px' }}>
+        <TrendingUp size={26} style={{ color: 'var(--muted)', opacity: 0.5, marginBottom: '8px' }} />
+        <span style={{ color: 'var(--muted)', fontSize: '13px', fontWeight: 500 }}>No revenue recorded yet</span>
+        <small style={{ color: 'var(--muted)', fontSize: '11px', opacity: 0.75, marginTop: '4px', maxWidth: '300px' }}>
+          Revenue trends will plot automatically as transactions are completed.
+        </small>
+      </div>
+    );
+  }
+
+  const maxVal = Math.max(...transactions.map((t) => Number(t.amount) || 0), 1000);
+  const yMaxText = `₱${maxVal >= 1000 ? (maxVal / 1000).toFixed(1) + 'k' : maxVal}`;
+  const yMidText = `₱${(maxVal / 2) >= 1000 ? (maxVal / 2000).toFixed(1) + 'k' : Math.round(maxVal / 2)}`;
+
+  const points = transactions.slice(-7).map((t, i, arr) => {
+    const x = arr.length > 1 ? (i / (arr.length - 1)) * 600 + 20 : 320;
+    const y = 200 - Math.min(170, Math.max(20, ((Number(t.amount) || 0) / maxVal) * 160));
+    return { x, y, label: t.date ? t.date.slice(5) : `T${i + 1}`, amount: t.amount };
+  });
+
+  const pathD = points.length === 1
+    ? `M0 ${points[0].y} L640 ${points[0].y}`
+    : points.reduce((acc, pt, i) => (i === 0 ? `M${pt.x} ${pt.y}` : `${acc} L${pt.x} ${pt.y}`), '');
+
+  const areaD = points.length === 1
+    ? `M0 ${points[0].y} L640 ${points[0].y} V220 H0 Z`
+    : `${pathD} V220 H${points[0].x} Z`;
+
   return (
     <div className={`mini-chart ${tall ? 'tall' : ''}`}>
       <div className="chart-axis">
-        <span>₱8k</span><span>₱4k</span><span>₱0</span>
+        <span>{yMaxText}</span><span>{yMidText}</span><span>₱0</span>
       </div>
       <svg viewBox="0 0 640 220" preserveAspectRatio="none" aria-label="Revenue chart">
         <defs>
@@ -293,11 +544,16 @@ export function MiniChart({ tall = false }) {
             <stop offset="1" stopColor="#B88A44" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d="M0 185 C60 160 75 168 120 148 S190 152 220 120 S290 132 328 96 S385 112 420 79 S480 98 520 62 S590 70 640 25 V220 H0 Z" fill="url(#chartFill)" />
-        <path d="M0 185 C60 160 75 168 120 148 S190 152 220 120 S290 132 328 96 S385 112 420 79 S480 98 520 62 S590 70 640 25" fill="none" stroke="#B88A44" strokeWidth="4" strokeLinecap="round" />
+        <path d={areaD} fill="url(#chartFill)" />
+        <path d={pathD} fill="none" stroke="#B88A44" strokeWidth="3" strokeLinecap="round" />
+        {points.map((pt, i) => (
+          <circle key={i} cx={pt.x} cy={pt.y} r="4" fill="#B88A44" />
+        ))}
       </svg>
       <div className="chart-labels">
-        <span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span>
+        {points.map((pt, i) => (
+          <span key={i}>{pt.label}</span>
+        ))}
       </div>
     </div>
   );

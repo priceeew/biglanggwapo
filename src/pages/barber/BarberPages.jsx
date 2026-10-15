@@ -4,11 +4,42 @@ import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
   ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
 } from 'lucide-react';
-import { useStore, currency, humanDate } from '../../context/StoreContext';
+import { useStore, currency, humanDate, today } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
+import { saveAppointmentToAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState
 } from '../../components/common/UIComponents';
+
+export function useCurrentBarber() {
+  const { demo, session } = useStore();
+
+  // Find barber record matching the logged-in session (by barberId, email, or name)
+  const matched = (demo.barbers || []).find((b) =>
+    (session?.barberId && b.id === session.barberId) ||
+    (session?.email && b.email && b.email.toLowerCase() === session.email.toLowerCase()) ||
+    (session?.name && b.name && b.name.toLowerCase() === session.name.toLowerCase())
+  );
+
+  // Fallback to session details or first barber in store
+  const barberId = session?.barberId || matched?.id || demo.barbers?.[0]?.id || 'bar-marco';
+  const barberName = session?.name || matched?.name || demo.barbers?.[0]?.name || 'Barber';
+  const barber = matched || demo.barbers?.[0] || null;
+
+  // Matcher for appointments or queue items assigned to this barber
+  const matchesBarber = (item) => {
+    if (!item) return false;
+    if (barberId && item.barberId === barberId) return true;
+    if (matched?.id && item.barberId === matched.id) return true;
+    if (session?.barberId && item.barberId === session.barberId) return true;
+    if (barberName && item.barberName && item.barberName.toLowerCase() === barberName.toLowerCase()) return true;
+    if (session?.name && item.barberName && item.barberName.toLowerCase() === session.name.toLowerCase()) return true;
+    if (matched?.name && item.barberName && item.barberName.toLowerCase() === matched.name.toLowerCase()) return true;
+    return false;
+  };
+
+  return { barber, barberId, barberName, matchesBarber };
+}
 
 export function BarberPage({ path }) {
   if (path === '/barber') return <BarberDashboard />;
@@ -22,30 +53,56 @@ export function BarberPage({ path }) {
 
 export function BarberDashboard() {
   const { demo } = useStore();
-  const current = demo.queue.find((item) => item.barberId === 'bar-marco' && item.status === 'In Service');
-  const next = demo.queue.find((item) => item.barberId === 'bar-marco' && item.status === 'Waiting');
-  const completed = demo.appointments.filter((item) => item.barberId === 'bar-marco' && item.status === 'Completed').length;
+  const { barberName, matchesBarber, barber } = useCurrentBarber();
+
+  const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const current = myQueue.find((item) => item.status === 'In Service');
+  const next = myQueue.find((item) => item.status === 'Waiting');
+
+  const myAppointments = (demo.appointments || []).filter(matchesBarber);
+  const activeApts = myAppointments.filter((item) => !['Cancelled', 'No-show'].includes(item.status));
+  const completed = myAppointments.filter((item) => item.status === 'Completed').length;
 
   return (
     <>
       <BentoStats
         items={[
-          ["Today's appointments", demo.appointments.filter((item) => item.barberId === 'bar-marco').length + 2, CalendarDays, 'Next at 10:30 AM'],
-          ['Current customer', current?.customerName || 'No one yet', UserRound, current ? 'In service' : 'Chair is ready'],
-          ['Next customer', next?.customerName || 'Queue is clear', ListOrdered, next?.serviceName || 'Take a short reset'],
-          ['Completed services', completed + 5, CheckCircle2, '↑ 12% this month']
+          ["Today's appointments", `${activeApts.length} booked`, CalendarDays, next ? `Next: ${next.customerName}` : 'Schedule is open'],
+          ['Current customer', current?.customerName || 'No one yet', UserRound, current ? `In chair (${current.number})` : 'Chair is ready'],
+          ['Next in line', next?.customerName || 'Queue is clear', ListOrdered, next ? `${next.serviceName} · ${next.number}` : 'Ready for next arrival'],
+          ['Completed services', `${completed} finished`, CheckCircle2, 'Logged in system']
         ]}
       />
       <div className="dashboard-grid two-thirds">
-        <SectionCard title="Chair focus" action={<Link to="/barber/service-session" className="button button-dark button-small">Open session <ArrowRight size={15} /></Link>}>
+        <SectionCard
+          title="Chair focus"
+          action={
+            <Link to="/barber/service-session" className="button button-dark button-small">
+              Open session <ArrowRight size={15} />
+            </Link>
+          }
+        >
           <div className="chair-focus">
             {current ? (
               <>
-                <span className="avatar avatar-lg">{current.customerName.split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
+                <span className="avatar avatar-lg">
+                  {(current.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
+                </span>
                 <div>
                   <span className="eyebrow gold">In service · {current.number}</span>
                   <h2>{current.customerName}</h2>
-                  <p>{current.serviceName} · {current.estimatedMinutes || 45} min</p>
+                  <p>{current.serviceName} · {current.estimatedMinutes || 30} min</p>
+                </div>
+              </>
+            ) : next ? (
+              <>
+                <span className="avatar avatar-lg" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
+                  {(next.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
+                </span>
+                <div>
+                  <span className="eyebrow gold">Next in line · {next.number}</span>
+                  <h2>{next.customerName} is waiting</h2>
+                  <p>{next.serviceName} · Ready to call to chair</p>
                 </div>
               </>
             ) : (
@@ -53,8 +110,8 @@ export function BarberDashboard() {
                 <div className="empty-illustration"><Scissors size={24} /></div>
                 <div>
                   <span className="eyebrow">Chair is ready</span>
-                  <h2>Open the queue</h2>
-                  <p>The next customer will appear when reception calls them in.</p>
+                  <h2>Chair is open for {barberName}</h2>
+                  <p>When reception marks an appointment as arrived or adds a walk-in, they appear here live.</p>
                 </div>
               </>
             )}
@@ -62,28 +119,41 @@ export function BarberDashboard() {
         </SectionCard>
         <SectionCard title="Today at a glance">
           <div className="mini-metrics">
-            <span><strong>09:00</strong><small>First chair</small></span>
-            <span><strong>6</strong><small>Booked today</small></span>
-            <span><strong>4.9</strong><small>Rating</small></span>
+            <span><strong>{activeApts[0]?.time || '09:00'}</strong><small>First chair</small></span>
+            <span><strong>{activeApts.length}</strong><small>Booked today</small></span>
+            <span><strong>{barber?.rating || '5.0'}</strong><small>Rating</small></span>
           </div>
-          <div className="progress-line"><span style={{ width: '68%' }} /></div>
-          <small className="muted-copy">68% of today’s scheduled chair time completed.</small>
+          <div className="progress-line">
+            <span style={{ width: activeApts.length > 0 ? `${Math.min(100, Math.round((completed / activeApts.length) * 100))}%` : '0%' }} />
+          </div>
+          <small className="muted-copy">
+            {activeApts.length > 0
+              ? `${Math.round((completed / activeApts.length) * 100)}% of today’s scheduled appointments completed.`
+              : 'No appointments on the board yet.'}
+          </small>
         </SectionCard>
       </div>
       <SectionCard title="Upcoming chair list">
         <DataTable columns={['Time', 'Customer', 'Service', 'Status', '']}>
           <tbody>
-            {demo.appointments.filter((item) => item.barberId === 'bar-marco').map((item) => (
+            {activeApts.map((item) => (
               <tr key={item.id}>
-                <td><strong>{item.time}</strong></td>
+                <td><strong>{item.time}</strong><small className="table-sub">{humanDate(item.date)}</small></td>
                 <td>{item.customerName}</td>
                 <td>{item.serviceName}</td>
                 <td><StatusBadge status={item.status} /></td>
-                <td><Link className="text-link" to="/barber/customer-details">Details <ArrowRight size={14} /></Link></td>
+                <td>
+                  <Link className="text-link" to={item.status === 'Arrived' ? '/barber/queue' : '/barber/appointments'}>
+                    {item.status === 'Arrived' ? 'In queue →' : 'Details →'}
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
         </DataTable>
+        {!activeApts.length && (
+          <EmptyState title="No bookings yet" copy="Appointments booked with your chair will appear here." />
+        )}
       </SectionCard>
     </>
   );
@@ -91,27 +161,44 @@ export function BarberDashboard() {
 
 export function BarberAppointments() {
   const { demo } = useStore();
+  const { barberName, matchesBarber } = useCurrentBarber();
+  const list = (demo.appointments || []).filter(matchesBarber);
+
   return (
     <>
       <Toolbar
-        title="Your bookings"
-        count={demo.appointments.filter((item) => item.barberId === 'bar-marco').length}
+        title={`${barberName}’s Bookings`}
+        count={list.length}
         action={<Link className="button button-ghost button-small" to="/barber/schedule"><CalendarClock size={15} /> View schedule</Link>}
       />
       <SectionCard>
         <DataTable columns={['Time', 'Customer', 'Service', 'Status', 'Action']}>
           <tbody>
-            {demo.appointments.filter((item) => item.barberId === 'bar-marco').map((item) => (
+            {list.map((item) => (
               <tr key={item.id}>
                 <td><strong>{item.time}</strong><small className="table-sub">{humanDate(item.date)}</small></td>
-                <td><div className="table-person"><span className="avatar avatar-xs">{item.customerName.split(' ').map((p) => p[0]).join('').slice(0, 2)}</span><strong>{item.customerName}</strong></div></td>
+                <td>
+                  <div className="table-person">
+                    <span className="avatar avatar-xs">{(item.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
+                    <strong>{item.customerName}</strong>
+                  </div>
+                </td>
                 <td>{item.serviceName}</td>
                 <td><StatusBadge status={item.status} /></td>
-                <td><Link className="button button-soft button-small" to="/barber/customer-details">Customer details</Link></td>
+                <td>
+                  {item.status === 'Arrived' ? (
+                    <Link className="button button-dark button-small" to="/barber/queue">Call chair</Link>
+                  ) : item.status === 'In Service' ? (
+                    <Link className="button button-dark button-small" to="/barber/service-session">In service</Link>
+                  ) : (
+                    <Link className="button button-soft button-small" to="/barber/customer-details">Customer details</Link>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </DataTable>
+        {!list.length && <EmptyState title="No appointments found" copy="Online bookings for your chair will appear here." />}
       </SectionCard>
     </>
   );
@@ -119,20 +206,26 @@ export function BarberAppointments() {
 
 export function BarberQueue() {
   const { demo, commit, notify } = useStore();
-  const list = demo.queue.filter((item) => item.barberId === 'bar-marco' && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const { barberName, matchesBarber } = useCurrentBarber();
+  const list = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const start = (item) => {
-    commit((state) => demoApi.startService(state, item.id));
-    notify('Service session started.');
+    commit((state) => {
+      const next = demoApi.startService(state, item.id);
+      const apt = next.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) saveAppointmentToAtlas(apt);
+      return next;
+    });
+    notify(`Service started for ${item.customerName}!`);
   };
 
   return (
     <>
       <div className="queue-callout">
         <div>
-          <span className="eyebrow gold">Your queue</span>
+          <span className="eyebrow gold">{barberName}’s Queue</span>
           <h2>{list.length ? `${list.length} customer${list.length > 1 ? 's' : ''} in line.` : 'No one is waiting.'}</h2>
-          <p>Keep each service moving with clear handoffs from reception.</p>
+          <p>Real-time queue synchronized directly with reception check-in.</p>
         </div>
         <Link to="/barber/service-session" className="button button-dark">Open service session <ArrowRight size={16} /></Link>
       </div>
@@ -140,19 +233,22 @@ export function BarberQueue() {
         {list.map((item, index) => (
           <div className={`barber-queue-card ${item.status === 'In Service' ? 'current' : ''}`} key={item.id}>
             <span className="queue-number-small">{item.number}</span>
-            <span className="avatar avatar-md">{item.customerName.split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
+            <span className="avatar avatar-md">{(item.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
             <div>
-              <span className="eyebrow">{index === 0 ? 'Now / next' : `In line · ${index}`}</span>
+              <span className="eyebrow">{item.status === 'In Service' ? 'Current in chair' : index === 0 ? 'Now / next' : `In line · position ${index + 1}`}</span>
               <h3>{item.customerName}</h3>
-              <p>{item.serviceName}</p>
+              <p>{item.serviceName} · Joined {item.joinedAt || 'recently'}</p>
             </div>
             <StatusBadge status={item.status} />
             {item.status === 'Waiting' && (
               <button className="button button-dark button-small" onClick={() => start(item)}>Start</button>
             )}
+            {item.status === 'In Service' && (
+              <Link to="/barber/service-session" className="button button-soft button-small">Open chair</Link>
+            )}
           </div>
         ))}
-        {!list.length && <EmptyState title="The queue is clear" copy="Reception will add customers here as they arrive." />}
+        {!list.length && <EmptyState title="The queue is clear" copy="When reception marks a customer as arrived or registers a walk-in, they appear here live." />}
       </div>
     </>
   );
@@ -160,17 +256,26 @@ export function BarberQueue() {
 
 export function BarberCustomerDetails() {
   const { demo } = useStore();
-  const customer = demo.customers.find((item) => item.id === 'cust-demo');
-  const current = demo.queue.find((item) => item.barberId === 'bar-marco' && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const { matchesBarber } = useCurrentBarber();
+  const current = (demo.queue || []).find((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const activeApt = (demo.appointments || []).find((item) => matchesBarber(item) && ['Arrived', 'In Service', 'Pending', 'Confirmed'].includes(item.status));
+
+  const targetCustomerId = current?.customerId || activeApt?.customerId;
+  const targetCustomerName = current?.customerName || activeApt?.customerName;
+  const customer = (demo.customers || []).find((item) => (targetCustomerId && item.id === targetCustomerId) || (targetCustomerName && item.name === targetCustomerName)) || demo.customers?.[0];
+
+  const customerHistory = (demo.appointments || []).filter((item) =>
+    (customer && item.customerId === customer.id) || (targetCustomerName && item.customerName === targetCustomerName)
+  );
 
   return (
     <div className="detail-page">
       <div className="detail-hero">
-        <span className="avatar avatar-xl">{customer?.initials}</span>
+        <span className="avatar avatar-xl">{customer?.initials || (customer?.name || 'CU').slice(0, 2).toUpperCase()}</span>
         <div>
           <span className="eyebrow gold">Customer profile</span>
-          <h2>{customer?.name}</h2>
-          <p>{customer?.phone} · {customer?.email}</p>
+          <h2>{customer?.name || targetCustomerName || 'Guest Customer'}</h2>
+          <p>{customer?.phone || 'No phone'} · {customer?.email || 'No email'}</p>
         </div>
         <Link to="/barber/service-session" className="button button-dark">Service session <ArrowRight size={16} /></Link>
       </div>
@@ -179,29 +284,33 @@ export function BarberCustomerDetails() {
           <div className="requested-service">
             <span className="service-icon"><Scissors size={19} /></span>
             <div>
-              <strong>{current?.serviceName || 'Signature Fade'}</strong>
-              <small>{current ? `${current.number} · Waiting in your queue` : 'No active queue item'}</small>
+              <strong>{current?.serviceName || activeApt?.serviceName || 'No active service'}</strong>
+              <small>{current ? `${current.number} · In your queue (${current.status})` : activeApt ? `Scheduled for ${humanDate(activeApt.date)} at ${activeApt.time}` : 'No active queue item'}</small>
             </div>
           </div>
         </SectionCard>
         <SectionCard title="Preferences & notes">
-          <p className="detail-quote">“{customer?.preferences || 'No preferences added.'}”</p>
-          <p className="muted-copy">{customer?.notes || 'No notes added for this customer.'}</p>
+          <p className="detail-quote">“{customer?.preferences || 'No styling preferences specified.'}”</p>
+          <p className="muted-copy">{customer?.notes || 'No internal notes on file for this client.'}</p>
         </SectionCard>
       </div>
-      <SectionCard title="Previous services">
-        <DataTable columns={['Date', 'Service', 'Amount', 'Status']}>
+      <SectionCard title="Customer service history">
+        <DataTable columns={['Date', 'Service', 'Barber', 'Amount', 'Status']}>
           <tbody>
-            {demo.appointments.filter((item) => item.customerId === customer?.id).map((item) => (
+            {customerHistory.map((item) => (
               <tr key={item.id}>
                 <td>{humanDate(item.date)}</td>
                 <td>{item.serviceName}</td>
+                <td>{item.barberName}</td>
                 <td>{currency(item.price)}</td>
                 <td><StatusBadge status={item.status} /></td>
               </tr>
             ))}
           </tbody>
         </DataTable>
+        {!customerHistory.length && (
+          <EmptyState title="No prior history" copy="Past completed services for this client will appear here." />
+        )}
       </SectionCard>
     </div>
   );
@@ -209,17 +318,30 @@ export function BarberCustomerDetails() {
 
 export function ServiceSession() {
   const { demo, commit, notify } = useStore();
-  const current = demo.queue.find((item) => item.barberId === 'bar-marco' && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const { matchesBarber, barberName } = useCurrentBarber();
+
+  const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
+  const current = myQueue.find((item) => item.status === 'In Service') || myQueue[0];
   const [notes, setNotes] = useState(current?.notes || '');
 
   const act = () => {
-    if (!current) return notify('No active queue customer.', 'error');
+    if (!current) return notify('No active customer in your queue.', 'error');
     if (current.status === 'Waiting') {
-      commit((state) => demoApi.startService(state, current.id));
-      notify('Service started.');
+      commit((state) => {
+        const next = demoApi.startService(state, current.id);
+        const apt = next.appointments.find((a) => a.id === current.appointmentId);
+        if (apt) saveAppointmentToAtlas(apt);
+        return next;
+      });
+      notify(`Service session started for ${current.customerName}!`);
     } else if (current.status === 'In Service') {
-      commit((state) => demoApi.completeService(state, current.id, notes));
-      notify('Service completed and sent to checkout.');
+      commit((state) => {
+        const next = demoApi.completeService(state, current.id, notes);
+        const apt = next.appointments.find((a) => a.id === current.appointmentId);
+        if (apt) saveAppointmentToAtlas(apt);
+        return next;
+      });
+      notify(`Service completed for ${current.customerName}! Sent to front desk for checkout.`);
     }
   };
 
@@ -227,13 +349,13 @@ export function ServiceSession() {
     <div className="session-layout">
       <div className="session-stage">
         <div className="session-top">
-          <span className="eyebrow gold">Live service session</span>
+          <span className="eyebrow gold">Live service session · {barberName}</span>
           <StatusBadge status={current?.status || 'Waiting'} />
         </div>
         {current ? (
           <>
             <div className="session-client">
-              <span className="avatar avatar-xl">{current.customerName.split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
+              <span className="avatar avatar-xl">{(current.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
               <span>
                 <small>{current.number} · {current.barberName}</small>
                 <h2>{current.customerName}</h2>
@@ -242,14 +364,14 @@ export function ServiceSession() {
             </div>
             <div className="session-timer">
               <Clock3 size={20} />
-              <span>{current.status === 'In Service' ? 'Service is in progress' : 'Ready to start the service'}</span>
+              <span>{current.status === 'In Service' ? 'Service is in progress' : 'Customer arrived and ready to start in chair'}</span>
             </div>
-            <label className="field-label">Service notes
+            <label className="field-label">Service notes & finish
               <textarea
                 className="input textarea"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add finish, preferences, or handoff notes..."
+                placeholder="Add finish details, cut notes, or checkout instructions..."
               />
             </label>
             <button className="button button-dark button-large button-full" onClick={act}>
@@ -258,33 +380,33 @@ export function ServiceSession() {
           </>
         ) : (
           <EmptyState
-            title="No service selected"
-            copy="Open a customer from your queue to begin."
+            title="Chair is ready"
+            copy="No customer is currently waiting in your queue. When reception marks an appointment as arrived, they will appear here."
             action={<Link className="button button-dark" to="/barber/queue">Open queue</Link>}
           />
         )}
       </div>
       <aside className="session-aside">
         <span className="eyebrow">Session checklist</span>
-        <div className={`checklist-row ${current?.status !== 'Waiting' ? 'done' : ''}`}>
+        <div className={`checklist-row ${current?.status ? 'done' : ''}`}>
           <span><Check size={14} /></span>
           <div>
-            <strong>Customer called</strong>
-            <small>Confirm the requested service.</small>
+            <strong>Customer arrived</strong>
+            <small>Checked in at front desk.</small>
           </div>
         </div>
         <div className={`checklist-row ${current?.status === 'In Service' || current?.status === 'Completed' ? 'done' : ''}`}>
           <span><Scissors size={14} /></span>
           <div>
             <strong>Service in progress</strong>
-            <small>Keep finish notes in the handoff.</small>
+            <small>Customer in chair at your station.</small>
           </div>
         </div>
-        <div className="checklist-row">
+        <div className={`checklist-row ${current?.status === 'Completed' ? 'done' : ''}`}>
           <span><WalletCards size={14} /></span>
           <div>
             <strong>Reception checkout</strong>
-            <small>Payment appears after completion.</small>
+            <small>Front desk collects payment & generates receipt.</small>
           </div>
         </div>
       </aside>
@@ -293,221 +415,101 @@ export function ServiceSession() {
 }
 
 export function BarberSchedule() {
-  const [view, setView] = useState('agenda');
-
-  const days = [
-    {
-      name: 'Monday',
-      date: 'Oct 12',
-      isToday: true,
-      onShift: true,
-      shiftHours: '9:00 AM – 8:00 PM',
-      events: [
-        { time: '9:00 AM', title: 'Open chair', sub: 'Available for walk-ins', status: 'available' },
-        { time: '10:00 AM', title: 'Miguel Santos', sub: 'Signature Fade (₱420)', status: 'booked' },
-        { time: '1:00 PM', title: 'Lunch break', sub: 'Chair reset & sanitize', status: 'break' },
-        { time: '3:00 PM', title: 'Open chair', sub: 'Walk-in queue ready', status: 'available' },
-        { time: '5:30 PM', title: 'Reserved slot', sub: 'Junior Cut (₱300)', status: 'booked' }
-      ]
-    },
-    {
-      name: 'Tuesday',
-      date: 'Oct 13',
-      isToday: false,
-      onShift: true,
-      shiftHours: '9:00 AM – 8:00 PM',
-      events: [
-        { time: '9:00 AM', title: 'Working hours', sub: 'Shop open', status: 'available' },
-        { time: '10:45 AM', title: 'Ana Villanueva', sub: 'Classic Cut (₱380)', status: 'booked' },
-        { time: '1:00 PM', title: 'Break', sub: 'Station cleaning', status: 'break' },
-        { time: '4:00 PM', title: 'Open chair', sub: 'Walk-ins welcomed', status: 'available' }
-      ]
-    },
-    {
-      name: 'Wednesday',
-      date: 'Oct 14',
-      isToday: false,
-      onShift: true,
-      shiftHours: '9:00 AM – 8:00 PM',
-      events: [
-        { time: '9:00 AM', title: 'Midweek start', sub: 'Available for walk-ins', status: 'available' },
-        { time: '11:15 AM', title: 'Rafael Cruz', sub: 'Beard Sculpt (₱280)', status: 'booked' },
-        { time: '1:00 PM', title: 'Break', sub: '30 min rest', status: 'break' },
-        { time: '2:30 PM', title: 'Dave Bautista', sub: 'Signature Fade (₱420)', status: 'booked' }
-      ]
-    },
-    {
-      name: 'Thursday',
-      date: 'Oct 15',
-      isToday: false,
-      onShift: true,
-      shiftHours: '9:00 AM – 8:00 PM',
-      events: [
-        { time: '9:00 AM', title: 'Morning chair', sub: 'Shift start', status: 'available' },
-        { time: '1:00 PM', title: 'Break', sub: 'Lunch reset', status: 'break' },
-        { time: '3:30 PM', title: 'Christian Dizon', sub: 'The Full Ritual (₱620)', status: 'booked' }
-      ]
-    },
-    {
-      name: 'Friday',
-      date: 'Oct 16',
-      isToday: false,
-      onShift: true,
-      shiftHours: '9:00 AM – 8:00 PM',
-      events: [
-        { time: '9:00 AM', title: 'Weekend prep', sub: 'High traffic shift', status: 'available' },
-        { time: '10:00 AM', title: 'Kenneth Alcantara', sub: 'Signature Fade (₱420)', status: 'booked' },
-        { time: '1:00 PM', title: 'Break', sub: 'Rest period', status: 'break' },
-        { time: '5:00 PM', title: 'Gian Morales', sub: 'Classic Cut (₱380)', status: 'booked' }
-      ]
-    },
-    {
-      name: 'Saturday',
-      date: 'Oct 17',
-      isToday: false,
-      onShift: true,
-      shiftHours: '8:30 AM – 8:30 PM',
-      events: [
-        { time: '8:30 AM', title: 'Peak Saturday', sub: 'Full lineup', status: 'available' },
-        { time: '11:00 AM', title: 'Carl Mendoza', sub: 'Signature Fade (₱420)', status: 'booked' },
-        { time: '1:30 PM', title: 'Break', sub: 'Midday reset', status: 'break' },
-        { time: '4:00 PM', title: 'Dominic Soriano', sub: 'Beard Sculpt (₱280)', status: 'booked' }
-      ]
-    },
-    {
-      name: 'Sunday',
-      date: 'Oct 18',
-      isToday: false,
-      onShift: false,
-      shiftHours: 'Day Off',
-      events: [
-        { time: 'All day', title: 'Scheduled day off', sub: 'Rest & personal recharge', status: 'break' }
-      ]
-    }
-  ];
+  const { demo } = useStore();
+  const { barber, barberName, matchesBarber } = useCurrentBarber();
+  const myAppointments = (demo.appointments || []).filter(matchesBarber);
 
   return (
     <>
       <div className="schedule-header">
         <div>
-          <span className="eyebrow">Week of October 12</span>
-          <h2>My schedule</h2>
-        </div>
-        <div className="segmented">
-          <button
-            type="button"
-            className={view === 'agenda' ? 'active' : ''}
-            onClick={() => setView('agenda')}
-          >
-            Agenda
-          </button>
-          <button
-            type="button"
-            className={view === 'week' ? 'active' : ''}
-            onClick={() => setView('week')}
-          >
-            Week
-          </button>
+          <span className="eyebrow gold">{barberName}’s Schedule</span>
+          <h2>Work shift & booked chairs</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '12px' }}>
+            Permanent Schedule: <strong>{barber?.schedule || 'Mon–Sun · 9:00 AM–8:00 PM'}</strong> · Status: <strong>{barber?.leaveStatus || barber?.status || 'Active / On Duty'}</strong>
+          </p>
         </div>
       </div>
 
-      {view === 'agenda' ? (
-        <div className="agenda-list">
-          {days.map((day) => (
-            <div className="agenda-day" key={day.name}>
-              <div className="agenda-date">
-                <strong>{day.name}</strong>
-                <span>{day.date}</span>
-                {day.isToday && (
-                  <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '9px', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.06em' }}>
-                    TODAY
-                  </span>
-                )}
-              </div>
-              <div className="agenda-events">
-                {day.events.map((ev, index) => (
-                  <div className={`agenda-event ${ev.status}`} key={index}>
-                    <span className="event-time">{ev.time}</span>
-                    <span>
-                      <strong>{ev.title}</strong>
-                      <small>{ev.sub}</small>
-                    </span>
-                    <span className={`event-status ${ev.status === 'available' ? 'available' : ''}`}>
-                      {ev.status === 'available' ? 'Available' : ev.status === 'booked' ? 'Booked' : 'Unavailable'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="week-schedule-grid">
-          {days.map((day) => (
-            <div className={`week-day-col ${day.isToday ? 'today' : ''}`} key={day.name}>
-              <div className="week-day-head">
-                <div className="week-day-head-left">
-                  <strong>{day.name.slice(0, 3)}</strong>
-                  <span>{day.date}</span>
-                </div>
-                <span className={`week-day-badge ${day.onShift ? 'on-shift' : 'off'}`}>
-                  {day.onShift ? 'On Shift' : 'Off'}
-                </span>
-              </div>
-              <div className="week-events-stack">
-                {day.events.map((ev, index) => (
-                  <div className={`week-event-card ${ev.status}`} key={index}>
-                    <span className="week-event-time">{ev.time}</span>
-                    <span className="week-event-title">{ev.title}</span>
-                    <span className="week-event-sub">{ev.sub}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <SectionCard title="Booked appointments on your schedule">
+        <DataTable columns={['Date', 'Time', 'Customer', 'Service', 'Duration', 'Status']}>
+          <tbody>
+            {myAppointments.map((apt) => (
+              <tr key={apt.id}>
+                <td><strong>{humanDate(apt.date)}</strong></td>
+                <td>{apt.time}</td>
+                <td>{apt.customerName}</td>
+                <td>{apt.serviceName}</td>
+                <td>{apt.duration || 30} mins</td>
+                <td><StatusBadge status={apt.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+        {!myAppointments.length && (
+          <EmptyState title="No bookings scheduled" copy="Appointments booked with your chair will appear here." />
+        )}
+      </SectionCard>
     </>
   );
 }
 
 export function BarberPerformance() {
+  const { demo } = useStore();
+  const { barber, barberName, matchesBarber } = useCurrentBarber();
+
+  const myAppointments = (demo.appointments || []).filter(matchesBarber);
+  const completed = myAppointments.filter((a) => a.status === 'Completed');
+  const uniqueClients = new Set(myAppointments.map((a) => a.customerName || a.customerId)).size;
+  const totalRevenue = completed.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+
+  const myReviews = (demo.reviews || []).filter(
+    (r) => r.barber && barberName && r.barber.toLowerCase().includes(barberName.toLowerCase())
+  );
+  const avgRating = myReviews.length > 0
+    ? (myReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / myReviews.length).toFixed(1)
+    : '0.0';
+
   return (
     <>
       <BentoStats
         items={[
-          ["Completed services", 36, CheckCircle2, '↑ 8% vs last month'],
-          ['Customers served', 31, Users, '24 returning clients'],
-          ['Average rating', '4.9', Star, 'From 18 reviews'],
-          ['Chair utilization', '78%', TrendingUp, 'Healthy pace']
+          ['Completed services', `${completed.length} finished`, CheckCircle2, completed.length > 0 ? 'All-time verified' : 'No cuts finished yet'],
+          ['Customers served', `${uniqueClients} clients`, Users, `${myAppointments.length} total visits`],
+          ['Average rating', myReviews.length > 0 ? avgRating : 'No reviews', Star, myReviews.length > 0 ? `From ${myReviews.length} client review${myReviews.length > 1 ? 's' : ''}` : 'No reviews received yet'],
+          ['Revenue generated', currency(totalRevenue), TrendingUp, 'Paid services']
         ]}
       />
       <div className="dashboard-grid two-thirds">
-        <SectionCard title="Service mix">
-          <div className="chart-bars">
-            <span style={{ height: '82%' }}><i />Fades</span>
-            <span style={{ height: '62%' }}><i />Classic</span>
-            <span style={{ height: '48%' }}><i />Beard</span>
-            <span style={{ height: '35%' }}><i />Combos</span>
+        <SectionCard title="Service breakdown">
+          <div className="compact-list" style={{ padding: '16px 22px' }}>
+            {completed.slice(0, 5).map((item) => (
+              <div className="compact-row" key={item.id}>
+                <span className="time-label">{humanDate(item.date)}</span>
+                <div className="compact-row-main">
+                  <strong>{item.serviceName}</strong>
+                  <small>{item.customerName} · {currency(item.price)}</small>
+                </div>
+                <StatusBadge status={item.paymentStatus || 'Paid'} />
+              </div>
+            ))}
+            {!completed.length && (
+              <EmptyState title="No completed cuts yet" copy="Services you complete in your chair will be tracked here." />
+            )}
           </div>
         </SectionCard>
-        <SectionCard title="Customer signal">
+        <SectionCard title="Client feedback">
           <div className="rating-summary">
-            <strong>4.9</strong>
+            <strong>{myReviews.length > 0 ? avgRating : '—'}</strong>
             <div>
-              <span className="stars">★★★★★</span>
-              <small>18 submitted reviews</small>
+              <span className="stars">{myReviews.length > 0 ? '★★★★★' : '☆☆☆☆☆'}</span>
+              <small>{myReviews.length ? `${myReviews.length} client review${myReviews.length > 1 ? 's' : ''}` : 'No client reviews yet'}</small>
             </div>
           </div>
-          <div className="rating-line-item">
-            <span>5 stars</span>
-            <div><i style={{ width: '88%' }} /></div>
-            <b>16</b>
-          </div>
-          <div className="rating-line-item">
-            <span>4 stars</span>
-            <div><i style={{ width: '36%' }} /></div>
-            <b>2</b>
+          <div style={{ padding: '0 22px 18px' }}>
+            <p className="muted-copy" style={{ margin: 0 }}>
+              {myReviews[0]?.comment ? `“${myReviews[0].comment}” — ${myReviews[0].customer}` : 'Client reviews submitted after completed appointments will display here.'}
+            </p>
           </div>
         </SectionCard>
       </div>

@@ -8,6 +8,7 @@ const AppointmentSchema = new mongoose.Schema({
   serviceName: { type: String, required: true },
   barberId: { type: String, required: true },
   barberName: { type: String, required: true },
+  barberImage: { type: String, default: '' },
   date: { type: String, required: true },
   time: { type: String, required: true },
   duration: { type: Number, default: 30 },

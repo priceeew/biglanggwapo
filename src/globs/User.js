@@ -48,13 +48,34 @@ if (typeof window !== 'undefined') {
   syncAccountsFromAtlas();
 }
 
+export function getAccounts() {
+  return accounts;
+}
+
+export function revokeSession({ email, id, name, reason = 'deactivated' }) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('biglanggwapo-revoked-session', JSON.stringify({
+        email: email ? email.toLowerCase().trim() : undefined,
+        id,
+        name,
+        reason,
+        ts: Date.now()
+      }));
+    }
+  } catch {}
+}
+
 export function saveAccount(account) {
   if (!account || !account.email) return;
   const cleanEmail = account.email.trim().toLowerCase();
-  accounts[cleanEmail] = { ...account, email: cleanEmail };
+  accounts[cleanEmail] = { ...(accounts[cleanEmail] || {}), ...account, email: cleanEmail };
   try {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+      if (account.status === 'Inactive' || account.active === false) {
+        revokeSession({ email: cleanEmail, reason: 'deactivated' });
+      }
     }
   } catch (err) {
     console.error('Failed to persist account:', err);
@@ -80,6 +101,7 @@ export function deleteAccount(email) {
   try {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+      revokeSession({ email: cleanEmail, reason: 'deleted' });
     }
   } catch (err) {
     console.error('Failed to delete account:', err);

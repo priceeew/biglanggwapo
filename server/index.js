@@ -10,6 +10,8 @@ import { Account } from './models/Account.js';
 import { Barber } from './models/Barber.js';
 import { Appointment } from './models/Appointment.js';
 import { Service } from './models/Service.js';
+import { Review } from './models/Review.js';
+import { Inventory } from './models/Inventory.js';
 import { sendInvitationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
@@ -253,6 +255,128 @@ app.post('/api/appointments', async (req, res) => {
     res.json({ success: true, appointment: saved });
   } catch (err) {
     console.error('Error saving appointment:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/appointments/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Appointment.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Appointment deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/appointments', async (req, res) => {
+  try {
+    await connectDB();
+    await Appointment.deleteMany({});
+    res.json({ success: true, message: 'All appointments cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Reviews API (MongoDB Atlas)
+app.get('/api/reviews', async (req, res) => {
+  try {
+    await connectDB();
+    const reviews = await Review.find().sort({ createdAt: -1 }).lean();
+    res.json({ success: true, reviews });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/reviews', async (req, res) => {
+  try {
+    await connectDB();
+    const review = req.body;
+    if (!review || !review.id) {
+      return res.status(400).json({ success: false, message: 'Missing review id' });
+    }
+    const { _id, ...cleanReview } = review;
+    const saved = await Review.findOneAndUpdate(
+      { id: review.id },
+      { $set: cleanReview },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, review: saved });
+  } catch (err) {
+    console.error('Error saving review:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/reviews/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Review.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Review deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/reviews', async (req, res) => {
+  try {
+    await connectDB();
+    await Review.deleteMany({});
+    res.json({ success: true, message: 'All reviews cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Inventory API (MongoDB Atlas)
+app.get('/api/inventory', async (req, res) => {
+  try {
+    await connectDB();
+    const items = await Inventory.find().lean();
+    res.json({ success: true, inventory: items });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/inventory', async (req, res) => {
+  try {
+    await connectDB();
+    const item = req.body;
+    if (!item || !item.id) {
+      return res.status(400).json({ success: false, message: 'Missing inventory id' });
+    }
+    const { _id, ...cleanItem } = item;
+    const saved = await Inventory.findOneAndUpdate(
+      { id: item.id },
+      { $set: cleanItem },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, item: saved });
+  } catch (err) {
+    console.error('Error saving inventory item:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/inventory/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Inventory.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Inventory item deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/inventory', async (req, res) => {
+  try {
+    await connectDB();
+    await Inventory.deleteMany({});
+    res.json({ success: true, message: 'All inventory cleared' });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });

@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { loadDemoState, persistDemoState, resetDemoState } from '../mockService';
-import { fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas } from '../services/api';
+import {
+  fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
+  fetchReviewsFromAtlas, fetchInventoryFromAtlas
+} from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
+import { getAccounts } from '../data';
 
 const StoreContext = createContext(null);
 
@@ -52,15 +56,139 @@ export function StoreProvider({ children }) {
     });
 
     fetchAppointmentsFromAtlas().then((appointments) => {
-      if (appointments && Array.isArray(appointments) && appointments.length > 0) {
+      if (appointments && Array.isArray(appointments)) {
         setDemo((prev) => {
-          const updated = { ...prev, appointments: [...appointments, ...prev.appointments.filter((a) => !appointments.some((ap) => ap.id === a.id))] };
+          const updated = {
+            ...prev,
+            appointments
+          };
           persistDemoState(updated);
           return updated;
         });
       }
     });
+
+    fetchReviewsFromAtlas().then((reviews) => {
+      if (reviews && Array.isArray(reviews)) {
+        setDemo((prev) => {
+          const updated = {
+            ...prev,
+            reviews
+          };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    fetchInventoryFromAtlas().then((inventory) => {
+      if (inventory && Array.isArray(inventory) && inventory.length > 0) {
+        setDemo((prev) => {
+          const updated = { ...prev, inventory };
+          persistDemoState(updated);
+          return updated;
+        });
+      }
+    });
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'biglanggwapo-revoked-session') {
+        try {
+          const revoked = JSON.parse(e.newValue || '{}');
+          const storedSession = JSON.parse(window.sessionStorage.getItem('biglanggwapo-session') || 'null');
+          if (storedSession) {
+            const currentEmail = (storedSession.email || '').toLowerCase().trim();
+            const isMatch =
+              (revoked.email && currentEmail && revoked.email === currentEmail) ||
+              (revoked.id && (storedSession.barberId === revoked.id || storedSession.customerId === revoked.id || storedSession.receptionistId === revoked.id)) ||
+              (revoked.name && storedSession.name && revoked.name.toLowerCase() === storedSession.name.toLowerCase());
+
+            if (isMatch) {
+              logout();
+              notify(`Your account has been ${revoked.reason || 'deactivated'}. You have been signed out.`, 'error');
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      if (!e.key || e.key === 'biglanggwapo-demo-v10' || e.key === 'biglanggwapo-accounts-v2') {
+        setDemo(loadDemoState());
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  // Proactive check: automatically sign out if logged-in account was deleted or deactivated
+  useEffect(() => {
+    if (!session) return;
+    if (session.role === 'admin' && session.email === 'admin@biglanggwapo.com') return;
+
+    const email = (session.email || '').toLowerCase().trim();
+    const storedAccounts = getAccounts();
+
+    // 1. Account was removed from accounts registry
+    if (email && !storedAccounts[email]) {
+      logout();
+      notify('Your account has been deleted. You have been signed out.', 'error');
+      return;
+    }
+
+    // 2. Account marked Inactive in accounts registry
+    if (email && (storedAccounts[email]?.status === 'Inactive' || storedAccounts[email]?.active === false)) {
+      logout();
+      notify('Your account has been deactivated. You have been signed out.', 'error');
+      return;
+    }
+
+    // 3. Barber checks
+    if (session.role === 'barber') {
+      const barber = (demo.barbers || []).find((b) =>
+        (session.barberId && b.id === session.barberId) ||
+        (email && b.email && b.email.toLowerCase() === email) ||
+        (session.name && b.name && b.name.toLowerCase() === session.name.toLowerCase())
+      );
+      if (!barber) {
+        logout();
+        notify('Your barber account has been removed. You have been signed out.', 'error');
+        return;
+      }
+      if (barber.status === 'Inactive' || barber.leaveStatus === 'Inactive' || barber.active === false) {
+        logout();
+        notify('Your barber account has been deactivated. You have been signed out.', 'error');
+        return;
+      }
+    }
+
+    // 4. Customer checks
+    if (session.role === 'customer') {
+      const customer = (demo.customers || []).find((c) =>
+        (session.customerId && c.id === session.customerId) ||
+        (email && c.email && c.email.toLowerCase() === email) ||
+        (session.name && c.name && c.name.toLowerCase() === session.name.toLowerCase())
+      );
+      if (customer && customer.status === 'Inactive') {
+        logout();
+        notify('Your customer account has been deactivated. You have been signed out.', 'error');
+        return;
+      }
+    }
+
+    // 5. Receptionist checks
+    if (session.role === 'receptionist') {
+      const rec = (demo.receptionists || []).find((r) =>
+        (session.receptionistId && r.id === session.receptionistId) ||
+        (email && r.email && r.email.toLowerCase() === email) ||
+        (session.name && r.name && r.name.toLowerCase() === session.name.toLowerCase())
+      );
+      if (!rec || rec.status === 'Inactive') {
+        logout();
+        notify('Your receptionist account has been deactivated or removed. You have been signed out.', 'error');
+        return;
+      }
+    }
+  }, [session, demo.barbers, demo.customers, demo.receptionists]);
 
   const notify = (message, tone = 'success') => {
     setToast({ message, tone });

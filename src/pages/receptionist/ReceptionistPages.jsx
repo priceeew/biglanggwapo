@@ -8,7 +8,7 @@ import {
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, validatePassword, validatePhone } from '../../data';
-import { sendInviteNotification } from '../../services/api';
+import { sendInviteNotification, saveAppointmentToAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
   StatusBadge, EmptyState, StatCard
@@ -26,17 +26,22 @@ export function ReceptionistPage({ path }) {
 
 export function ReceptionistDashboard() {
   const { demo } = useStore();
-  const todayAppointments = demo.appointments.filter((item) => item.date === today);
-  const sales = demo.transactions.filter((item) => item.date === today).reduce((sum, item) => sum + item.amount, 0);
+  const todayAppointments = (demo.appointments || []).filter((item) => item.date === today);
+  const pendingConfirmCount = todayAppointments.filter((item) => item.status === 'Pending').length;
+  const waitingQueueCount = (demo.queue || []).filter((item) => item.status === 'Waiting').length;
+  const inServiceQueueCount = (demo.queue || []).filter((item) => item.status === 'In Service').length;
+  const todayWalkIns = (demo.appointments || []).filter((item) => item.date === today && item.source === 'Walk-in').length;
+  const todayTransactions = (demo.transactions || []).filter((item) => item.date === today);
+  const sales = todayTransactions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   return (
     <>
       <BentoStats
         items={[
-          ['Today\'s appointments', todayAppointments.length + 4, CalendarDays, '2 waiting confirmation'],
-          ['Current queue', demo.queue.filter((item) => item.status === 'Waiting').length, ListOrdered, '1 in service'],
-          ['Walk-ins', 6, UserPlus, '↑ 2 from yesterday'],
-          ['Today\'s sales', currency(sales + 1680), WalletCards, '4 paid transactions']
+          ["Today's appointments", todayAppointments.length, CalendarDays, todayAppointments.length > 0 ? `${pendingConfirmCount} waiting confirmation` : 'No bookings today'],
+          ['Current queue', waitingQueueCount, ListOrdered, inServiceQueueCount > 0 ? `${inServiceQueueCount} in service` : 'No one in chair'],
+          ['Walk-ins', todayWalkIns, UserPlus, todayWalkIns > 0 ? `${todayWalkIns} walk-in customer${todayWalkIns > 1 ? 's' : ''}` : 'No walk-ins today'],
+          ["Today's sales", currency(sales), WalletCards, todayTransactions.length > 0 ? `${todayTransactions.length} paid transaction${todayTransactions.length > 1 ? 's' : ''}` : 'No sales recorded today']
         ]}
       />
       <div className="dashboard-grid two-thirds">
@@ -45,9 +50,14 @@ export function ReceptionistDashboard() {
           action={<Link to="/receptionist/appointments" className="text-link">View all <ArrowRight size={14} /></Link>}
         >
           <div className="compact-list">
-            {demo.appointments.slice(0, 4).map((item) => (
+            {(demo.appointments || []).slice(0, 4).map((item) => (
               <AppointmentRow key={item.id} appointment={item} />
             ))}
+            {(!demo.appointments || demo.appointments.length === 0) && (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }}>
+                No appointments on the board yet.
+              </div>
+            )}
           </div>
         </SectionCard>
         <SectionCard title="Quick actions">
@@ -101,7 +111,14 @@ export function ReceptionistAppointments() {
   const act = (id, action) => {
     const updater = action === 'confirm' ? demoApi.confirmAppointment : action === 'arrived' ? demoApi.markArrived : demoApi.cancelAppointment;
     if (action === 'cancel' && !window.confirm('Cancel this appointment?')) return;
-    commit((state) => updater(state, id));
+    commit((state) => {
+      const next = updater(state, id);
+      const updatedApt = next.appointments.find((a) => a.id === id);
+      if (updatedApt) {
+        saveAppointmentToAtlas(updatedApt);
+      }
+      return next;
+    });
     notify(action === 'arrived' ? 'Customer marked arrived and added to the queue.' : `Appointment ${action}ed.`);
   };
 
@@ -129,7 +146,47 @@ export function ReceptionistAppointments() {
                 </td>
                 <td>{item.serviceName}<small className="table-sub">{currency(item.price)} · {item.duration}m</small></td>
                 <td>{humanDate(item.date)}<small className="table-sub">{item.time}</small></td>
-                <td>{item.barberName}</td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(() => {
+                      const bObj = (demo.barbers || []).find((b) => b.id === item.barberId || b.name === item.barberName);
+                      const bImg = item.barberImage || bObj?.image;
+                      return bImg ? (
+                        <img
+                          src={bImg}
+                          alt={item.barberName}
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: '1px solid var(--line)',
+                            flexShrink: 0
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            if (e.currentTarget.nextElementSibling) {
+                              e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                            }
+                          }}
+                        />
+                      ) : null;
+                    })()}
+                    <span
+                      className="avatar avatar-xs"
+                      style={{
+                        display: (item.barberImage || (demo.barbers || []).find((b) => b.id === item.barberId || b.name === item.barberName)?.image) ? 'none' : 'inline-grid',
+                        width: '28px',
+                        height: '28px',
+                        fontSize: '11px',
+                        flexShrink: 0
+                      }}
+                    >
+                      {(item.barberName || 'BR').slice(0, 2).toUpperCase()}
+                    </span>
+                    <span>{item.barberName}</span>
+                  </div>
+                </td>
                 <td><StatusBadge status={item.status} /></td>
                 <td>
                   <div className="row-actions">
@@ -180,10 +237,28 @@ export function WalkInPage() {
     if (!form.barberId) {
       return notify('Please select a barber (or add a barber to the shop first).', 'error');
     }
-    const before = demo.queue.length;
-    commit((state) => demoApi.addWalkIn(state, form));
-    setCreated(`Q-${String(before + 15).padStart(3, '0')}`);
-    notify('Walk-in added to the queue.');
+    let assignedNumber = '';
+    commit((state) => {
+      const next = demoApi.addWalkIn(state, form);
+      const newApt = next.appointments[0];
+      const newQueue = next.queue[0];
+      if (newApt) {
+        saveAppointmentToAtlas(newApt);
+      }
+      if (newQueue) {
+        assignedNumber = newQueue.number;
+      }
+      return next;
+    });
+    setCreated(assignedNumber || 'Q-001');
+    notify(`Walk-in added to the queue (${assignedNumber || 'Q-001'}).`);
+    setForm({
+      customerId: '',
+      customerName: '',
+      phone: '',
+      serviceId: demo.services[0]?.id || '',
+      barberId: demo.barbers[0]?.id || ''
+    });
   };
 
   return (
@@ -225,11 +300,23 @@ export function WalkInPage() {
               </select>
             </label>
             <label className="field-label">Preferred barber
-              <select className="input" value={form.barberId} onChange={(e) => setForm({ ...form, barberId: e.target.value })}>
-                {demo.barbers.filter((b) => b.working).map((barber) => (
-                  <option key={barber.id} value={barber.id}>{barber.name}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <select className="input" style={{ flex: 1 }} value={form.barberId} onChange={(e) => setForm({ ...form, barberId: e.target.value })}>
+                  {demo.barbers.filter((b) => b.working).map((barber) => (
+                    <option key={barber.id} value={barber.id}>{barber.name}</option>
+                  ))}
+                </select>
+                {(() => {
+                  const selBarber = demo.barbers?.find((b) => b.id === form.barberId);
+                  return selBarber?.image ? (
+                    <img
+                      src={selBarber.image}
+                      alt={selBarber.name}
+                      style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)', flexShrink: 0 }}
+                    />
+                  ) : null;
+                })()}
+              </div>
             </label>
           </div>
           <button className="button button-dark" type="submit">Add to queue <ArrowRight size={16} /></button>
@@ -268,7 +355,15 @@ export function QueueManagement() {
   const act = (id, type) => {
     if (type === 'remove' && !window.confirm('Remove this queue entry?')) return;
     const api = type === 'start' ? demoApi.startService : type === 'skip' ? demoApi.skipQueue : demoApi.removeQueue;
-    commit((state) => api(state, id));
+    commit((state) => {
+      const next = api(state, id);
+      const queueItem = next.queue.find((q) => q.id === id);
+      if (queueItem?.appointmentId) {
+        const apt = next.appointments.find((a) => a.id === queueItem.appointmentId);
+        if (apt) saveAppointmentToAtlas(apt);
+      }
+      return next;
+    });
     notify(type === 'start' ? 'Customer called into service.' : `Queue entry ${type}ped.`);
   };
 

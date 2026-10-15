@@ -8,10 +8,11 @@ import {
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
+import { uploadImageFile, saveReviewToAtlas } from '../../services/api';
 import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
-  StatusBadge, QueueMini, ReviewCard
+  StatusBadge, QueueMini, ReviewCard, ReviewPhotoModal
 } from '../../components/common/UIComponents';
 import { BookingPage } from '../public/PublicPages';
 
@@ -846,6 +847,35 @@ export function CustomerReviews() {
   );
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [image, setImage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [activePhotoModal, setActivePhotoModal] = useState(null);
+
+  const handleImageSelect = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploadError('');
+    const validTypes = ['image/jpeg', 'image/png'];
+    const validExt = /\.(jpe?g|png)$/i;
+    if (file.type && !validTypes.includes(file.type) && !validExt.test(file.name)) {
+      setUploadError('Only JPEG, JPG, and PNG files are allowed.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const res = await uploadImageFile(file);
+      if (res.success && res.url) {
+        setImage(res.url);
+      } else {
+        setUploadError(res.error || 'Failed to upload photo.');
+      }
+    } catch {
+      setUploadError('Failed to process image file.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   // Show reviews submitted by the currently logged-in customer
   const myReviews = demo.reviews.filter((review) => 
@@ -868,17 +898,26 @@ export function CustomerReviews() {
     event.preventDefault();
     if (!eligible) return notify('Reviews are available after a completed demo service.', 'error');
     if (!rating || !comment.trim()) return notify('Choose a rating and add feedback.', 'error');
-    commit((state) => demoApi.addReview(state, {
+    const newReview = {
+      id: `rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       customer: currentCustomerName,
       initials: currentInitials,
       customerId: currentCustomerId,
       barber: eligible.barberName,
+      serviceName: eligible.serviceName,
+      service: eligible.serviceName,
       rating,
       comment,
-      appointmentId: eligible.id
-    }));
+      image: image || undefined,
+      appointmentId: eligible.id,
+      date: new Date().toISOString().slice(0, 10),
+      public: true
+    };
+    saveReviewToAtlas(newReview);
+    commit((state) => demoApi.addReview(state, newReview));
     setRating(0);
     setComment('');
+    setImage('');
     notify('Thanks for sharing your review.');
   };
 
@@ -929,8 +968,89 @@ export function CustomerReviews() {
                   value={comment}
                   onChange={(event) => setComment(event.target.value)}
                 />
-                <button className="button button-dark" disabled={!eligible}>
-                  Submit review <Send size={16} />
+
+                <div style={{ marginTop: '12px', marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
+                    Add haircut photo (optional)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '7px 13px',
+                        borderRadius: '8px',
+                        background: 'var(--surface-sunken, rgba(255,255,255,0.06))',
+                        border: '1px dashed var(--line, rgba(255,255,255,0.25))',
+                        cursor: eligible && !uploading ? 'pointer' : 'not-allowed',
+                        opacity: eligible ? 1 : 0.6,
+                        fontSize: '12.5px'
+                      }}
+                    >
+                      <Camera size={15} />
+                      <span>{uploading ? 'Uploading...' : image ? 'Change Photo' : 'Upload Local Image'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/jpg"
+                        disabled={!eligible || uploading}
+                        style={{ display: 'none' }}
+                        onChange={handleImageSelect}
+                      />
+                    </label>
+                    <span style={{ fontSize: '11.5px', color: 'var(--muted, rgba(255,255,255,0.5))' }}>
+                      Only JPEG, JPG, and PNG are allowed.
+                    </span>
+                  </div>
+
+                  {uploadError && (
+                    <div style={{ color: '#ef4444', fontSize: '12px', marginTop: '6px' }}>
+                      {uploadError}
+                    </div>
+                  )}
+
+                  {image && (
+                    <div style={{ position: 'relative', display: 'inline-block', marginTop: '10px' }}>
+                      <img
+                        src={image}
+                        alt="Preview"
+                        style={{
+                          width: '72px',
+                          height: '72px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          border: '1.5px solid var(--gold, #d4af37)'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setImage('')}
+                        style={{
+                          position: 'absolute',
+                          top: -6,
+                          right: -6,
+                          background: '#ef4444',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '20px',
+                          height: '20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                        title="Remove photo"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <button className="button button-dark" disabled={!eligible || uploading}>
+                  {uploading ? 'Uploading photo...' : 'Submit review'} <Send size={16} />
                 </button>
               </form>
             </div>
@@ -941,7 +1061,11 @@ export function CustomerReviews() {
           <div style={{ padding: '20px' }}>
             <div className="submitted-reviews" style={{ maxWidth: '100%' }}>
               {myReviews.map((review) => (
-                <ReviewCard key={review.id} review={review} />
+                <ReviewCard
+                  key={review.id}
+                  review={review}
+                  onImageClick={(img, rev) => setActivePhotoModal({ image: img, review: rev })}
+                />
               ))}
               {!myReviews.length && (
                 <EmptyState
@@ -954,6 +1078,11 @@ export function CustomerReviews() {
           </div>
         </SectionCard>
       </div>
+
+      <ReviewPhotoModal
+        modalData={activePhotoModal}
+        onClose={() => setActivePhotoModal(null)}
+      />
     </>
   );
 }

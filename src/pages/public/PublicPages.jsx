@@ -10,14 +10,15 @@ import { demoApi } from '../../mockService';
 import { saveAppointmentToAtlas } from '../../services/api';
 import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
-  PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard
+  PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard, ReviewPhotoModal
 } from '../../components/common/UIComponents';
 
 export function HomePage() {
   const { demo, session, openModal } = useStore();
   const navigate = useNavigate();
   const reviewsContainerRef = useRef(null);
-  const activePromo = demo.promotions.find((promo) => promo.active) || promotions[0];
+  const [activePhotoModal, setActivePhotoModal] = useState(null);
+  const activePromo = demo.promotions?.find((promo) => promo.active) || promotions?.[0] || null;
 
   const scrollReviews = (direction) => {
     if (reviewsContainerRef.current) {
@@ -67,30 +68,32 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="promo-strip content-width">
-        <div>
-          <span className="eyebrow gold">Limited demo offer</span>
-          <h2>{activePromo.title}</h2>
-          <p>{activePromo.description}</p>
-        </div>
-        <div className="promo-value">
-          <strong>{activePromo.type === 'Percentage' ? `${activePromo.value}%` : currency(activePromo.value)}</strong>
-          <span>off your visit</span>
-        </div>
-        <button
-          className="button button-dark"
-          onClick={() => {
-            if (!session) {
-              navigate('/booking');
-              openModal('login', { targetPath: '/booking' });
-            } else {
-              navigate('/booking');
-            }
-          }}
-        >
-          Use offers <ArrowUpRight size={17} />
-        </button>
-      </section>
+      {activePromo && (
+        <section className="promo-strip content-width">
+          <div>
+            <span className="eyebrow gold">Limited demo offer</span>
+            <h2>{activePromo.title}</h2>
+            <p>{activePromo.description}</p>
+          </div>
+          <div className="promo-value">
+            <strong>{activePromo.type === 'Percentage' ? `${activePromo.value}%` : currency(activePromo.value)}</strong>
+            <span>off your visit</span>
+          </div>
+          <button
+            className="button button-dark"
+            onClick={() => {
+              if (!session) {
+                navigate('/booking');
+                openModal('login', { targetPath: '/booking' });
+              } else {
+                navigate('/booking');
+              }
+            }}
+          >
+            Use offers <ArrowUpRight size={17} />
+          </button>
+        </section>
+      )}
 
       <section id="services" className="section-block content-width">
         <SectionIntro
@@ -129,11 +132,20 @@ export function HomePage() {
             }
           />
           <div className="reviews-scroll-container" ref={reviewsContainerRef}>
-            {demo.reviews.map((review) => (
-              <div className="reviews-scroll-item" key={review.id}>
-                <ReviewCard review={review} />
+            {demo.reviews && demo.reviews.length > 0 ? (
+              demo.reviews.map((review) => (
+                <div className="reviews-scroll-item" key={review.id}>
+                  <ReviewCard
+                    review={review}
+                    onImageClick={(img, rev) => setActivePhotoModal({ image: img, review: rev })}
+                  />
+                </div>
+              ))
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px', width: '100%', color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
+                No customer reviews yet. Reviews will appear here once submitted.
               </div>
-            ))}
+            )}
           </div>
         </div>
       </section>
@@ -162,6 +174,11 @@ export function HomePage() {
           />
         </div>
       </section>
+
+      <ReviewPhotoModal
+        modalData={activePhotoModal}
+        onClose={() => setActivePhotoModal(null)}
+      />
     </>
   );
 }
@@ -338,6 +355,7 @@ export function BookingPage() {
         customerEmail: session.email || '',
         serviceName: combinedServiceName,
         barberName: barber.name,
+        barberImage: barber.image || '',
         duration: totalDuration,
         price: totalPrice,
         status: 'Pending',
@@ -351,6 +369,7 @@ export function BookingPage() {
         ...selection,
         serviceName: combinedServiceName,
         barberName: barber.name,
+        barberImage: barber.image || '',
         price: totalPrice,
         duration: totalDuration,
         selectedServicesList: allSelectedServices
@@ -373,7 +392,16 @@ export function BookingPage() {
           <div>
             <span className="eyebrow gold">Booking reference · BG-DEMO</span>
             <h2>{confirmed.serviceName}</h2>
-            <p>{humanDate(confirmed.date)} · {confirmed.time} with {confirmed.barberName}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+              {confirmed.barberImage ? (
+                <img
+                  src={confirmed.barberImage}
+                  alt={confirmed.barberName}
+                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)' }}
+                />
+              ) : null}
+              <p style={{ margin: 0 }}>{humanDate(confirmed.date)} · {confirmed.time} with <strong>{confirmed.barberName}</strong></p>
+            </div>
           </div>
           <div className="confirmation-meta">
             <span><small>Price</small><strong>{currency(confirmed.price)}</strong></span>
@@ -637,7 +665,30 @@ export function BookingPage() {
                         setSelection({ ...selection, barberId: item.id });
                       }}
                     >
-                      <span className="avatar avatar-md">{item.initials}</span>
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          style={{
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: selection.barberId === item.id ? '2px solid var(--gold)' : '2px solid var(--line)',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                            marginBottom: '6px'
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            if (e.currentTarget.nextElementSibling) {
+                              e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                            }
+                          }}
+                        />
+                      ) : null}
+                      <span className="avatar avatar-md" style={{ display: item.image ? 'none' : 'inline-grid' }}>
+                        {item.initials || (item.name || '').slice(0, 2).toUpperCase()}
+                      </span>
                       <strong>{item.name}</strong>
                       <small>{item.specialty}</small>
                       {isBlocked ? (
@@ -787,7 +838,19 @@ export function BookingPage() {
             <div className="review-booking">
               <div className="review-summary">
                 <span><small>Services Selected</small><strong>{combinedServiceName}</strong></span>
-                <span><small>Barber</small><strong>{barber?.name}</strong></span>
+                <span>
+                  <small>Barber</small>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+                    {barber?.image ? (
+                      <img
+                        src={barber.image}
+                        alt={barber.name}
+                        style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)' }}
+                      />
+                    ) : null}
+                    <strong>{barber?.name}</strong>
+                  </div>
+                </span>
                 <span><small>Schedule</small><strong>{humanDate(selection.date)} · {selection.time}</strong></span>
                 <span><small>Total ({totalDuration} mins)</small><strong>{currency(totalPrice)}</strong></span>
               </div>
@@ -861,7 +924,22 @@ export function BookingPage() {
 
           {barber && (
             <div className="aside-person">
-              <span className="avatar avatar-sm">{barber.initials}</span>
+              {barber.image ? (
+                <img
+                  src={barber.image}
+                  alt={barber.name}
+                  style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)', flexShrink: 0 }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                    }
+                  }}
+                />
+              ) : null}
+              <span className="avatar avatar-sm" style={{ display: barber.image ? 'none' : 'inline-grid' }}>
+                {barber.initials || (barber.name || '').slice(0, 2).toUpperCase()}
+              </span>
               <span><small>With</small><strong>{barber.name}</strong></span>
             </div>
           )}

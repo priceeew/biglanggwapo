@@ -7,8 +7,12 @@ import {
 } from 'lucide-react';
 import { useStore, currency, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount, deleteAccount, validatePassword, validatePhone } from '../../data';
-import { sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas, saveServiceToAtlas, deleteServiceFromAtlas, clearAllServicesFromAtlas, uploadImageFile } from '../../services/api';
+import { saveAccount, deleteAccount, validatePassword, validatePhone, revokeSession } from '../../data';
+import {
+  sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas,
+  saveServiceToAtlas, deleteServiceFromAtlas, clearAllServicesFromAtlas, uploadImageFile,
+  saveInventoryToAtlas, deleteInventoryFromAtlas
+} from '../../services/api';
 import { STANDARD_SCHEDULES, validateShiftWithinShopHours, findShiftConflicts } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
@@ -26,33 +30,59 @@ export function AdminPage({ path }) {
 
 export function AdminDashboard() {
   const { demo } = useStore();
-  const revenue = demo.transactions.reduce((sum, item) => sum + item.amount, 0);
+  const revenue = (demo.transactions || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const totalAppointments = (demo.appointments || []).length;
+  const completedAppointments = (demo.appointments || []).filter((item) => item.status === 'Completed').length;
+  const activeBarbersCount = (demo.barbers || []).filter((item) => item.working).length;
+  const totalCustomers = (demo.customers || []).length;
+
+  const waitingCount = (demo.queue || []).filter((item) => item.status === 'Waiting').length;
+  const inServiceCount = (demo.queue || []).filter((item) => item.status === 'In Service').length;
+  const completedTodayCount = (demo.appointments || []).filter((item) => item.status === 'Completed').length;
+  const totalInQueue = waitingCount + inServiceCount;
+
+  // Real popular services ranked by actual appointment bookings
+  const serviceBookingCounts = {};
+  (demo.appointments || []).forEach((apt) => {
+    const key = apt.serviceName || apt.serviceId;
+    if (key) {
+      serviceBookingCounts[key] = (serviceBookingCounts[key] || 0) + 1;
+    }
+  });
+
+  const rankedServices = (demo.services || [])
+    .map((service) => {
+      const count = serviceBookingCounts[service.name] || serviceBookingCounts[service.id] || 0;
+      const pct = totalAppointments > 0 ? Math.round((count / totalAppointments) * 100) : 0;
+      return { ...service, bookingCount: count, pct };
+    })
+    .sort((a, b) => b.bookingCount - a.bookingCount);
 
   return (
     <>
       <BentoStats
         items={[
-          ["Revenue this month", currency(revenue + 4820), TrendingUp, '↑ 14.8% vs Sep'],
-          ['Appointments', demo.appointments.length + 24, CalendarDays, '92% completion rate'],
-          ['Active barbers', demo.barbers.filter((item) => item.working).length, Scissors, 'All shifts covered'],
-          ['Customers', demo.customers.length + 126, Users, '↑ 18 this week']
+          ["Revenue this month", currency(revenue), TrendingUp, (demo.transactions || []).length > 0 ? `${demo.transactions.length} transactions recorded` : 'No transactions yet'],
+          ['Appointments', totalAppointments, CalendarDays, totalAppointments > 0 ? `${completedAppointments} completed` : 'No appointments yet'],
+          ['Active barbers', activeBarbersCount, Scissors, (demo.barbers || []).length > 0 ? `${demo.barbers.length} on roster` : 'No barbers added yet'],
+          ['Customers', totalCustomers, Users, totalCustomers > 0 ? `${totalCustomers} registered` : 'No customers yet']
         ]}
       />
       <div className="dashboard-grid two-thirds">
         <SectionCard title="Revenue trend" action={<Link to="/admin/reports" className="text-link">Full reports <ArrowRight size={14} /></Link>}>
-          <MiniChart />
+          <MiniChart transactions={demo.transactions} />
         </SectionCard>
         <SectionCard title="Queue overview">
           <div className="overview-ring">
             <div>
-              <strong>{demo.queue.filter((item) => item.status === 'Waiting').length + 8}</strong>
+              <strong>{totalInQueue}</strong>
               <small>in queue today</small>
             </div>
           </div>
           <div className="ring-legend">
-            <span><i className="dot gold-dot" /> Waiting <b>8</b></span>
-            <span><i className="dot dark-dot" /> In service <b>1</b></span>
-            <span><i className="dot muted-dot" /> Completed <b>24</b></span>
+            <span><i className="dot gold-dot" /> Waiting <b>{waitingCount}</b></span>
+            <span><i className="dot dark-dot" /> In service <b>{inServiceCount}</b></span>
+            <span><i className="dot muted-dot" /> Completed <b>{completedTodayCount}</b></span>
           </div>
         </SectionCard>
       </div>
@@ -60,29 +90,39 @@ export function AdminDashboard() {
         <SectionCard title="Recent transactions">
           <DataTable columns={['Customer', 'Service', 'Amount', 'Status']}>
             <tbody>
-              {demo.transactions.slice(0, 4).map((item) => (
-                <tr key={item.id}>
-                  <td>{item.customerName}</td>
-                  <td>{item.serviceName}</td>
-                  <td><strong>{currency(item.amount)}</strong></td>
-                  <td><StatusBadge status={item.status} /></td>
+              {demo.transactions && demo.transactions.length > 0 ? (
+                demo.transactions.slice(0, 4).map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.customerName}</td>
+                    <td>{item.serviceName}</td>
+                    <td><strong>{currency(item.amount)}</strong></td>
+                    <td><StatusBadge status={item.status} /></td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--muted)', fontSize: '13px' }}>
+                    No transactions recorded yet. Transactions will appear here as bookings are checked out.
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </DataTable>
         </SectionCard>
         <SectionCard title="Popular services">
           <div className="rank-list">
-            {demo.services.length > 0 ? (
-              demo.services.slice(0, 4).map((service, index) => (
+            {totalAppointments > 0 && rankedServices.some((s) => s.bookingCount > 0) ? (
+              rankedServices.slice(0, 4).map((service, index) => (
                 <div key={service.id}>
                   <span className="rank">0{index + 1}</span>
-                  <span><strong>{service.name}</strong><small>{24 - index * 4} bookings</small></span>
-                  <strong>{index === 0 ? '32%' : `${21 - index * 4}%`}</strong>
+                  <span><strong>{service.name}</strong><small>{service.bookingCount} {service.bookingCount === 1 ? 'booking' : 'bookings'}</small></span>
+                  <strong>{service.pct}%</strong>
                 </div>
               ))
             ) : (
-              <p style={{ color: 'var(--muted)', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>No services added yet.</p>
+              <div style={{ color: 'var(--muted)', fontSize: '13px', padding: '24px 16px', textAlign: 'center' }}>
+                No booking data yet. Popular services will be ranked here as appointments are booked.
+              </div>
             )}
           </div>
         </SectionCard>
@@ -123,7 +163,8 @@ export function AdminManagementPage({ collection }) {
     schedule: STANDARD_SCHEDULES[0],
     customSchedule: '',
     leaveStatus: 'Active / On Duty',
-    leaveNotes: ''
+    leaveNotes: '',
+    image: ''
   });
   const [editCustomerData, setEditCustomerData] = useState({
     name: '',
@@ -135,7 +176,8 @@ export function AdminManagementPage({ collection }) {
   const [editReceptionistData, setEditReceptionistData] = useState({
     name: '',
     phone: '',
-    status: 'Active'
+    status: 'Active',
+    image: ''
   });
   const [formData, setFormData] = useState({
     name: '',
@@ -201,9 +243,16 @@ export function AdminManagementPage({ collection }) {
     if (collection === 'barbers' || collection === 'services' || collection === 'customers') {
       if (window.confirm(`${item.active === false || item.status === 'Inactive' ? 'Activate' : 'Deactivate'} this record?`)) {
         const field = collection === 'customers' ? 'status' : collection === 'barbers' ? 'working' : 'active';
+        const willBeInactive = collection === 'customers' ? item.status !== 'Inactive' : collection === 'barbers' ? item.working : item.active;
         commit((state) => demoApi.toggleActive(state, collection, item.id, field));
         if (collection === 'services') {
           saveServiceToAtlas({ ...item, [field]: !item[field] });
+        }
+        if (willBeInactive && (collection === 'barbers' || collection === 'customers')) {
+          revokeSession({ email: item.email, id: item.id, name: item.name, reason: 'deactivated' });
+          if (item.email) {
+            saveAccount({ email: item.email, status: 'Inactive', active: false });
+          }
         }
         notify('Record status updated.');
       }
@@ -223,6 +272,7 @@ export function AdminManagementPage({ collection }) {
       if (item.email) {
         deleteAccount(item.email);
       }
+      revokeSession({ email: item.email, id: item.id, name: item.name || item.customerName, reason: 'deleted' });
       notify(`"${itemName}" has been deleted.`, 'success');
     }
   };
@@ -305,7 +355,8 @@ export function AdminManagementPage({ collection }) {
       schedule: isCustom ? 'Custom' : (barber.schedule || STANDARD_SCHEDULES[0]),
       customSchedule: isCustom ? barber.schedule : '',
       leaveStatus: existingLeave,
-      leaveNotes: barber.leaveNotes || ''
+      leaveNotes: barber.leaveNotes || '',
+      image: barber.image || ''
     });
   };
 
@@ -357,7 +408,8 @@ export function AdminManagementPage({ collection }) {
       leaveStatus: editBarberData.leaveStatus,
       leaveNotes: editBarberData.leaveNotes.trim(),
       status: computedStatus,
-      working: isWorking
+      working: isWorking,
+      image: editBarberData.image || ''
     };
 
     setIsSavingEdit(true);
@@ -376,9 +428,15 @@ export function AdminManagementPage({ collection }) {
           email: editingBarber.email,
           name: savedBarber.name,
           phone: savedBarber.phone,
+          image: savedBarber.image || '',
           role: 'barber',
-          barberId: editingBarber.id
+          barberId: editingBarber.id,
+          status: computedStatus
         });
+      }
+
+      if (computedStatus === 'Inactive' || !isWorking && computedStatus === 'Inactive') {
+        revokeSession({ email: editingBarber.email, id: editingBarber.id, name: savedBarber.name, reason: 'deactivated' });
       }
 
       notify(`Barber "${savedBarber.name}" profile & shift schedule updated in database!`, 'success');
@@ -424,8 +482,12 @@ export function AdminManagementPage({ collection }) {
         name: updatedCustomer.name,
         phone: updatedCustomer.phone,
         role: 'customer',
-        customerId: editingCustomer.id
+        customerId: editingCustomer.id,
+        status: updatedCustomer.status
       });
+    }
+    if (updatedCustomer.status === 'Inactive') {
+      revokeSession({ email: editingCustomer.email, id: editingCustomer.id, name: updatedCustomer.name, reason: 'deactivated' });
     }
     setIsSavingEdit(false);
     notify(`Customer "${updatedCustomer.name}" updated successfully in database!`, 'success');
@@ -437,7 +499,8 @@ export function AdminManagementPage({ collection }) {
     setEditReceptionistData({
       name: rec.name || '',
       phone: rec.phone || '',
-      status: rec.status || 'Active'
+      status: rec.status || 'Active',
+      image: rec.image || ''
     });
   };
 
@@ -453,7 +516,8 @@ export function AdminManagementPage({ collection }) {
       ...editingReceptionist,
       name: editReceptionistData.name.trim(),
       phone: editReceptionistData.phone.trim(),
-      status: editReceptionistData.status
+      status: editReceptionistData.status,
+      image: editReceptionistData.image || ''
     };
     commit((state) => demoApi.updateItem(state, 'receptionists', editingReceptionist.id, updatedRec));
     if (editingReceptionist.email) {
@@ -461,8 +525,13 @@ export function AdminManagementPage({ collection }) {
         email: editingReceptionist.email,
         name: updatedRec.name,
         phone: updatedRec.phone,
-        role: 'receptionist'
+        image: updatedRec.image || '',
+        role: 'receptionist',
+        status: updatedRec.status
       });
+    }
+    if (updatedRec.status === 'Inactive') {
+      revokeSession({ email: editingReceptionist.email, id: editingReceptionist.id, name: updatedRec.name, reason: 'deactivated' });
     }
     setIsSavingEdit(false);
     notify(`Receptionist "${updatedRec.name}" updated successfully in database!`, 'success');
@@ -487,7 +556,8 @@ export function AdminManagementPage({ collection }) {
       commit((state) => demoApi.addReceptionist(state, {
         name: formData.name.trim(),
         email: cleanEmail,
-        phone: formData.phone.trim()
+        phone: formData.phone.trim(),
+        image: formData.image || ''
       }));
       saveAccount({
         email: cleanEmail,
@@ -495,6 +565,7 @@ export function AdminManagementPage({ collection }) {
         role: 'receptionist',
         name: formData.name.trim(),
         phone: formData.phone.trim(),
+        image: formData.image || '',
         initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'RC',
         redirectPath: '/receptionist'
       });
@@ -542,7 +613,8 @@ export function AdminManagementPage({ collection }) {
         status: 'On shift',
         leaveStatus: 'Active / On Duty',
         leaveNotes: '',
-        working: true
+        working: true,
+        image: formData.image || ''
       };
       commit((state) => demoApi.addBarber(state, newBarberObj));
       saveBarberToAtlas(newBarberObj);
@@ -553,6 +625,7 @@ export function AdminManagementPage({ collection }) {
         barberId: newBarberId,
         name: formData.name.trim(),
         phone: formData.phone.trim(),
+        image: formData.image || '',
         initials: formData.name.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'BR',
         redirectPath: '/barber'
       });
@@ -699,7 +772,7 @@ export function AdminManagementPage({ collection }) {
       <SectionCard>
         <DataTable columns={
           collection === 'services' ? ['Service', 'Category', 'Price', 'Duration', 'Status', ''] :
-          collection === 'appointments' ? ['Customer', 'Service', 'Date', 'Barber', 'Status', ''] :
+          collection === 'appointments' ? ['Customer', 'Service', 'Date & time', 'Barber', 'Status', ''] :
           collection === 'transactions' ? ['Receipt', 'Customer', 'Method', 'Amount', 'Date', ''] :
           collection === 'barbers' ? ['Name / record', 'Phone & Specialty', 'Permanent Schedule', 'Status / Leave', ''] :
           ['Name / record', 'Details', 'Status', 'Last updated', '']
@@ -750,9 +823,52 @@ export function AdminManagementPage({ collection }) {
                     <small>{item.specialty || 'General cuts'}</small>
                   </div>
                 ) : item.phone || item.specialty || item.email || '—'}</td>
-                <td>{collection === 'services' ? currency(item.price) : collection === 'appointments' ? humanDate(item.date) : collection === 'transactions' ? currency(item.amount) : collection === 'barbers' ? (
+                <td>{collection === 'services' ? currency(item.price) : collection === 'appointments' ? `${humanDate(item.date)} · ${item.time}` : collection === 'transactions' ? currency(item.amount) : collection === 'barbers' ? (
                   <span style={{ fontSize: '11px', color: 'var(--ink)' }}>{item.schedule || STANDARD_SCHEDULES[0]}</span>
                 ) : <StatusBadge status={item.status || (item.active || item.working ? 'Active' : 'Inactive')} />}</td>
+                {collection === 'appointments' && (
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {(() => {
+                        const bObj = (demo.barbers || []).find((b) => b.id === item.barberId || b.name === item.barberName);
+                        const bImg = item.barberImage || bObj?.image;
+                        return bImg ? (
+                          <img
+                            src={bImg}
+                            alt={item.barberName}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              objectFit: 'cover',
+                              border: '1px solid var(--line)',
+                              flexShrink: 0
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              if (e.currentTarget.nextElementSibling) {
+                                e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                              }
+                            }}
+                          />
+                        ) : null;
+                      })()}
+                      <span
+                        className="avatar avatar-xs"
+                        style={{
+                          display: (item.barberImage || (demo.barbers || []).find((b) => b.id === item.barberId || b.name === item.barberName)?.image) ? 'none' : 'inline-grid',
+                          width: '32px',
+                          height: '32px',
+                          fontSize: '11px',
+                          flexShrink: 0
+                        }}
+                      >
+                        {(item.barberName || 'BR').slice(0, 2).toUpperCase()}
+                      </span>
+                      <span><strong>{item.barberName}</strong></span>
+                    </div>
+                  </td>
+                )}
                 <td>{collection === 'services' ? `${item.duration} min` : collection === 'appointments' ? <StatusBadge status={item.status} /> : collection === 'transactions' ? humanDate(item.date) : collection === 'barbers' ? (
                   <StatusBadge status={item.leaveStatus || item.status || (item.working ? 'Active / On Duty' : 'Inactive')} />
                 ) : item.lastVisit || 'Today'}</td>
@@ -873,6 +989,66 @@ export function AdminManagementPage({ collection }) {
                       placeholder="*********"
                     />
                   </label>
+
+                  {['barbers', 'receptionists'].includes(collection) && (
+                    <div className="field-label">
+                      <span>Profile Photo (Local Upload from Device)</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px' }}>
+                        {formData.image ? (
+                          <img
+                            src={formData.image}
+                            alt="Profile preview"
+                            style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)' }}
+                          />
+                        ) : (
+                          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#f5f2eb', display: 'grid', placeItems: 'center', color: '#999', border: '1px solid var(--line)' }}>
+                            <ImageIcon size={22} />
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label className="button button-soft button-small" style={{ margin: 0, cursor: isUploadingImage ? 'wait' : 'pointer', display: 'inline-flex', opacity: isUploadingImage ? 0.7 : 1 }}>
+                            <Upload size={14} /> {isUploadingImage ? 'Uploading photo...' : 'Choose local photo'}
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                              disabled={isUploadingImage}
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const validTypes = ['image/jpeg', 'image/png'];
+                                  const validExt = /\.(jpe?g|png)$/i;
+                                  if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+                                    e.target.value = '';
+                                    return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+                                  }
+                                  if (file.size > 10 * 1024 * 1024) {
+                                    e.target.value = '';
+                                    return notify('Image must be under 10MB', 'error');
+                                  }
+                                  setIsUploadingImage(true);
+                                  notify('Uploading photo to cloud...');
+                                  uploadImageFile(file).then((result) => {
+                                    setIsUploadingImage(false);
+                                    e.target.value = '';
+                                    if (result.success && result.url) {
+                                      setFormData({ ...formData, image: result.url });
+                                      notify(result.provider === 'imgbb' ? 'Photo uploaded to ImgBB cloud URL!' : 'Photo uploaded successfully!');
+                                    } else {
+                                      notify(result.error || 'Failed to upload photo', 'error');
+                                    }
+                                  });
+                                }
+                              }}
+                            />
+                          </label>
+                          <small style={{ color: 'var(--muted)', fontSize: '11px', lineHeight: 1.3 }}>
+                            <strong>Notice:</strong> Only JPEG, JPG, and PNG allowed (max 10MB).
+                          </small>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1168,6 +1344,65 @@ export function AdminManagementPage({ collection }) {
                 </label>
               )}
 
+              {/* LOCAL BARBER PHOTO UPLOAD / PREVIEW */}
+              <div className="field-label">
+                <span>Profile Photo (Local Upload from Device)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px' }}>
+                  {editBarberData.image ? (
+                    <img
+                      src={editBarberData.image}
+                      alt="Barber preview"
+                      style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)' }}
+                    />
+                  ) : (
+                    <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#f5f2eb', display: 'grid', placeItems: 'center', color: '#999', border: '1px solid var(--line)' }}>
+                      <ImageIcon size={22} />
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label className="button button-soft button-small" style={{ margin: 0, cursor: isUploadingImage ? 'wait' : 'pointer', display: 'inline-flex', opacity: isUploadingImage ? 0.7 : 1 }}>
+                      <Upload size={14} /> {isUploadingImage ? 'Uploading photo...' : 'Choose local photo'}
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                        disabled={isUploadingImage}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const validTypes = ['image/jpeg', 'image/png'];
+                            const validExt = /\.(jpe?g|png)$/i;
+                            if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+                              e.target.value = '';
+                              return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+                            }
+                            if (file.size > 10 * 1024 * 1024) {
+                              e.target.value = '';
+                              return notify('Image must be under 10MB', 'error');
+                            }
+                            setIsUploadingImage(true);
+                            notify('Uploading photo to cloud...');
+                            uploadImageFile(file).then((result) => {
+                              setIsUploadingImage(false);
+                              e.target.value = '';
+                              if (result.success && result.url) {
+                                setEditBarberData({ ...editBarberData, image: result.url });
+                                notify(result.provider === 'imgbb' ? 'Photo uploaded to ImgBB cloud URL!' : 'Photo uploaded successfully!');
+                              } else {
+                                notify(result.error || 'Failed to upload photo', 'error');
+                              }
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                    <small style={{ color: 'var(--muted)', fontSize: '11px', lineHeight: 1.3 }}>
+                      <strong>Notice:</strong> Only JPEG, JPG, and PNG allowed (max 10MB).
+                    </small>
+                  </div>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="button" className="button button-ghost button-full" onClick={() => setEditingBarber(null)} disabled={isSavingEdit}>
                   Cancel
@@ -1448,6 +1683,65 @@ export function AdminManagementPage({ collection }) {
                 </select>
               </label>
 
+              {/* LOCAL RECEPTIONIST PHOTO UPLOAD / PREVIEW */}
+              <div className="field-label">
+                <span>Profile Photo (Local Upload from Device)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px' }}>
+                  {editReceptionistData.image ? (
+                    <img
+                      src={editReceptionistData.image}
+                      alt="Receptionist preview"
+                      style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)' }}
+                    />
+                  ) : (
+                    <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#f5f2eb', display: 'grid', placeItems: 'center', color: '#999', border: '1px solid var(--line)' }}>
+                      <ImageIcon size={22} />
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label className="button button-soft button-small" style={{ margin: 0, cursor: isUploadingImage ? 'wait' : 'pointer', display: 'inline-flex', opacity: isUploadingImage ? 0.7 : 1 }}>
+                      <Upload size={14} /> {isUploadingImage ? 'Uploading photo...' : 'Choose local photo'}
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                        disabled={isUploadingImage}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const validTypes = ['image/jpeg', 'image/png'];
+                            const validExt = /\.(jpe?g|png)$/i;
+                            if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+                              e.target.value = '';
+                              return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+                            }
+                            if (file.size > 10 * 1024 * 1024) {
+                              e.target.value = '';
+                              return notify('Image must be under 10MB', 'error');
+                            }
+                            setIsUploadingImage(true);
+                            notify('Uploading photo to cloud...');
+                            uploadImageFile(file).then((result) => {
+                              setIsUploadingImage(false);
+                              e.target.value = '';
+                              if (result.success && result.url) {
+                                setEditReceptionistData({ ...editReceptionistData, image: result.url });
+                                notify(result.provider === 'imgbb' ? 'Photo uploaded to ImgBB cloud URL!' : 'Photo uploaded successfully!');
+                              } else {
+                                notify(result.error || 'Failed to upload photo', 'error');
+                              }
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                    <small style={{ color: 'var(--muted)', fontSize: '11px', lineHeight: 1.3 }}>
+                      <strong>Notice:</strong> Only JPEG, JPG, and PNG allowed (max 10MB).
+                    </small>
+                  </div>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="button" className="button button-ghost button-full" onClick={() => setEditingReceptionist(null)} disabled={isSavingEdit}>
                   Cancel
@@ -1466,45 +1760,134 @@ export function AdminManagementPage({ collection }) {
 
 export function ReportsPage() {
   const { demo, notify } = useStore();
+
+  const totalTxnAmount = (demo.transactions || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const totalTxnCount = (demo.transactions || []).length;
+
+  const cashAmount = (demo.transactions || []).filter((t) => (t.method || '').toLowerCase() === 'cash').reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const gcashAmount = (demo.transactions || []).filter((t) => (t.method || '').toLowerCase() === 'gcash').reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const cardAmount = (demo.transactions || []).filter((t) => (t.method || '').toLowerCase().includes('card')).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+  const cashPct = totalTxnAmount > 0 ? Math.round((cashAmount / totalTxnAmount) * 100) : 0;
+  const gcashPct = totalTxnAmount > 0 ? Math.round((gcashAmount / totalTxnAmount) * 100) : 0;
+  const cardPct = totalTxnAmount > 0 ? Math.round((cardAmount / totalTxnAmount) * 100) : 0;
+
+  const totalApts = (demo.appointments || []).length;
+  const completedApts = (demo.appointments || []).filter((a) => a.status === 'Completed').length;
+  const completionRate = totalApts > 0 ? Math.round((completedApts / totalApts) * 100) : 0;
+
+  // Real popular service
+  const serviceBookingCounts = {};
+  (demo.appointments || []).forEach((apt) => {
+    const key = apt.serviceName || apt.serviceId;
+    if (key) {
+      serviceBookingCounts[key] = (serviceBookingCounts[key] || 0) + 1;
+    }
+  });
+  const sortedServices = Object.entries(serviceBookingCounts).sort((a, b) => b[1] - a[1]);
+  const topService = sortedServices.length > 0 ? {
+    name: sortedServices[0][0],
+    count: sortedServices[0][1],
+    pct: totalApts > 0 ? Math.round((sortedServices[0][1] / totalApts) * 100) : 0
+  } : { name: 'None yet', count: 0, pct: 0 };
+
+  // Real top barber
+  let topBarber = { name: 'None yet', avg: '0.0', pct: 0, count: 0 };
+  if (demo.barbers && demo.barbers.length > 0) {
+    const barberRatings = demo.barbers.map((b) => {
+      const bReviews = (demo.reviews || []).filter((r) => r.barber === b.name || r.barberId === b.id);
+      const avg = bReviews.length > 0
+        ? (bReviews.reduce((sum, r) => sum + Number(r.rating || 5), 0) / bReviews.length)
+        : 0;
+      return {
+        name: b.name,
+        avg: avg > 0 ? avg.toFixed(1) : 'No reviews',
+        pct: Math.min(100, Math.round((avg / 5) * 100)),
+        count: bReviews.length
+      };
+    }).sort((a, b) => b.count - a.count || Number(b.pct) - Number(a.pct));
+
+    if (barberRatings.length > 0 && barberRatings[0].count > 0) {
+      topBarber = barberRatings[0];
+    }
+  }
+
+  // Functional CSV Export
+  const handleExportCSV = () => {
+    const headers = ['Receipt', 'Customer', 'Service', 'Amount', 'Payment Method', 'Date', 'Status'];
+    const rows = (demo.transactions && demo.transactions.length > 0)
+      ? demo.transactions.map((t) => [
+          `"${t.receipt || t.id}"`,
+          `"${t.customerName || ''}"`,
+          `"${t.serviceName || ''}"`,
+          `"${t.amount || 0}"`,
+          `"${t.method || ''}"`,
+          `"${t.date || ''}"`,
+          `"${t.status || ''}"`
+        ])
+      : [
+          ['"SHOP REPORT"', `"${new Date().toLocaleDateString()}"`, `""`, `""`, `""`, `""`, `""`],
+          ['"Total Revenue"', `"${currency(totalTxnAmount)}"`, `""`, `""`, `""`, `""`, `""`],
+          ['"Total Appointments"', `"${totalApts}"`, `""`, `""`, `""`, `""`, `""`],
+          ['"Completion Rate"', `"${completionRate}%"`, `""`, `""`, `""`, `""`, `""`],
+          ['"Registered Barbers"', `"${(demo.barbers || []).length}"`, `""`, `""`, `""`, `""`, `""`],
+          ['"Registered Services"', `"${(demo.services || []).length}"`, `""`, `""`, `""`, `""`, `""`]
+        ];
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `biglanggwapo_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    notify('Report CSV successfully generated and downloaded!', 'success');
+  };
+
   return (
     <>
       <Toolbar
         title="Reports & analytics"
         description="A practical read on revenue, bookings, and the team."
         action={
-          <button className="button button-dark button-small" onClick={() => notify('Mock CSV export downloaded.')}>
+          <button className="button button-dark button-small" onClick={handleExportCSV}>
             <Download size={15} /> Export CSV
           </button>
         }
       />
       <div className="dashboard-grid two-thirds">
-        <SectionCard title="Revenue trend"><MiniChart tall /></SectionCard>
+        <SectionCard title="Revenue trend">
+          <MiniChart tall transactions={demo.transactions} />
+        </SectionCard>
         <SectionCard title="Payment method breakdown">
           <div className="donut-card">
             <div className="donut">
-              <strong>₱{(demo.transactions.reduce((sum, item) => sum + item.amount, 0) / 1000).toFixed(1)}k</strong>
-              <small>total demo sales</small>
+              <strong>{currency(totalTxnAmount)}</strong>
+              <small>{totalTxnCount > 0 ? `${totalTxnCount} transactions` : 'No sales yet'}</small>
             </div>
             <div className="donut-legend">
-              <span><i className="dot gold-dot" /> Cash <b>48%</b></span>
-              <span><i className="dot dark-dot" /> GCash <b>36%</b></span>
-              <span><i className="dot muted-dot" /> Card <b>16%</b></span>
+              <span><i className="dot gold-dot" /> Cash <b>{cashPct}%</b></span>
+              <span><i className="dot dark-dot" /> GCash <b>{gcashPct}%</b></span>
+              <span><i className="dot muted-dot" /> Card <b>{cardPct}%</b></span>
             </div>
           </div>
         </SectionCard>
       </div>
       <div className="dashboard-grid three">
         <SectionCard title="Appointment trends">
-          <div className="big-metric">92%<small>completion rate</small></div>
-          <div className="progress-line"><span style={{ width: '92%' }} /></div>
+          <div className="big-metric">{completionRate}%<small>{totalApts > 0 ? `${completedApts} of ${totalApts} completed` : 'completion rate'}</small></div>
+          <div className="progress-line"><span style={{ width: `${completionRate}%` }} /></div>
         </SectionCard>
         <SectionCard title="Popular service">
-          <div className="big-metric">Fade<small>32% of bookings</small></div>
-          <div className="progress-line"><span style={{ width: '74%' }} /></div>
+          <div className="big-metric">{topService.name}<small>{topService.count > 0 ? `${topService.pct}% (${topService.count} bookings)` : 'No bookings yet'}</small></div>
+          <div className="progress-line"><span style={{ width: `${topService.pct}%` }} /></div>
         </SectionCard>
         <SectionCard title="Barber performance">
-          <div className="big-metric">Marco<small>4.9 average rating</small></div>
-          <div className="progress-line"><span style={{ width: '89%' }} /></div>
+          <div className="big-metric">{topBarber.name}<small>{topBarber.name !== 'None yet' ? `${topBarber.avg} average rating` : 'No performance data'}</small></div>
+          <div className="progress-line"><span style={{ width: `${topBarber.pct}%` }} /></div>
         </SectionCard>
       </div>
     </>
@@ -1609,6 +1992,7 @@ export function InventoryPage() {
     };
 
     commit((state) => demoApi.addItem(state, 'inventory', newItem));
+    saveInventoryToAtlas(newItem);
     notify(`"${newItem.name}" added to ${newItem.category}!`);
     setIsAdding(false);
     if (selectedCategory !== 'All' && selectedCategory !== newItem.category) {
@@ -1623,7 +2007,9 @@ export function InventoryPage() {
     const qty = Number(stockInForm.quantity) || 0;
     if (qty <= 0) return notify('Enter quantity greater than 0.', 'error');
 
-    commit((state) => demoApi.updateItem(state, 'inventory', targetItem.id, { stock: targetItem.stock + qty }));
+    const updatedStock = targetItem.stock + qty;
+    commit((state) => demoApi.updateItem(state, 'inventory', targetItem.id, { stock: updatedStock }));
+    saveInventoryToAtlas({ ...targetItem, stock: updatedStock });
     notify(`Stock updated: +${qty} ${targetItem.unit} added to ${targetItem.name}.`);
     setIsStockingIn(false);
   };
@@ -1631,7 +2017,7 @@ export function InventoryPage() {
   const submitEdit = (e) => {
     e.preventDefault();
     if (!editingItem) return;
-    commit((state) => demoApi.updateItem(state, 'inventory', editingItem.id, {
+    const updatedFields = {
       name: editingItem.name,
       category: editingItem.category,
       cost: Number(editingItem.cost),
@@ -1639,7 +2025,9 @@ export function InventoryPage() {
       unit: editingItem.unit,
       threshold: Number(editingItem.threshold),
       notes: editingItem.notes
-    }));
+    };
+    commit((state) => demoApi.updateItem(state, 'inventory', editingItem.id, updatedFields));
+    saveInventoryToAtlas({ ...editingItem, ...updatedFields });
     notify(`Updated "${editingItem.name}".`);
     setEditingItem(null);
   };
@@ -1647,12 +2035,15 @@ export function InventoryPage() {
   const deleteItem = (item) => {
     if (window.confirm(`Are you sure you want to delete "${item.name}" from inventory?`)) {
       commit((state) => demoApi.deleteItem(state, 'inventory', item.id));
+      deleteInventoryFromAtlas(item.id);
       notify(`Deleted "${item.name}" from inventory.`);
     }
   };
 
   const quickStockIn = (item, amount = 5) => {
-    commit((state) => demoApi.updateItem(state, 'inventory', item.id, { stock: item.stock + amount }));
+    const nextStock = item.stock + amount;
+    commit((state) => demoApi.updateItem(state, 'inventory', item.id, { stock: nextStock }));
+    saveInventoryToAtlas({ ...item, stock: nextStock });
     notify(`+${amount} ${item.unit} added to ${item.name}.`);
   };
 

@@ -101,6 +101,30 @@ export async function saveAppointmentToAtlas(appointment) {
   }
 }
 
+export async function deleteAppointmentFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/appointments/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to delete appointment from database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearAllAppointmentsInAtlas() {
+  try {
+    const res = await fetch('/api/appointments', {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to clear appointments:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function fetchServicesFromAtlas() {
   try {
     const res = await fetch('/api/services');
@@ -150,6 +174,108 @@ export async function clearAllServicesFromAtlas() {
     return await res.json().catch(() => ({ success: res.ok }));
   } catch (err) {
     console.error('Failed to clear services:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Reviews Atlas integration
+export async function fetchReviewsFromAtlas() {
+  try {
+    const res = await fetch('/api/reviews');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.reviews : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveReviewToAtlas(review) {
+  try {
+    const res = await fetch('/api/reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(review)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || data.message || `Server error (${res.status})` };
+    }
+    return { success: true, review: data.review };
+  } catch (err) {
+    console.error('Failed to save review to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteReviewFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/reviews/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to delete review from database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearReviewsInAtlas() {
+  try {
+    const res = await fetch('/api/reviews', { method: 'DELETE' });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Inventory Atlas integration
+export async function fetchInventoryFromAtlas() {
+  try {
+    const res = await fetch('/api/inventory');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.inventory : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveInventoryToAtlas(item) {
+  try {
+    const res = await fetch('/api/inventory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || data.message || `Server error (${res.status})` };
+    }
+    return { success: true, item: data.item };
+  } catch (err) {
+    console.error('Failed to save inventory to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteInventoryFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/inventory/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to delete inventory from database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearInventoryInAtlas() {
+  try {
+    const res = await fetch('/api/inventory', { method: 'DELETE' });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
     return { success: false, error: err.message };
   }
 }

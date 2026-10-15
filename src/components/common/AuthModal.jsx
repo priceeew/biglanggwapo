@@ -9,7 +9,7 @@ import { demoApi } from '../../mockService';
 import { sendInviteNotification } from '../../services/api';
 
 export function AuthModal() {
-  const { modal, closeModal, login, notify, commit } = useStore();
+  const { demo, modal, closeModal, login, notify, commit } = useStore();
   const navigate = useNavigate();
   const dialogRef = useRef(null);
   const [mode, setMode] = useState('login');
@@ -48,6 +48,31 @@ export function AuthModal() {
     const matchedAccount = accounts[cleanEmail];
     if (!matchedAccount || matchedAccount.password !== cleanPassword) {
       return notify('Invalid email or password. Please check your credentials.', 'error');
+    }
+
+    if (matchedAccount.status === 'Inactive' || matchedAccount.active === false) {
+      return notify('This account has been deactivated. Please contact the administrator.', 'error');
+    }
+
+    if (matchedAccount.role === 'barber') {
+      const barber = demo?.barbers?.find((b) => b.id === matchedAccount.barberId || (b.email && b.email.toLowerCase() === cleanEmail));
+      if (barber && (barber.status === 'Inactive' || barber.leaveStatus === 'Inactive' || (barber.working === false && barber.status === 'Inactive'))) {
+        return notify('This barber account has been deactivated. Please contact the administrator.', 'error');
+      }
+    }
+
+    if (matchedAccount.role === 'customer') {
+      const customer = demo?.customers?.find((c) => c.id === matchedAccount.customerId || (c.email && c.email.toLowerCase() === cleanEmail));
+      if (customer && customer.status === 'Inactive') {
+        return notify('This customer account has been deactivated. Please contact the administrator.', 'error');
+      }
+    }
+
+    if (matchedAccount.role === 'receptionist') {
+      const rec = demo?.receptionists?.find((r) => r.id === matchedAccount.receptionistId || (r.email && r.email.toLowerCase() === cleanEmail));
+      if (rec && rec.status === 'Inactive') {
+        return notify('This receptionist account has been deactivated. Please contact the administrator.', 'error');
+      }
     }
 
     const isEmployeeModal = modal.type === 'employeeLogin' || modal.portal === 'employee';
