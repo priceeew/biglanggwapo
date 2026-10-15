@@ -32,6 +32,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const id = req.query.id;
+      if (id) {
+        await Appointment.deleteOne({ id });
+        return res.status(200).json({ success: true, message: 'Appointment deleted' });
+      }
       await Appointment.deleteMany({});
       return res.status(200).json({ success: true, message: 'All appointments cleared' });
     }

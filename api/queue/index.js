@@ -32,6 +32,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const id = req.query.id;
+      if (id) {
+        await Queue.deleteOne({ id });
+        return res.status(200).json({ success: true, message: 'Queue item deleted' });
+      }
       await Queue.deleteMany({});
       return res.status(200).json({ success: true, message: 'All queue cleared' });
     }

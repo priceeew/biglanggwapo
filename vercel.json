@@ -2,6 +2,34 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/api/accounts/:email",
+      "destination": "/api/accounts?email=:email"
+    },
+    {
+      "source": "/api/appointments/:id",
+      "destination": "/api/appointments?id=:id"
+    },
+    {
+      "source": "/api/barbers/:id",
+      "destination": "/api/barbers?id=:id"
+    },
+    {
+      "source": "/api/inventory/:id",
+      "destination": "/api/inventory?id=:id"
+    },
+    {
+      "source": "/api/queue/:id",
+      "destination": "/api/queue?id=:id"
+    },
+    {
+      "source": "/api/reviews/:id",
+      "destination": "/api/reviews?id=:id"
+    },
+    {
+      "source": "/api/services/:id",
+      "destination": "/api/services?id=:id"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

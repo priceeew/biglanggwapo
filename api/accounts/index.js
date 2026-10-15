@@ -47,6 +47,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, account: saved });
     }
 
+    if (req.method === 'DELETE') {
+      const email = req.query.email ? decodeURIComponent(req.query.email).trim().toLowerCase() : null;
+      if (email) {
+        if (email === 'admin@biglanggwapo.com') {
+          return res.status(400).json({ success: false, message: 'Cannot delete default admin' });
+        }
+        await Account.deleteOne({ email });
+        return res.status(200).json({ success: true, message: `Account ${email} deleted.` });
+      }
+      return res.status(400).json({ success: false, message: 'Missing email' });
+    }
+
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
