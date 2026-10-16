@@ -1,8 +1,35 @@
 import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
-import { getSlotAvailability, STANDARD_SCHEDULES } from './utils/scheduling';
+import { getSlotAvailability, STANDARD_SCHEDULES, sortAppointmentsStably } from './utils/scheduling';
 
 const STORAGE_KEY = 'biglanggwapo-demo-v14';
 const clone = (value) => JSON.parse(JSON.stringify(value));
+
+export function deduplicateQueue(list) {
+  if (!Array.isArray(list)) return [];
+  const activeSeenAppointmentIds = new Set();
+  const seenIds = new Set();
+  const result = [];
+
+  for (const item of list) {
+    if (!item) continue;
+    const itemId = String(item.id || item._id || '');
+    if (itemId && seenIds.has(itemId)) {
+      continue;
+    }
+    const isActive = !['Completed', 'Removed', 'Skipped'].includes(item.status);
+    const aptId = item.appointmentId ? String(item.appointmentId) : null;
+
+    if (isActive && aptId) {
+      if (activeSeenAppointmentIds.has(aptId)) {
+        continue;
+      }
+      activeSeenAppointmentIds.add(aptId);
+    }
+    if (itemId) seenIds.add(itemId);
+    result.push(item);
+  }
+  return result;
+}
 
 export function getInitialDemoState() {
   return clone({
@@ -41,7 +68,7 @@ export function loadDemoState() {
     let currentBarbers = Array.isArray(parsed.barbers) ? parsed.barbers : [];
     let currentCustomers = Array.isArray(parsed.customers) ? parsed.customers : [];
     let currentAppointments = Array.isArray(parsed.appointments) ? parsed.appointments : [];
-    let currentQueue = Array.isArray(parsed.queue) ? parsed.queue : [];
+    let currentQueue = deduplicateQueue(Array.isArray(parsed.queue) ? parsed.queue : []);
     let currentTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     let currentServices = Array.isArray(parsed.services) ? parsed.services : [];
 
@@ -54,7 +81,7 @@ export function loadDemoState() {
       receptionists: currentReceptionists,
       barbers: currentBarbers,
       customers: currentCustomers,
-      appointments: currentAppointments,
+      appointments: sortAppointmentsStably(currentAppointments),
       queue: currentQueue,
       transactions: currentTransactions
     };
@@ -260,13 +287,14 @@ export const demoApi = {
     if (!appointment) return state;
     const aptId = appointment.id || appointment._id || appointmentId;
     const existingQueueItem = (state.queue || []).find((item) =>
-      (item.appointmentId === aptId || item.appointmentId === appointment.id || item.appointmentId === appointment._id) &&
+      (item.appointmentId === aptId || item.appointmentId === appointment.id || item.appointmentId === appointment._id || item.id === `queue-${aptId}`) &&
       !['Removed', 'Completed', 'Skipped'].includes(item.status)
     );
     if (existingQueueItem) {
       return {
         ...state,
-        appointments: state.appointments.map((item) => (item.id === appointmentId || item._id === appointmentId) ? { ...item, status: 'Arrived' } : item)
+        appointments: state.appointments.map((item) => (item.id === appointmentId || item._id === appointmentId) ? { ...item, status: 'Arrived' } : item),
+        queue: deduplicateQueue(state.queue || [])
       };
     }
     const maxNum = (state.queue || []).reduce((max, q) => {
@@ -275,7 +303,7 @@ export const demoApi = {
     }, 0);
     const nextNum = maxNum > 0 ? maxNum + 1 : 1;
     const entry = {
-      id: id('queue'),
+      id: `queue-${aptId}`,
       number: `Q-${String(nextNum).padStart(3, '0')}`,
       customerId: appointment.customerId || '',
       customerName: appointment.customerName || 'Customer',
@@ -288,10 +316,13 @@ export const demoApi = {
       estimatedMinutes: appointment.duration || 30,
       appointmentId: aptId
     };
+    const cleanQueue = (state.queue || []).filter(
+      (item) => item.id !== `queue-${aptId}` && item.appointmentId !== aptId
+    );
     return {
       ...state,
       appointments: state.appointments.map((item) => (item.id === appointmentId || item._id === appointmentId) ? { ...item, status: 'Arrived' } : item),
-      queue: [entry, ...state.queue]
+      queue: deduplicateQueue([entry, ...cleanQueue])
     };
   },
   cancelAppointment(state, appointmentId, reason = '', message = '') {
@@ -366,7 +397,7 @@ export const demoApi = {
     const customerName = customer?.name || payload.customerName || 'Walk-in Guest';
     const service = state.services.find((item) => item.id === payload.serviceId) || state.services[0] || { id: 'ser-default', name: 'Standard Cut', duration: 30, price: 350 };
     const barber = state.barbers.find((item) => item.id === payload.barberId) || state.barbers[0] || { id: 'bar-default', name: 'On-Duty Barber' };
-    const appointmentId = id('apt');
+    const appointmentId = payload.id || id('apt');
     const appointment = {
       id: appointmentId,
       customerId,
@@ -391,7 +422,7 @@ export const demoApi = {
     }, 0);
     const nextNum = maxNum > 0 ? maxNum + 1 : 1;
     const queueEntry = {
-      id: id('queue'),
+      id: `queue-${appointmentId}`,
       number: `Q-${String(nextNum).padStart(3, '0')}`,
       customerId,
       customerName,
@@ -404,11 +435,14 @@ export const demoApi = {
       estimatedMinutes: service.duration || 30,
       appointmentId
     };
+    const cleanQueue = (state.queue || []).filter(
+      (item) => item.id !== `queue-${appointmentId}` && item.appointmentId !== appointmentId
+    );
     return {
       ...state,
       customers: payload.customerId ? state.customers : [customer, ...state.customers],
-      appointments: [appointment, ...state.appointments],
-      queue: [queueEntry, ...state.queue]
+      appointments: [appointment, ...state.appointments.filter((a) => a.id !== appointmentId)],
+      queue: deduplicateQueue([queueEntry, ...cleanQueue])
     };
   },
   callNext(state, queueId) {

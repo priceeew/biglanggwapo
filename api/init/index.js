@@ -10,6 +10,26 @@ import { Service } from '../../server/models/Service.js';
 import { Transaction } from '../../server/models/Transaction.js';
 import { Notification } from '../../server/models/Notification.js';
 
+function deduplicateQueue(rawList = []) {
+  const seenApts = new Set();
+  const seenIds = new Set();
+  const result = [];
+  for (const item of rawList) {
+    if (!item || !item.id) continue;
+    if (seenIds.has(item.id)) continue;
+    seenIds.add(item.id);
+
+    if (item.appointmentId && !['Completed', 'Removed', 'Skipped'].includes(item.status)) {
+      if (seenApts.has(item.appointmentId)) {
+        continue;
+      }
+      seenApts.add(item.appointmentId);
+    }
+    result.push(item);
+  }
+  return result;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -37,7 +57,7 @@ export default async function handler(req, res) {
       Service.find().lean(),
       Barber.find().lean(),
       Queue.find().sort({ createdAt: 1 }).lean(),
-      Appointment.find().sort({ createdAt: -1 }).lean(),
+      Appointment.find().sort({ date: 1, time: 1, createdAt: 1 }).lean(),
       Review.find().sort({ createdAt: -1 }).lean(),
       Inventory.find().lean(),
       Discount.find().lean(),
@@ -52,13 +72,26 @@ export default async function handler(req, res) {
       }
     }
 
+    const enrichedBarbers = barbers.map((b) => {
+      const bReviews = reviews.filter((r) => 
+        (r.barberId && r.barberId === b.id) ||
+        (r.barber && b.name && r.barber.trim().toLowerCase() === b.name.trim().toLowerCase())
+      );
+      if (bReviews.length > 0) {
+        const sum = bReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+        const avg = Number((sum / bReviews.length).toFixed(1));
+        return { ...b, rating: avg, reviewCount: bReviews.length };
+      }
+      return { ...b, rating: b.rating || 0, reviewCount: 0 };
+    });
+
     return res.status(200).json({
       success: true,
       data: {
         accounts: accountsMap,
         services,
-        barbers,
-        queue,
+        barbers: enrichedBarbers,
+        queue: deduplicateQueue(queue),
         appointments,
         reviews,
         inventory,

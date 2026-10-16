@@ -410,3 +410,54 @@ export function findShiftConflicts(barber, newScheduleStr, appointments = []) {
 
   return conflicts;
 }
+
+/**
+ * Stably sorts appointments so they stay 100% still and never jump or randomly shift.
+ * Prioritizes today first, then chronological future dates, then past dates.
+ * Within any day, strictly orders by scheduled time (e.g. 10:00 AM -> 2:00 PM -> 2:30 PM).
+ * Uses item.id as an absolute tie-breaker.
+ */
+export function sortAppointmentsStably(appointments = [], todayStr = getLocalDateStr()) {
+  if (!Array.isArray(appointments)) return [];
+  return [...appointments].sort((a, b) => {
+    const dateA = a.date || '';
+    const dateB = b.date || '';
+    const isTodayA = dateA === todayStr;
+    const isTodayB = dateB === todayStr;
+
+    // Both today: sort strictly by scheduled time ascending
+    if (isTodayA && isTodayB) {
+      const timeDiff = timeToMinutes(a.time) - timeToMinutes(b.time);
+      if (timeDiff !== 0) return timeDiff;
+      return String(a.id || a._id || '').localeCompare(String(b.id || b._id || ''));
+    }
+
+    // Today's bookings stay at the top
+    if (isTodayA && !isTodayB) return -1;
+    if (!isTodayA && isTodayB) return 1;
+
+    // Future dates vs past dates:
+    const isFutureA = dateA >= todayStr;
+    const isFutureB = dateB >= todayStr;
+
+    if (isFutureA && !isFutureB) return -1;
+    if (!isFutureA && isFutureB) return 1;
+
+    // Both are future: sort earliest date first, then time
+    if (isFutureA && isFutureB) {
+      const dateComp = dateA.localeCompare(dateB);
+      if (dateComp !== 0) return dateComp;
+      const timeDiff = timeToMinutes(a.time) - timeToMinutes(b.time);
+      if (timeDiff !== 0) return timeDiff;
+      return String(a.id || a._id || '').localeCompare(String(b.id || b._id || ''));
+    }
+
+    // Both are past: sort newest past date first, then time
+    const pastComp = dateB.localeCompare(dateA);
+    if (pastComp !== 0) return pastComp;
+    const timeDiff = timeToMinutes(b.time) - timeToMinutes(a.time);
+    if (timeDiff !== 0) return timeDiff;
+    return String(a.id || a._id || '').localeCompare(String(b.id || b._id || ''));
+  });
+}
+

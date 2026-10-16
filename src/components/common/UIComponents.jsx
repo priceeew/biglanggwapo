@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Scissors, ArrowRight, FileText, CheckCircle2, CircleHelp, Search, Filter, TrendingUp,
+  Scissors, ArrowRight, FileText, Check, CheckCircle2, CircleHelp, Search, Filter, TrendingUp,
   ZoomIn, X, AlertTriangle
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
@@ -104,7 +104,19 @@ export function ServiceCard({ service, index, detailed = false }) {
 }
 
 export function BarberCard({ barber, compact = false }) {
+  const { demo } = useStore();
   const navigate = useNavigate();
+
+  const bReviews = (demo?.reviews || []).filter((r) =>
+    (r.barberId && barber?.id && String(r.barberId) === String(barber.id)) ||
+    (r.barber && barber?.name && r.barber.trim().toLowerCase() === barber.name.trim().toLowerCase())
+  );
+  const avg = bReviews.length > 0
+    ? (bReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / bReviews.length)
+    : null;
+  const ratingVal = avg !== null ? Number(avg.toFixed(1)) : null;
+  const displayRating = avg !== null ? avg.toFixed(1) : null;
+
   return (
     <article className={`barber-card ${compact ? 'compact' : ''}`}>
       <div className="barber-card-top">
@@ -139,8 +151,18 @@ export function BarberCard({ barber, compact = false }) {
         <h3>{barber.name}</h3>
         <p>{barber.specialty}</p>
         <div className="rating-line">
-          <span className="stars">{stars(barber.rating)}</span>
-          <strong>{barber.rating}</strong>
+          {ratingVal !== null ? (
+            <>
+              <span className="stars">{stars(ratingVal)}</span>
+              <strong>{displayRating}</strong>
+              <small style={{ color: 'var(--muted)', fontSize: '11px', marginLeft: '2px' }}>({bReviews.length})</small>
+            </>
+          ) : (
+            <>
+              <span className="stars" style={{ color: '#c4c0b8' }}>☆☆☆☆☆</span>
+              <strong style={{ color: 'var(--muted)', fontWeight: 'normal', fontSize: '11px' }}>No reviews yet</strong>
+            </>
+          )}
         </div>
       </div>
       {!compact && (
@@ -562,12 +584,21 @@ export function Toolbar({ title, description, count, query, setQuery, filter, se
   );
 }
 
-export function DataTable({ columns, children }) {
+export function DataTable({ columns, children, className = '' }) {
   return (
-    <div className="table-scroll">
+    <div className={`table-scroll ${className}`.trim()}>
       <table>
         <thead>
-          <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
+          <tr>
+            {columns.map((column, idx) => (
+              <th
+                key={column || idx}
+                className={['Actions', 'Action', ''].includes(column) ? 'col-actions' : ''}
+              >
+                {column}
+              </th>
+            ))}
+          </tr>
         </thead>
         {children}
       </table>
@@ -651,3 +682,300 @@ export function MiniChart({ tall = false, transactions = [] }) {
     </div>
   );
 }
+
+export function ServiceValidationModal({
+  isOpen,
+  type = 'start',
+  item,
+  onClose,
+  onConfirm,
+  initialNotes = '',
+  isSubmitting = false
+}) {
+  const { demo } = useStore();
+  const [notes, setNotes] = useState(initialNotes || '');
+  const [checkedItems, setCheckedItems] = useState({});
+
+  useEffect(() => {
+    if (isOpen) {
+      setNotes(initialNotes || item?.notes || '');
+      setCheckedItems({});
+    }
+  }, [isOpen, initialNotes, item]);
+
+  if (!isOpen || !item) return null;
+
+  const isStart = type === 'start';
+  const customer = (demo?.customers || []).find(
+    (c) => (item.customerId && c.id === item.customerId) ||
+           (item.customerName && c.name && c.name.toLowerCase().trim() === item.customerName.toLowerCase().trim())
+  );
+  const service = (demo?.services || []).find(
+    (s) => s.name === item.serviceName || s.id === item.serviceId
+  );
+  const price = service?.price || item.price || 0;
+
+  const checklistItems = isStart
+    ? [
+        { id: 'seated', text: `Customer called and seated in ${item.barberName || 'barber'}'s chair.` },
+        { id: 'consultation', text: `Style consultation confirmed for ${item.serviceName || 'service'}.` },
+        { id: 'sanitized', text: 'Cape draped, tools sanitized, and workstation ready.' },
+      ]
+    : [
+        { id: 'approved', text: 'Client mirror check completed and haircut approved.' },
+        { id: 'dusted', text: 'Neck dusted, styling finish applied, and cape removed.' },
+        { id: 'billable', text: `Service billable (${currency(price)}) routed to front desk for checkout.` },
+      ];
+
+  const isAllChecked = checklistItems.length > 0 && checklistItems.every((chk) => Boolean(checkedItems[chk.id]));
+  const completedCount = checklistItems.filter((chk) => Boolean(checkedItems[chk.id])).length;
+
+  const toggleCheckItem = (id) => {
+    if (isSubmitting) return;
+    setCheckedItems((prev) => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && !isSubmitting && onClose()}
+      style={{ zIndex: 100 }}
+    >
+      <div className="modal-card" style={{ maxWidth: '500px' }}>
+        <button
+          className="modal-close"
+          disabled={isSubmitting}
+          onClick={onClose}
+          aria-label="Close dialog"
+        >
+          <X size={18} />
+        </button>
+
+        <div className="modal-heading">
+          <div className="modal-mark">
+            {isStart ? <Scissors size={22} /> : <CheckCircle2 size={22} />}
+          </div>
+          <h2>{isStart ? 'Start Service Validation' : 'Complete Service Validation'}</h2>
+          <p>
+            {isStart
+              ? 'Verify station readiness and client arrival before starting service.'
+              : 'Review client satisfaction and finish details before checkout.'}
+          </p>
+        </div>
+
+        {/* Customer & Ticket Card */}
+        <div
+          style={{
+            background: 'var(--paper)',
+            border: '1px solid var(--line)',
+            borderRadius: '8px',
+            padding: '16px',
+            marginBottom: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span className="eyebrow gold">Customer</span>
+              <strong style={{ fontSize: '15px' }}>{item.customerName}</strong>
+              {item.customerEmail && (
+                <small style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
+                  {item.customerEmail}
+                </small>
+              )}
+            </div>
+            <span className={`status-badge ${isStart ? 'called' : 'in-service'}`}>
+              <i></i>{item.number || 'Queue'}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '10px',
+              borderTop: '1px solid var(--line)',
+              paddingTop: '10px'
+            }}
+          >
+            <div>
+              <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                Service
+              </span>
+              <strong style={{ fontSize: '12px' }}>{item.serviceName}</strong>
+              <small style={{ display: 'block', color: 'var(--gold)', fontWeight: 600, fontSize: '11px' }}>
+                {currency(price)} · {item.estimatedMinutes || service?.duration || 30}m
+              </small>
+            </div>
+            <div>
+              <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                Barber Chair
+              </span>
+              <strong style={{ fontSize: '12px' }}>{item.barberName}</strong>
+              <small style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
+                {item.status}
+              </small>
+            </div>
+          </div>
+
+          {customer?.preferences && (
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: '10px', fontSize: '11.5px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--gold)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                Client Preferences
+              </span>
+              <span style={{ color: 'var(--ink)' }}>“{customer.preferences}”</span>
+            </div>
+          )}
+        </div>
+
+        {/* Validation Checklist */}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span className="eyebrow" style={{ margin: 0 }}>
+              {isStart ? 'Pre-Service Checklist' : 'Service Completion Checklist'}
+            </span>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: isAllChecked ? '#166534' : 'var(--muted)',
+                background: isAllChecked ? '#dcfce7' : 'var(--paper)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                border: `1px solid ${isAllChecked ? '#bbf7d0' : 'var(--line)'}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              {completedCount} of {checklistItems.length} checked
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {checklistItems.map((chk) => {
+              const isChecked = Boolean(checkedItems[chk.id]);
+              return (
+                <div
+                  key={chk.id}
+                  role="checkbox"
+                  aria-checked={isChecked}
+                  tabIndex={0}
+                  onClick={() => toggleCheckItem(chk.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      toggleCheckItem(chk.id);
+                    }
+                  }}
+                  style={{
+                    padding: '10px 12px',
+                    background: isChecked ? '#f0fdf4' : 'var(--paper)',
+                    border: `1px solid ${isChecked ? '#86efac' : 'var(--line)'}`,
+                    borderRadius: '6px',
+                    fontSize: '11.5px',
+                    color: isChecked ? '#166534' : 'var(--ink)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '4px',
+                      border: `1.5px solid ${isChecked ? '#16a34a' : '#c7c5bd'}`,
+                      background: isChecked ? '#16a34a' : '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {isChecked && <Check size={12} strokeWidth={3} color="#ffffff" />}
+                  </div>
+                  <span style={{ fontWeight: isChecked ? 600 : 400, flex: 1, lineHeight: 1.4 }}>
+                    {chk.text}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Optional/Required Notes for Completion */}
+        <div style={{ marginBottom: '16px' }}>
+          <label className="field-label">
+            {isStart ? 'Service Notes (optional)' : 'Finish & Styling Notes (optional)'}
+            <textarea
+              className="input textarea"
+              style={{ minHeight: '65px', fontSize: '12px' }}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder={
+                isStart
+                  ? 'Add specific requests, clipper guard numbers, or styling details...'
+                  : 'Add finish details, cut notes, or checkout instructions for front desk...'
+              }
+            />
+          </label>
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {!isAllChecked && (
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#92400e',
+                background: '#fffbeb',
+                border: '1px solid #fef3c7',
+                padding: '7px 10px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <AlertTriangle size={13} style={{ flexShrink: 0, color: '#f59e0b' }} />
+              <span>Please check all {checklistItems.length} items above before confirming.</span>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              disabled={isSubmitting}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button-dark button-small"
+              disabled={isSubmitting || !isAllChecked}
+              onClick={() => onConfirm(item, notes)}
+              title={!isAllChecked ? 'Please check all items to proceed' : ''}
+            >
+              {isSubmitting
+                ? (isStart ? 'Starting...' : 'Completing...')
+                : (isStart ? 'Confirm & Start Service' : 'Confirm & Complete Service')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

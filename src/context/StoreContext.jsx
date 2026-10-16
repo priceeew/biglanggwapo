@@ -1,13 +1,28 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState } from '../mockService';
+import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState, deduplicateQueue } from '../mockService';
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
   fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas,
   fetchDiscountsFromAtlas, fetchTransactionsFromAtlas, fetchShopInitFromAtlas,
   fetchNotificationsFromAtlas
 } from '../services/api';
-import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
+import { getLocalDateStr, getTomorrowDateStr, sortAppointmentsStably } from '../utils/scheduling';
 import { getAccounts, syncAccountsFromAtlas, applyAccounts } from '../data';
+
+function areEntityListsEqual(listA, listB, keys = ['id', 'status', 'time', 'date']) {
+  if (listA === listB) return true;
+  if (!Array.isArray(listA) || !Array.isArray(listB)) return false;
+  if (listA.length !== listB.length) return false;
+  for (let i = 0; i < listA.length; i++) {
+    const a = listA[i];
+    const b = listB[i];
+    if (!a || !b) return false;
+    for (const k of keys) {
+      if (a[k] !== b[k]) return false;
+    }
+  }
+  return true;
+}
 
 const StoreContext = createContext(null);
 
@@ -20,7 +35,10 @@ export const humanDate = (value) => {
   if (value === getTomorrowDateStr()) return 'Tomorrow';
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
 };
-export const stars = (rating) => '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
+export const stars = (rating) => {
+  const num = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+  return '★'.repeat(num) + '☆'.repeat(5 - num);
+};
 export const rolePath = (role) => `/${role}`;
 
 export function StoreProvider({ children }) {
@@ -51,8 +69,8 @@ export function StoreProvider({ children }) {
         let updated = { ...prev };
         if (Array.isArray(data.barbers) && data.barbers.length > 0) updated.barbers = data.barbers;
         if (Array.isArray(data.services) && data.services.length > 0) updated.services = data.services;
-        if (Array.isArray(data.queue)) updated.queue = data.queue;
-        if (Array.isArray(data.appointments)) updated.appointments = data.appointments;
+        if (Array.isArray(data.queue)) updated.queue = deduplicateQueue(data.queue);
+        if (Array.isArray(data.appointments)) updated.appointments = sortAppointmentsStably(data.appointments);
         if (Array.isArray(data.reviews)) updated.reviews = data.reviews;
         if (Array.isArray(data.inventory)) updated.inventory = data.inventory;
         if (Array.isArray(data.promotions)) updated.promotions = data.promotions;
@@ -100,9 +118,9 @@ export function StoreProvider({ children }) {
       // Fallback if /api/init is unavailable
       fetchBarbersFromAtlas().then((b) => b && Array.isArray(b) && setDemo(p => ({ ...p, barbers: b })));
       fetchServicesFromAtlas().then((s) => s && Array.isArray(s) && setDemo(p => ({ ...p, services: s })));
-      fetchAppointmentsFromAtlas().then((a) => a && Array.isArray(a) && setDemo(p => ({ ...p, appointments: a })));
+      fetchAppointmentsFromAtlas().then((a) => a && Array.isArray(a) && setDemo(p => ({ ...p, appointments: sortAppointmentsStably(a) })));
       fetchReviewsFromAtlas().then((r) => r && Array.isArray(r) && setDemo(p => ({ ...p, reviews: r })));
-      fetchQueueFromAtlas().then((q) => q && Array.isArray(q) && setDemo(p => ({ ...p, queue: q })));
+      fetchQueueFromAtlas().then((q) => q && Array.isArray(q) && setDemo(p => ({ ...p, queue: deduplicateQueue(q) })));
       fetchInventoryFromAtlas().then((i) => i && Array.isArray(i) && setDemo(p => ({ ...p, inventory: i })));
       fetchDiscountsFromAtlas().then((d) => d && Array.isArray(d) && setDemo(p => ({ ...p, promotions: d })));
       fetchTransactionsFromAtlas().then((t) => t && Array.isArray(t) && setDemo(p => ({ ...p, transactions: t })));
@@ -153,22 +171,31 @@ export function StoreProvider({ children }) {
           let changed = false;
 
           if (latestQueue && Array.isArray(latestQueue)) {
-            updated.queue = latestQueue;
-            changed = true;
+            const cleanQueue = deduplicateQueue(latestQueue);
+            if (!areEntityListsEqual(prev.queue, cleanQueue, ['id', 'status', 'number', 'estimatedMinutes'])) {
+              updated.queue = cleanQueue;
+              changed = true;
+            }
           }
           if (latestAppointments && Array.isArray(latestAppointments)) {
-            updated.appointments = latestAppointments;
-            changed = true;
+            const sorted = sortAppointmentsStably(latestAppointments);
+            if (!areEntityListsEqual(prev.appointments, sorted, ['id', 'status', 'time', 'date', 'barberId', 'cancellationReason', 'paymentStatus'])) {
+              updated.appointments = sorted;
+              changed = true;
+            }
           }
           if (latestNotifications && Array.isArray(latestNotifications)) {
-            updated.notifications = latestNotifications;
-            changed = true;
+            if (!areEntityListsEqual(prev.notifications, latestNotifications, ['id', 'read', 'title'])) {
+              updated.notifications = latestNotifications;
+              changed = true;
+            }
           }
 
           if (changed) {
             persistDemoState(updated);
+            return updated;
           }
-          return updated;
+          return prev;
         });
       } catch (err) {
         console.warn('Atlas periodic sync error:', err);

@@ -2323,4 +2323,56 @@ input::-webkit-credentials-auto-fill-button {
   white-space: pre-line;
 }
 
+/* Stable Table & Column Alignment */
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-scroll th,
+.table-scroll td {
+  padding: 13px 18px;
+  vertical-align: middle;
+}
+
+/* Ensure Actions column has stable reserved width so other columns never shift */
+.table-scroll th.col-actions,
+.table-scroll td:has(.row-actions),
+.appointments-table th:last-child,
+.appointments-table td:last-child {
+  min-width: 195px;
+  width: 195px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Row actions pinned to right edge without shifting column boundaries */
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 32px;
+  width: 100%;
+}
+
+/* Barber appointment Action cell stability */
+.barber-appts-table th.col-actions,
+.barber-appts-table td:last-child {
+  min-width: 130px;
+  width: 130px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Barber action button fixed alignment */
+.barber-appts-table td:last-child .button {
+  margin-left: auto;
+}
+
+/* Reserve minimum widths for common columns so content changes don't cause jitter */
+.table-scroll td .table-person {
+  min-width: 140px;
+}
+
 

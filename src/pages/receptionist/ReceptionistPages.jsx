@@ -16,10 +16,10 @@ import {
 } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
-  StatusBadge, EmptyState, StatCard
+  StatusBadge, EmptyState, StatCard, ServiceValidationModal
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
-import { isBarberOnLeave, isRestDay } from '../../utils/scheduling';
+import { isBarberOnLeave, isRestDay, sortAppointmentsStably } from '../../utils/scheduling';
 import { addSystemNotification } from '../../services/notificationService';
 
 export function ReceptionistPage({ path }) {
@@ -61,7 +61,7 @@ export function ReceptionistDashboard() {
           action={<Link to="/receptionist/appointments" className="text-link">View all <ArrowRight size={14} /></Link>}
         >
           <div className="compact-list">
-            {(demo.appointments || []).slice(0, 4).map((item) => (
+            {sortAppointmentsStably(demo.appointments || []).slice(0, 4).map((item) => (
               <AppointmentRow key={item.id} appointment={item} />
             ))}
             {(!demo.appointments || demo.appointments.length === 0) && (
@@ -123,7 +123,8 @@ export function ReceptionistAppointments() {
   const [sendEmailNotice, setSendEmailNotice] = useState(true);
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
 
-  const filtered = demo.appointments.filter(
+  const sorted = sortAppointmentsStably(demo.appointments || []);
+  const filtered = sorted.filter(
     (item) => `${item.customerName} ${item.serviceName} ${item.barberName}`.toLowerCase().includes(query.toLowerCase()) && (status === 'All' || item.status === status)
   );
 
@@ -159,6 +160,10 @@ export function ReceptionistAppointments() {
 
   const act = (id, action, cancelInfo = null) => {
     const updater = action === 'confirm' ? demoApi.confirmAppointment : action === 'arrived' ? demoApi.markArrived : demoApi.cancelAppointment;
+    let aptToSave = null;
+    let queueToSave = null;
+    let queueToDeleteId = null;
+
     commit((state) => {
       const prevQueueItem = (state.queue || []).find((q) => q.appointmentId === id);
       const next = updater(state, id, cancelInfo?.reason, cancelInfo?.message);
@@ -170,18 +175,29 @@ export function ReceptionistAppointments() {
           updatedApt.cancelledAt = new Date().toISOString();
           updatedApt.cancelledBy = 'Receptionist';
         }
-        saveAppointmentToAtlas(updatedApt);
+        aptToSave = updatedApt;
       }
       if (action === 'arrived') {
-        const queueEntry = next.queue.find((q) => q.appointmentId === id || q.appointmentId === updatedApt?.id || q.appointmentId === updatedApt?._id);
+        const queueEntry = next.queue.find((q) => q.appointmentId === id || q.appointmentId === updatedApt?.id || q.appointmentId === updatedApt?._id || q.id === `queue-${id}`);
         if (queueEntry) {
-          saveQueueItemToAtlas(queueEntry);
+          queueToSave = queueEntry;
         }
       } else if (action === 'cancel' && prevQueueItem) {
-        deleteQueueItemFromAtlas(prevQueueItem.id);
+        queueToDeleteId = prevQueueItem.id;
       }
       return next;
     });
+
+    if (aptToSave) {
+      saveAppointmentToAtlas(aptToSave);
+    }
+    if (queueToSave) {
+      saveQueueItemToAtlas(queueToSave);
+    }
+    if (queueToDeleteId) {
+      deleteQueueItemFromAtlas(queueToDeleteId);
+    }
+
     notify(action === 'arrived' ? 'Customer marked arrived and added to the queue.' : `Appointment ${action}ed.`);
   };
 
@@ -244,7 +260,7 @@ export function ReceptionistAppointments() {
         filters={['All', 'Pending', 'Confirmed', 'Arrived', 'Completed', 'Cancelled']}
       />
       <SectionCard>
-        <DataTable columns={['Customer', 'Service', 'Schedule', 'Barber', 'Status', 'Actions']}>
+        <DataTable className="appointments-table" columns={['Customer', 'Service', 'Schedule', 'Barber', 'Status', 'Actions']}>
           <tbody>
             {filtered.map((item) => (
               <tr key={item.id}>
@@ -774,26 +790,36 @@ export function ReceptionistAppointments() {
                   );
                 })()}
 
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    className="button button-ghost button-small"
-                    onClick={() => setActionModal(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="button button-dark button-small"
-                    onClick={() => {
-                      const targetId = actionModal.apt.id;
-                      setActionModal(null);
-                      act(targetId, 'arrived');
-                    }}
-                  >
-                    Mark Arrived & Add to Queue
-                  </button>
-                </div>
+                {(() => {
+                  const isAlreadyInQueue = (demo.queue || []).some(
+                    (q) => (q.appointmentId === actionModal.apt.id || q.appointmentId === actionModal.apt._id || q.id === `queue-${actionModal.apt.id}`) &&
+                           !['Removed', 'Completed', 'Skipped'].includes(q.status)
+                  );
+                  return (
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        className="button button-ghost button-small"
+                        onClick={() => setActionModal(null)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isAlreadyInQueue}
+                        className="button button-dark button-small"
+                        onClick={() => {
+                          if (isAlreadyInQueue) return;
+                          const targetId = actionModal.apt.id;
+                          setActionModal(null);
+                          act(targetId, 'arrived');
+                        }}
+                      >
+                        {isAlreadyInQueue ? 'Already in Queue' : 'Mark Arrived & Add to Queue'}
+                      </button>
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
@@ -988,29 +1014,43 @@ export function WalkInPage() {
     barberId: defaultBarber?.id || ''
   });
   const [created, setCreated] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const submit = (event) => {
     event.preventDefault();
+    if (isSubmitting) return;
     if (!form.customerId && !form.customerName.trim()) {
       return notify('Choose an existing customer or enter a name.', 'error');
     }
     if (!form.barberId) {
       return notify('Please select a barber (or add a barber to the shop first).', 'error');
     }
+    setIsSubmitting(true);
     let assignedNumber = '';
+    let aptToSave = null;
+    let queueToSave = null;
+
     commit((state) => {
       const next = demoApi.addWalkIn(state, form);
       const newApt = next.appointments[0];
       const newQueue = next.queue[0];
       if (newApt) {
-        saveAppointmentToAtlas(newApt);
+        aptToSave = newApt;
       }
       if (newQueue) {
         assignedNumber = newQueue.number;
-        saveQueueItemToAtlas(newQueue);
+        queueToSave = newQueue;
       }
       return next;
     });
+
+    if (aptToSave) {
+      saveAppointmentToAtlas(aptToSave);
+    }
+    if (queueToSave) {
+      saveQueueItemToAtlas(queueToSave);
+    }
+
     setCreated(assignedNumber || 'Q-001');
     notify(`Walk-in added to the queue (${assignedNumber || 'Q-001'}).`);
     setForm({
@@ -1018,8 +1058,9 @@ export function WalkInPage() {
       customerName: '',
       phone: '',
       serviceId: demo.services[0]?.id || '',
-      barberId: demo.barbers[0]?.id || ''
+      barberId: defaultBarber?.id || demo.barbers[0]?.id || ''
     });
+    setIsSubmitting(false);
   };
 
   return (
@@ -1085,7 +1126,9 @@ export function WalkInPage() {
               </div>
             </label>
           </div>
-          <button className="button button-dark" type="submit">Add to queue <ArrowRight size={16} /></button>
+          <button className="button button-dark" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Adding...' : 'Add to queue'} <ArrowRight size={16} />
+          </button>
         </form>
       </SectionCard>
       <SectionCard title="Assigned queue number">
@@ -1113,28 +1156,66 @@ export function WalkInPage() {
 export function QueueManagement() {
   const { demo, commit, notify } = useStore();
   const [barber, setBarber] = useState('All');
+  const [validationModal, setValidationModal] = useState(null);
 
-  const active = demo.queue.filter(
-    (item) => !['Completed', 'Removed', 'Skipped'].includes(item.status) && (barber === 'All' || item.barberId === barber)
-  );
+  const seenAptIds = new Set();
+  const seenIds = new Set();
+  const active = (demo.queue || []).filter((item) => {
+    if (!item) return false;
+    if (['Completed', 'Removed', 'Skipped'].includes(item.status)) return false;
+    if (barber !== 'All' && item.barberId !== barber) return false;
+    const itemId = String(item.id || item._id || '');
+    if (itemId && seenIds.has(itemId)) return false;
+    if (item.appointmentId) {
+      const aptKey = String(item.appointmentId);
+      if (seenAptIds.has(aptKey)) return false;
+      seenAptIds.add(aptKey);
+    }
+    if (itemId) seenIds.add(itemId);
+    return true;
+  });
 
-  const act = (id, type) => {
+  const act = (id, type, notes = '') => {
     if (type === 'remove' && !window.confirm('Remove this queue entry?')) return;
     const targetItem = demo.queue.find((q) => q.id === id);
-    const api = type === 'call' ? demoApi.callNext : type === 'start' ? demoApi.startService : type === 'skip' ? demoApi.skipQueue : demoApi.removeQueue;
+    const api = type === 'call'
+      ? demoApi.callNext
+      : type === 'start'
+      ? demoApi.startService
+      : type === 'complete'
+      ? (s, qId) => demoApi.completeService(s, qId, notes)
+      : type === 'skip'
+      ? demoApi.skipQueue
+      : demoApi.removeQueue;
+    let queueToSave = null;
+    let aptToSave = null;
     commit((state) => {
       const next = api(state, id);
       const queueItem = next.queue.find((q) => q.id === id);
       if (queueItem) {
-        saveQueueItemToAtlas(queueItem);
+        queueToSave = queueItem;
       }
       if (queueItem?.appointmentId) {
         const apt = next.appointments.find((a) => a.id === queueItem.appointmentId);
-        if (apt) saveAppointmentToAtlas(apt);
+        if (apt) aptToSave = apt;
       }
       return next;
     });
-    notify(type === 'call' ? `Called ${targetItem?.customerName || 'customer'} to chair. Waiting for barber to start.` : type === 'start' ? 'Customer started service.' : `Queue entry ${type}ped.`);
+    if (queueToSave) {
+      saveQueueItemToAtlas(queueToSave);
+    }
+    if (aptToSave) {
+      saveAppointmentToAtlas(aptToSave);
+    }
+    notify(
+      type === 'call'
+        ? `Called ${targetItem?.customerName || 'customer'} to chair. Waiting for barber to start.`
+        : type === 'start'
+        ? `Service session started for ${targetItem?.customerName || 'customer'}!`
+        : type === 'complete'
+        ? `Service completed for ${targetItem?.customerName || 'customer'}! Sent to front desk for checkout.`
+        : `Queue entry ${type}ped.`
+    );
     if ((type === 'call' || type === 'start') && targetItem) {
       notifyCustomerTurn(targetItem, demo, notify);
     }
@@ -1164,7 +1245,7 @@ export function QueueManagement() {
               <span>{item.serviceName} · {item.barberName}</span>
             </div>
             <StatusBadge status={item.status} />
-            <span className="queue-wait">{item.status === 'In Service' ? 'In chair' : item.status === 'Called' ? 'Called · waiting for barber' : `~${item.estimatedMinutes} min`}</span>
+            <span className="queue-wait">{item.status === 'In Service' ? 'In chair' : item.status === 'Called' ? 'Called · ready to start' : `~${item.estimatedMinutes} min`}</span>
             <div className="row-actions">
               {item.status === 'Waiting' && (
                 <button className="button button-soft button-small" onClick={() => act(item.id, 'call')}>
@@ -1172,9 +1253,20 @@ export function QueueManagement() {
                 </button>
               )}
               {item.status === 'Called' && (
-                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', padding: '0 6px' }}>
-                  Waiting for barber
-                </span>
+                <button
+                  className="button button-dark button-small"
+                  onClick={() => setValidationModal({ type: 'start', item })}
+                >
+                  Start service
+                </button>
+              )}
+              {item.status === 'In Service' && (
+                <button
+                  className="button button-soft button-small"
+                  onClick={() => setValidationModal({ type: 'complete', item })}
+                >
+                  Complete service
+                </button>
               )}
               {item.status === 'Waiting' && (
                 <button className="icon-button" title="Skip" onClick={() => act(item.id, 'skip')}>
@@ -1202,6 +1294,20 @@ export function QueueManagement() {
           />
         )}
       </div>
+
+      {validationModal && (
+        <ServiceValidationModal
+          isOpen={Boolean(validationModal)}
+          type={validationModal.type}
+          item={validationModal.item}
+          onClose={() => setValidationModal(null)}
+          onConfirm={(item, notes) => {
+            const modalType = validationModal.type;
+            setValidationModal(null);
+            act(item.id, modalType, notes);
+          }}
+        />
+      )}
     </>
   );
 }

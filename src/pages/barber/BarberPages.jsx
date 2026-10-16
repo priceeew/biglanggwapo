@@ -8,14 +8,14 @@ import {
 import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
-import { STANDARD_SCHEDULES } from '../../utils/scheduling';
+import { STANDARD_SCHEDULES, sortAppointmentsStably } from '../../utils/scheduling';
 import {
   saveAppointmentToAtlas, saveQueueItemToAtlas, notifyCustomerTurn,
   saveBarberToAtlas, uploadImageFile
 } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState,
-  getCustomerPhoto
+  getCustomerPhoto, ServiceValidationModal
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
 
@@ -69,33 +69,49 @@ export function BarberDashboard() {
   const current = myQueue.find((item) => item.status === 'In Service');
   const next = myQueue.find((item) => item.status === 'Called') || myQueue.find((item) => item.status === 'Waiting');
 
+  const [validationModal, setValidationModal] = useState(null);
+
   const callNextClient = (item) => {
+    let queueToSave = null;
+    let aptToSave = null;
     commit((state) => {
       const nextState = demoApi.callNext(state, item.id);
       const updatedQueue = nextState.queue.find((q) => q.id === item.id);
-      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      if (updatedQueue) queueToSave = updatedQueue;
       const apt = nextState.appointments.find((a) => a.id === item.appointmentId);
-      if (apt) saveAppointmentToAtlas(apt);
+      if (apt) aptToSave = apt;
       return nextState;
     });
+    if (queueToSave) saveQueueItemToAtlas(queueToSave);
+    if (aptToSave) saveAppointmentToAtlas(aptToSave);
     notify(`Called ${item.customerName} to the chair!`);
     notifyCustomerTurn(item, demo, notify);
   };
 
-  const startClient = (item) => {
+  const startClient = (item, notes = '') => {
+    let queueToSave = null;
+    let aptToSave = null;
     commit((state) => {
       const nextState = demoApi.startService(state, item.id);
       const updatedQueue = nextState.queue.find((q) => q.id === item.id);
-      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      if (updatedQueue) {
+        if (notes) updatedQueue.notes = notes;
+        queueToSave = updatedQueue;
+      }
       const apt = nextState.appointments.find((a) => a.id === item.appointmentId);
-      if (apt) saveAppointmentToAtlas(apt);
+      if (apt) {
+        if (notes) apt.notes = notes;
+        aptToSave = apt;
+      }
       return nextState;
     });
+    if (queueToSave) saveQueueItemToAtlas(queueToSave);
+    if (aptToSave) saveAppointmentToAtlas(aptToSave);
     notify(`Service session started for ${item.customerName}!`);
     notifyCustomerTurn(item, demo, notify);
   };
 
-  const myAppointments = (demo.appointments || []).filter(matchesBarber);
+  const myAppointments = sortAppointmentsStably(demo.appointments || []).filter(matchesBarber);
   const activeApts = myAppointments.filter((item) => !['Cancelled', 'No-show'].includes(item.status));
   const completed = myAppointments.filter((item) => item.status === 'Completed').length;
 
@@ -173,7 +189,7 @@ export function BarberDashboard() {
                 <button
                   className="button button-dark button-small"
                   style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap' }}
-                  onClick={() => (next.status === 'Called' ? startClient(next) : callNextClient(next))}
+                  onClick={() => (next.status === 'Called' ? setValidationModal({ type: 'start', item: next }) : callNextClient(next))}
                 >
                   {next.status === 'Called' ? 'Start service' : 'Call to chair'}
                 </button>
@@ -230,6 +246,19 @@ export function BarberDashboard() {
           <EmptyState title="No bookings yet" copy="Appointments booked with your chair will appear here." />
         )}
       </SectionCard>
+
+      {validationModal && (
+        <ServiceValidationModal
+          isOpen={Boolean(validationModal)}
+          type={validationModal.type}
+          item={validationModal.item}
+          onClose={() => setValidationModal(null)}
+          onConfirm={(item, notes) => {
+            setValidationModal(null);
+            startClient(item, notes);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -237,7 +266,7 @@ export function BarberDashboard() {
 export function BarberAppointments() {
   const { demo, commit, notify } = useStore();
   const { barberName, matchesBarber, barber } = useCurrentBarber();
-  const list = (demo.appointments || []).filter(matchesBarber);
+  const list = sortAppointmentsStably(demo.appointments || []).filter(matchesBarber);
   const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
 
 
@@ -271,7 +300,7 @@ export function BarberAppointments() {
         action={<Link className="button button-ghost button-small" to="/barber/schedule"><CalendarClock size={15} /> View schedule</Link>}
       />
       <SectionCard>
-        <DataTable columns={['Time', 'Customer', 'Service', 'Status', 'Action']}>
+        <DataTable className="barber-appts-table" columns={['Time', 'Customer', 'Service', 'Status', 'Action']}>
           <tbody>
             {list.map((item) => (
               <tr key={item.id}>
@@ -306,30 +335,45 @@ export function BarberAppointments() {
 export function BarberQueue() {
   const { demo, commit, notify } = useStore();
   const { barberName, matchesBarber } = useCurrentBarber();
+  const [validationModal, setValidationModal] = useState(null);
   const list = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const callNextClient = (item) => {
+    let queueToSave = null;
+    let aptToSave = null;
     commit((state) => {
       const next = demoApi.callNext(state, item.id);
       const updatedQueue = next.queue.find((q) => q.id === item.id);
-      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      if (updatedQueue) queueToSave = updatedQueue;
       const apt = next.appointments.find((a) => a.id === item.appointmentId);
-      if (apt) saveAppointmentToAtlas(apt);
+      if (apt) aptToSave = apt;
       return next;
     });
+    if (queueToSave) saveQueueItemToAtlas(queueToSave);
+    if (aptToSave) saveAppointmentToAtlas(aptToSave);
     notify(`Called ${item.customerName} to the chair!`);
     notifyCustomerTurn(item, demo, notify);
   };
 
-  const start = (item) => {
+  const start = (item, notes = '') => {
+    let queueToSave = null;
+    let aptToSave = null;
     commit((state) => {
       const next = demoApi.startService(state, item.id);
       const updatedQueue = next.queue.find((q) => q.id === item.id);
-      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      if (updatedQueue) {
+        if (notes) updatedQueue.notes = notes;
+        queueToSave = updatedQueue;
+      }
       const apt = next.appointments.find((a) => a.id === item.appointmentId);
-      if (apt) saveAppointmentToAtlas(apt);
+      if (apt) {
+        if (notes) apt.notes = notes;
+        aptToSave = apt;
+      }
       return next;
     });
+    if (queueToSave) saveQueueItemToAtlas(queueToSave);
+    if (aptToSave) saveAppointmentToAtlas(aptToSave);
     notify(`Service started for ${item.customerName}!`);
     notifyCustomerTurn(item, demo, notify);
   };
@@ -359,7 +403,7 @@ export function BarberQueue() {
               <button className="button button-soft button-small" onClick={() => callNextClient(item)}>Call next</button>
             )}
             {item.status === 'Called' && (
-              <button className="button button-dark button-small" onClick={() => start(item)}>Start service</button>
+              <button className="button button-dark button-small" onClick={() => setValidationModal({ type: 'start', item })}>Start service</button>
             )}
             {item.status === 'In Service' && (
               <Link to="/barber/service-session" className="button button-dark button-small">In service</Link>
@@ -375,6 +419,19 @@ export function BarberQueue() {
         ))}
         {!list.length && <EmptyState title="The queue is clear" copy="When reception marks a customer as arrived or registers a walk-in, they appear here live." />}
       </div>
+
+      {validationModal && (
+        <ServiceValidationModal
+          isOpen={Boolean(validationModal)}
+          type={validationModal.type}
+          item={validationModal.item}
+          onClose={() => setValidationModal(null)}
+          onConfirm={(item, notes) => {
+            setValidationModal(null);
+            start(item, notes);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -452,45 +509,74 @@ export function BarberCustomerDetails() {
 export function ServiceSession() {
   const { demo, commit, notify } = useStore();
   const { matchesBarber, barberName } = useCurrentBarber();
+  const [validationModal, setValidationModal] = useState(null);
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const current = myQueue.find((item) => item.status === 'In Service') || myQueue[0];
   const [notes, setNotes] = useState(current?.notes || '');
 
+  const startCurrent = (item, newNotes = '') => {
+    let queueToSave = null;
+    let aptToSave = null;
+    commit((state) => {
+      const next = demoApi.startService(state, item.id);
+      const updatedQueue = next.queue.find((q) => q.id === item.id);
+      if (updatedQueue) {
+        if (newNotes) updatedQueue.notes = newNotes;
+        queueToSave = updatedQueue;
+      }
+      const apt = next.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) {
+        if (newNotes) apt.notes = newNotes;
+        aptToSave = apt;
+      }
+      return next;
+    });
+    if (queueToSave) saveQueueItemToAtlas(queueToSave);
+    if (aptToSave) saveAppointmentToAtlas(aptToSave);
+    notify(`Service session started for ${item.customerName}!`);
+    notifyCustomerTurn(item, demo, notify);
+  };
+
+  const completeCurrent = (item, newNotes = '') => {
+    const finalNotes = newNotes || notes;
+    let queueToSave = null;
+    let aptToSave = null;
+    commit((state) => {
+      const next = demoApi.completeService(state, item.id, finalNotes);
+      const updatedQueue = next.queue.find((q) => q.id === item.id);
+      if (updatedQueue) queueToSave = updatedQueue;
+      const apt = next.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) aptToSave = apt;
+      return next;
+    });
+    if (queueToSave) saveQueueItemToAtlas(queueToSave);
+    if (aptToSave) saveAppointmentToAtlas(aptToSave);
+    notify(`Service completed for ${item.customerName}! Sent to front desk for checkout.`);
+  };
+
   const act = () => {
     if (!current) return notify('No active customer in your queue.', 'error');
+
     if (current.status === 'Waiting') {
+      let queueToSave = null;
+      let aptToSave = null;
       commit((state) => {
         const next = demoApi.callNext(state, current.id);
         const updatedQueue = next.queue.find((q) => q.id === current.id);
-        if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+        if (updatedQueue) queueToSave = updatedQueue;
         const apt = next.appointments.find((a) => a.id === current.appointmentId);
-        if (apt) saveAppointmentToAtlas(apt);
+        if (apt) aptToSave = apt;
         return next;
       });
+      if (queueToSave) saveQueueItemToAtlas(queueToSave);
+      if (aptToSave) saveAppointmentToAtlas(aptToSave);
       notify(`Called ${current.customerName} to the chair!`);
       notifyCustomerTurn(current, demo, notify);
     } else if (current.status === 'Called') {
-      commit((state) => {
-        const next = demoApi.startService(state, current.id);
-        const updatedQueue = next.queue.find((q) => q.id === current.id);
-        if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
-        const apt = next.appointments.find((a) => a.id === current.appointmentId);
-        if (apt) saveAppointmentToAtlas(apt);
-        return next;
-      });
-      notify(`Service session started for ${current.customerName}!`);
-      notifyCustomerTurn(current, demo, notify);
+      setValidationModal({ type: 'start', item: current });
     } else if (current.status === 'In Service') {
-      commit((state) => {
-        const next = demoApi.completeService(state, current.id, notes);
-        const updatedQueue = next.queue.find((q) => q.id === current.id);
-        if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
-        const apt = next.appointments.find((a) => a.id === current.appointmentId);
-        if (apt) saveAppointmentToAtlas(apt);
-        return next;
-      });
-      notify(`Service completed for ${current.customerName}! Sent to front desk for checkout.`);
+      setValidationModal({ type: 'complete', item: current });
     }
   };
 
@@ -572,6 +658,26 @@ export function ServiceSession() {
           </div>
         </div>
       </aside>
+
+      {validationModal && (
+        <ServiceValidationModal
+          isOpen={Boolean(validationModal)}
+          type={validationModal.type}
+          item={validationModal.item}
+          initialNotes={notes}
+          onClose={() => setValidationModal(null)}
+          onConfirm={(item, modalNotes) => {
+            const modalType = validationModal.type;
+            setValidationModal(null);
+            if (modalNotes) setNotes(modalNotes);
+            if (modalType === 'start') {
+              startCurrent(item, modalNotes);
+            } else {
+              completeCurrent(item, modalNotes);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -579,7 +685,7 @@ export function ServiceSession() {
 export function BarberSchedule() {
   const { demo } = useStore();
   const { barber, barberName, matchesBarber } = useCurrentBarber();
-  const myAppointments = (demo.appointments || []).filter(matchesBarber);
+  const myAppointments = sortAppointmentsStably(demo.appointments || []).filter(matchesBarber);
 
   return (
     <>

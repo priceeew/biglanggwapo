@@ -16,6 +16,7 @@ import { Queue } from './models/Queue.js';
 import { Discount } from './models/Discount.js';
 import { Transaction } from './models/Transaction.js';
 import { Notification } from './models/Notification.js';
+import { Image } from './models/Image.js';
 import { sendInvitationEmail, sendTurnNotificationEmail, sendCancellationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
@@ -90,7 +91,7 @@ app.get('/api/init', async (req, res) => {
       Service.find().lean(),
       Barber.find().lean(),
       Queue.find().sort({ createdAt: 1 }).lean(),
-      Appointment.find().sort({ createdAt: -1 }).lean(),
+      Appointment.find().sort({ date: 1, time: 1, createdAt: 1 }).lean(),
       Review.find().sort({ createdAt: -1 }).lean(),
       Inventory.find().lean(),
       Discount.find().lean(),
@@ -105,13 +106,26 @@ app.get('/api/init', async (req, res) => {
       }
     }
 
+    const enrichedBarbers = barbers.map((b) => {
+      const bReviews = reviews.filter((r) => 
+        (r.barberId && r.barberId === b.id) ||
+        (r.barber && b.name && r.barber.trim().toLowerCase() === b.name.trim().toLowerCase())
+      );
+      if (bReviews.length > 0) {
+        const sum = bReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+        const avg = Number((sum / bReviews.length).toFixed(1));
+        return { ...b, rating: avg, reviewCount: bReviews.length };
+      }
+      return { ...b, rating: b.rating || 0, reviewCount: 0 };
+    });
+
     res.json({
       success: true,
       data: {
         accounts: accountsMap,
         services,
-        barbers,
-        queue,
+        barbers: enrichedBarbers,
+        queue: deduplicateQueue(queue),
         appointments,
         reviews,
         inventory,
@@ -126,7 +140,7 @@ app.get('/api/init', async (req, res) => {
   }
 });
 
-// Automatically offload raw base64 images so MongoDB Atlas documents stay tiny (<1KB)
+// Automatically offload raw base64 images to MongoDB Atlas 'images' collection
 async function ensureHostedImage(img, prefix = 'img') {
   if (!img || typeof img !== 'string' || !img.startsWith('data:image/')) {
     return img;
@@ -134,29 +148,28 @@ async function ensureHostedImage(img, prefix = 'img') {
   const extMatch = img.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
   const ext = extMatch ? (extMatch[1] === 'jpeg' ? 'jpg' : extMatch[1]) : 'png';
   const cleanBase64 = img.includes('base64,') ? img.split('base64,')[1] : img;
-
-  const apiKey = process.env.IMGBB_API_KEY || 'b5f603fbcbfc780cdf47ec7b318b8b38';
-  if (apiKey) {
-    try {
-      const form = new URLSearchParams();
-      form.append('image', cleanBase64);
-      const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-        method: 'POST',
-        body: form,
-        signal: AbortSignal.timeout(5000)
-      });
-      const data = await res.json();
-      if (data?.data?.url) return data.data.url;
-    } catch {}
-  }
+  const contentType = ext === 'png' ? 'image/png' : 'image/jpeg';
+  const buffer = Buffer.from(cleanBase64, 'base64');
+  const imageId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
   try {
-    const safeName = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-    const filePath = path.join(uploadsDir, safeName);
-    await fs.promises.writeFile(filePath, Buffer.from(cleanBase64, 'base64'));
-    return `/uploads/${safeName}`;
-  } catch {
-    return img;
+    await Image.create({
+      id: imageId,
+      filename: `${prefix}-${imageId}.${ext}`,
+      contentType,
+      data: buffer,
+      size: buffer.length
+    });
+    return `/api/images/${imageId}`;
+  } catch (err) {
+    try {
+      const safeName = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const filePath = path.join(uploadsDir, safeName);
+      await fs.promises.writeFile(filePath, buffer);
+      return `/uploads/${safeName}`;
+    } catch {
+      return img;
+    }
   }
 }
 
@@ -230,8 +243,23 @@ app.delete('/api/accounts/:email', async (req, res) => {
 app.get('/api/barbers', async (req, res) => {
   try {
     await connectDB();
-    const barbers = await Barber.find().lean();
-    res.json({ success: true, barbers });
+    const [barbers, reviews] = await Promise.all([
+      Barber.find().lean(),
+      Review.find().lean()
+    ]);
+    const enrichedBarbers = barbers.map((b) => {
+      const bReviews = reviews.filter((r) => 
+        (r.barberId && r.barberId === b.id) ||
+        (r.barber && b.name && r.barber.trim().toLowerCase() === b.name.trim().toLowerCase())
+      );
+      if (bReviews.length > 0) {
+        const sum = bReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+        const avg = Number((sum / bReviews.length).toFixed(1));
+        return { ...b, rating: avg, reviewCount: bReviews.length };
+      }
+      return { ...b, rating: b.rating || 0, reviewCount: 0 };
+    });
+    res.json({ success: true, barbers: enrichedBarbers });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -357,7 +385,7 @@ app.delete('/api/services', async (req, res) => {
 app.get('/api/appointments', async (req, res) => {
   try {
     await connectDB();
-    const appointments = await Appointment.find().lean();
+    const appointments = await Appointment.find().sort({ date: 1, time: 1, createdAt: 1 }).lean();
     res.json({ success: true, appointments });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -510,11 +538,31 @@ app.delete('/api/inventory', async (req, res) => {
 });
 
 // Queue API (MongoDB Atlas)
+function deduplicateQueue(rawList = []) {
+  const seenApts = new Set();
+  const seenIds = new Set();
+  const result = [];
+  for (const item of rawList) {
+    if (!item || !item.id) continue;
+    if (seenIds.has(item.id)) continue;
+    seenIds.add(item.id);
+
+    if (item.appointmentId && !['Completed', 'Removed', 'Skipped'].includes(item.status)) {
+      if (seenApts.has(item.appointmentId)) {
+        continue;
+      }
+      seenApts.add(item.appointmentId);
+    }
+    result.push(item);
+  }
+  return result;
+}
+
 app.get('/api/queue', async (req, res) => {
   try {
     await connectDB();
-    const queue = await Queue.find().sort({ createdAt: 1 }).lean();
-    res.json({ success: true, queue });
+    const rawQueue = await Queue.find().sort({ createdAt: 1 }).lean();
+    res.json({ success: true, queue: deduplicateQueue(rawQueue) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -528,8 +576,24 @@ app.post('/api/queue', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing queue id' });
     }
     const { _id, ...cleanEntry } = entry;
+
+    let filter = { id: entry.id };
+    if (entry.appointmentId && !['Completed', 'Removed', 'Skipped'].includes(entry.status)) {
+      const activeExisting = await Queue.findOne({
+        appointmentId: entry.appointmentId,
+        status: { $nin: ['Completed', 'Removed', 'Skipped'] }
+      });
+      if (activeExisting) {
+        filter = { id: activeExisting.id };
+        await Queue.deleteMany({
+          appointmentId: entry.appointmentId,
+          id: { $ne: activeExisting.id }
+        });
+      }
+    }
+
     const saved = await Queue.findOneAndUpdate(
-      { id: entry.id },
+      filter,
       { $set: cleanEntry },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -840,55 +904,71 @@ app.post('/api/send-invite', handleEmailSend);
 app.post('/api/notify-turn', handleEmailSend);
 app.post('/api/send-cancellation', handleEmailSend);
 
-// Image Upload Endpoint (ImgBB Cloud with local static storage fallback)
+// Serve stored images from MongoDB Atlas 'images' collection
+app.get('/api/images/:id', async (req, res) => {
+  try {
+    await connectDB();
+    const img = await Image.findOne({ id: req.params.id });
+    if (!img || !img.data) {
+      return res.status(404).send('Image not found');
+    }
+    res.setHeader('Content-Type', img.contentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Content-Length', img.data.length);
+    return res.end(img.data);
+  } catch (err) {
+    console.error('Error serving image from MongoDB:', err);
+    res.status(500).send('Server error');
+  }
+});
+
+// Image Upload Endpoint (Saves directly to MongoDB Atlas 'images' collection with local disk fallback)
 app.post('/api/upload', async (req, res) => {
   try {
-    const { image } = req.body;
+    const { image, filename } = req.body || {};
     if (!image) {
       return res.status(400).json({ success: false, message: 'No image data provided' });
     }
 
     // Validate image format - only JPEG, JPG, and PNG allowed
+    let contentType = 'image/jpeg';
     const extMatch = image.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
     if (extMatch) {
       const rawExt = extMatch[1].toLowerCase();
       if (!['jpeg', 'jpg', 'png'].includes(rawExt)) {
         return res.status(400).json({ success: false, message: 'Invalid format. Only JPEG, JPG, and PNG files are allowed.' });
       }
+      if (rawExt === 'png') contentType = 'image/png';
     }
 
-    // Attempt ImgBB cloud upload if API key exists
-    const apiKey = process.env.IMGBB_API_KEY || 'b5f603fbcbfc780cdf47ec7b318b8b38';
-    if (apiKey) {
-      try {
-        const rawBase64 = image.includes('base64,') ? image.split('base64,')[1] : image;
-        const form = new URLSearchParams();
-        form.append('image', rawBase64);
-        const imgbbRes = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-          method: 'POST',
-          body: form,
-          signal: AbortSignal.timeout(5000)
-        });
-        const imgbbData = await imgbbRes.json();
-        if (imgbbData?.data?.url) {
-          console.log('[ImgBB] Image successfully uploaded to cloud:', imgbbData.data.url);
-          return res.json({ success: true, url: imgbbData.data.url, provider: 'imgbb' });
-        }
-      } catch (err) {
-        console.warn('[ImgBB] Cloud upload not reachable or timed out, saving locally:', err.message);
-      }
-    }
+    await connectDB();
 
-    // Fallback: Save directly to public/uploads directory
-    const ext = extMatch ? (extMatch[1] === 'jpeg' ? 'jpg' : extMatch[1]) : 'png';
     const cleanBase64 = image.includes('base64,') ? image.split('base64,')[1] : image;
-    const safeName = `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-    const filePath = path.join(uploadsDir, safeName);
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    const imageId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const safeFilename = filename || `${imageId}.${contentType === 'image/png' ? 'png' : 'jpg'}`;
 
-    await fs.promises.writeFile(filePath, Buffer.from(cleanBase64, 'base64'));
-    const localUrl = `/uploads/${safeName}`;
-    console.log('[Upload] Saved image to local storage:', localUrl);
-    return res.json({ success: true, url: localUrl, provider: 'local' });
+    try {
+      await Image.create({
+        id: imageId,
+        filename: safeFilename,
+        contentType,
+        data: buffer,
+        size: buffer.length
+      });
+
+      const imageUrl = `/api/images/${imageId}`;
+      console.log('[Images Collection] Successfully saved image to MongoDB:', imageUrl, `(${buffer.length} bytes)`);
+      return res.json({ success: true, url: imageUrl, id: imageId, provider: 'mongodb' });
+    } catch (dbErr) {
+      console.warn('[Images Collection] Database save failed, falling back to local static disk:', dbErr.message);
+      const ext = contentType === 'image/png' ? 'png' : 'jpg';
+      const safeName = `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const filePath = path.join(uploadsDir, safeName);
+      await fs.promises.writeFile(filePath, buffer);
+      const localUrl = `/uploads/${safeName}`;
+      return res.json({ success: true, url: localUrl, provider: 'local' });
+    }
   } catch (error) {
     console.error('Upload handler error:', error);
     res.status(500).json({ success: false, error: error.message });

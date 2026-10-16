@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     await connectDB();
 
     if (req.method === 'GET') {
-      const appointments = await Appointment.find().lean();
+      const appointments = await Appointment.find().sort({ date: 1, time: 1, createdAt: 1 }).lean();
       return res.status(200).json({ success: true, appointments });
     }
 

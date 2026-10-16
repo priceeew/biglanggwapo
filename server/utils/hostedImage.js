@@ -1,27 +1,39 @@
-export async function ensureHostedImageCloud(img) {
+import { connectDB } from '../db.js';
+import { Image } from '../models/Image.js';
+
+export async function ensureHostedImageCloud(img, filename = 'image.jpg') {
   if (!img || typeof img !== 'string' || !img.startsWith('data:image/')) {
     return img;
   }
 
-  const apiKey = process.env.IMGBB_API_KEY || 'b5f603fbcbfc780cdf47ec7b318b8b38';
-  if (!apiKey) return img;
-
   try {
-    const rawBase64 = img.includes('base64,') ? img.split('base64,')[1] : img;
-    const form = new URLSearchParams();
-    form.append('image', rawBase64);
-    const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-      method: 'POST',
-      body: form,
-      signal: AbortSignal.timeout(6000)
-    });
-    const data = await res.json();
-    if (data?.data?.url) {
-      return data.data.url;
-    }
-  } catch (err) {
-    console.warn('Hosted image cloud upload failed:', err.message);
-  }
+    await connectDB();
 
-  return img;
+    let contentType = 'image/jpeg';
+    const extMatch = img.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
+    if (extMatch) {
+      const rawExt = extMatch[1].toLowerCase();
+      if (rawExt === 'png') contentType = 'image/png';
+      else if (rawExt === 'jpeg' || rawExt === 'jpg') contentType = 'image/jpeg';
+      else if (rawExt === 'webp') contentType = 'image/webp';
+    }
+
+    const cleanBase64 = img.includes('base64,') ? img.split('base64,')[1] : img;
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    const imageId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const safeFilename = filename || `${imageId}.${contentType === 'image/png' ? 'png' : 'jpg'}`;
+
+    await Image.create({
+      id: imageId,
+      filename: safeFilename,
+      contentType,
+      data: buffer,
+      size: buffer.length
+    });
+
+    return `/api/images/${imageId}`;
+  } catch (err) {
+    console.warn('[Images Collection] Failed to save hosted image to MongoDB:', err.message);
+    return img;
+  }
 }

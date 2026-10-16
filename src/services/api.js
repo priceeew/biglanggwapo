@@ -532,7 +532,39 @@ export async function uploadImageFile(file) {
     const reader = new FileReader();
     reader.onerror = () => resolve({ success: false, error: 'Could not read file' });
     reader.onload = async (e) => {
-      const dataUrl = e.target.result;
+      let dataUrl = e.target.result;
+
+      // Optimize image dimensions and compression to keep MongoDB lightweight
+      try {
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise((res, rej) => {
+          img.onload = res;
+          img.onerror = rej;
+        });
+
+        const maxDim = 1200;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      } catch (optErr) {
+        // Fall back to original dataUrl if canvas optimization fails
+      }
+
       try {
         const res = await fetch('/api/upload', {
           method: 'POST',
@@ -541,7 +573,7 @@ export async function uploadImageFile(file) {
         });
         const data = await res.json().catch(() => ({}));
         if (data.success && data.url) {
-          return resolve({ success: true, url: data.url, provider: data.provider });
+          return resolve({ success: true, url: data.url, id: data.id, provider: data.provider });
         }
         return resolve({ success: true, url: dataUrl, provider: 'base64' });
       } catch (err) {

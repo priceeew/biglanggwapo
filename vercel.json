@@ -19,6 +19,10 @@
       "destination": "/api/discounts?id=:id"
     },
     {
+      "source": "/api/images/:id",
+      "destination": "/api/images?id=:id"
+    },
+    {
       "source": "/api/inventory/:id",
       "destination": "/api/inventory?id=:id"
     },

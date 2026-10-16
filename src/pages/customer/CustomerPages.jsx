@@ -10,7 +10,7 @@ import { useStore, currency, today, humanDate } from '../../context/StoreContext
 import { demoApi } from '../../mockService';
 import { saveAccount, getAccounts } from '../../data';
 import { uploadImageFile, saveReviewToAtlas, saveAppointmentToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
-import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
+import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr, sortAppointmentsStably } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
   StatusBadge, QueueMini, ReviewCard, ReviewPhotoModal
@@ -443,8 +443,8 @@ export function CustomerDashboard() {
   const { demo, commit, notify, session } = useStore();
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
   const currentCustomerId = session?.customerId || 'cust-demo';
-  const currentCustomerName = session?.name;
-  const appointments = demo.appointments.filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
+  const currentCustomerName = session?.name || '';
+  const appointments = sortAppointmentsStably(demo.appointments || []).filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
   const upcoming = appointments.find((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completed = appointments.filter((item) => item.status === 'Completed');
   const queueEntry = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
@@ -572,8 +572,8 @@ export function CustomerAppointments() {
   const [tab, setTab] = useState('Upcoming');
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
   const currentCustomerId = session?.customerId || 'cust-demo';
-  const currentCustomerName = session?.name;
-  const mine = demo.appointments.filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
+  const currentCustomerName = session?.name || '';
+  const mine = sortAppointmentsStably(demo.appointments || []).filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
   const upcomingList = mine.filter((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completedList = mine.filter((item) => item.status === 'Completed');
   const cancelledList = mine.filter((item) => item.status === 'Cancelled');
@@ -673,7 +673,7 @@ export function CustomerAppointments() {
 export function CustomerQueue() {
   const { demo, session } = useStore();
   const currentCustomerId = session?.customerId || 'cust-demo';
-  const currentCustomerName = session?.name;
+  const currentCustomerName = session?.name || '';
   const active = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const ahead = active ? demo.queue.filter((item) => item.status === 'Waiting' && item.id !== active.id).length : 0;
 
@@ -796,8 +796,8 @@ export function CustomerHistory() {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('All');
   const currentCustomerId = session?.customerId || 'cust-demo';
-  const currentCustomerName = session?.name;
-  const userAppointments = demo.appointments.filter(
+  const currentCustomerName = session?.name || '';
+  const userAppointments = sortAppointmentsStably(demo.appointments || []).filter(
     (item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)
   );
   const completedList = userAppointments.filter((item) => item.status === 'Completed');
@@ -962,6 +962,87 @@ export function CustomerReviews() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [activePhotoModal, setActivePhotoModal] = useState(null);
+
+  // Edit Review Modal State
+  const [editingReview, setEditingReview] = useState(null);
+  const [editRating, setEditRating] = useState(0);
+  const [editComment, setEditComment] = useState('');
+  const [editImage, setEditImage] = useState('');
+  const [editIsPublic, setEditIsPublic] = useState(true);
+  const [editUploading, setEditUploading] = useState(false);
+  const [editUploadError, setEditUploadError] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEditModal = (review) => {
+    setEditingReview(review);
+    setEditRating(review.rating || 5);
+    setEditComment(review.comment || '');
+    setEditImage(review.image || '');
+    setEditIsPublic(review.public !== false);
+    setEditUploadError('');
+  };
+
+  const handleEditImageSelect = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setEditUploadError('');
+    const validTypes = ['image/jpeg', 'image/png'];
+    const validExt = /\.(jpe?g|png)$/i;
+    if (file.type && !validTypes.includes(file.type) && !validExt.test(file.name)) {
+      setEditUploadError('Only JPEG, JPG, and PNG files are allowed.');
+      return;
+    }
+    setEditUploading(true);
+    try {
+      const res = await uploadImageFile(file);
+      if (res.success && res.url) {
+        setEditImage(res.url);
+      } else {
+        setEditUploadError(res.error || 'Failed to upload photo.');
+      }
+    } catch {
+      setEditUploadError('Failed to process image file.');
+    } finally {
+      setEditUploading(false);
+    }
+  };
+
+  const saveEditedReview = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingReview) return;
+    if (!editRating || !editComment.trim()) {
+      return notify('Please choose a rating and add your feedback.', 'error');
+    }
+
+    setSavingEdit(true);
+    const updatedReview = {
+      ...editingReview,
+      rating: editRating,
+      comment: editComment.trim(),
+      image: editImage || '',
+      public: editIsPublic
+    };
+
+    // Optimistic store update
+    commit((state) => ({
+      ...state,
+      reviews: (state.reviews || []).map((r) => (r.id === updatedReview.id ? updatedReview : r))
+    }));
+
+    try {
+      const res = await saveReviewToAtlas(updatedReview);
+      if (res && res.success === false) {
+        notify('Failed to save updated review in database.', 'error');
+      } else {
+        notify('Your review and photo have been updated successfully!', 'success');
+        setEditingReview(null);
+      }
+    } catch (err) {
+      notify(`Failed to update review: ${err.message}`, 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const handleImageSelect = async (event) => {
     const file = event.target.files?.[0];
@@ -1333,35 +1414,59 @@ export function CustomerReviews() {
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => toggleReviewPrivacy(review)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          padding: '4px 10px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--line)',
-                          background: 'var(--white)',
-                          color: 'var(--ink)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                        title={isReviewPublic ? 'Change to private so only staff can see it' : 'Change to public to display on website'}
-                      >
-                        {isReviewPublic ? (
-                          <>
-                            <Lock size={12} /> Make Private
-                          </>
-                        ) : (
-                          <>
-                            <Globe size={12} /> Make Public
-                          </>
-                        )}
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(review)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--line)',
+                            background: 'var(--white)',
+                            color: 'var(--ink)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          title="Edit your review details or photo"
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleReviewPrivacy(review)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--line)',
+                            background: 'var(--white)',
+                            color: 'var(--ink)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          title={isReviewPublic ? 'Change to private so only staff can see it' : 'Change to public to display on website'}
+                        >
+                          {isReviewPublic ? (
+                            <>
+                              <Lock size={12} /> Make Private
+                            </>
+                          ) : (
+                            <>
+                              <Globe size={12} /> Make Public
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </ReviewCard>
                 );
@@ -1382,6 +1487,245 @@ export function CustomerReviews() {
         modalData={activePhotoModal}
         onClose={() => setActivePhotoModal(null)}
       />
+
+      {/* Edit Review Modal */}
+      {editingReview && (
+        <div
+          className="modal-backdrop"
+          style={{ zIndex: 90 }}
+          onMouseDown={(e) => e.target === e.currentTarget && !savingEdit && setEditingReview(null)}
+        >
+          <div className="modal-card" style={{ maxWidth: '500px', width: '100%', textAlign: 'left' }}>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setEditingReview(null)}
+              disabled={savingEdit || editUploading}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ marginBottom: '18px' }}>
+              <span className="eyebrow gold">Edit Review</span>
+              <h2 style={{ fontSize: '20px', margin: '6px 0 2px' }}>
+                {editingReview.serviceName || editingReview.service || 'Haircut Review'}
+              </h2>
+              <p style={{ fontSize: '11.5px', color: 'var(--muted)', margin: 0 }}>
+                Barber: <strong>{editingReview.barber || 'Barber'}</strong>
+              </p>
+            </div>
+
+            <form onSubmit={saveEditedReview}>
+              {/* Star Rating Picker */}
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '6px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                  Rating
+                </label>
+                <div className="star-picker" style={{ display: 'flex', gap: '4px' }}>
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={value <= editRating ? 'active' : ''}
+                      onClick={() => setEditRating(value)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        color: value <= editRating ? 'var(--gold, #d4af37)' : '#ccc',
+                        transition: 'transform 0.1s ease'
+                      }}
+                      aria-label={`${value} stars`}
+                    >
+                      <Star size={24} fill={value <= editRating ? 'currentColor' : 'none'} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Feedback comment textarea */}
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '6px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                  Your Feedback
+                </label>
+                <textarea
+                  className="input textarea"
+                  style={{ minHeight: '80px', fontSize: '12.5px' }}
+                  placeholder="Update your feedback about the haircut and barber..."
+                  value={editComment}
+                  onChange={(e) => setEditComment(e.target.value)}
+                  required
+                />
+              </div>
+
+              {/* Haircut Photo Upload / Change / Remove */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '6px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                  Haircut Photo (Stored in Database)
+                </label>
+
+                {editImage ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <img
+                        src={editImage}
+                        alt="Haircut preview"
+                        style={{
+                          width: '76px',
+                          height: '76px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          border: '1.5px solid var(--gold, #d4af37)',
+                          display: 'block'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEditImage('')}
+                        style={{
+                          position: 'absolute',
+                          top: -6,
+                          right: -6,
+                          background: '#ef4444',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '20px',
+                          height: '20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0
+                        }}
+                        title="Remove photo"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label
+                        className="button button-ghost button-small"
+                        style={{ cursor: editUploading ? 'not-allowed' : 'pointer', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      >
+                        <Camera size={13} />
+                        <span>{editUploading ? 'Uploading...' : 'Change Photo'}</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/jpg"
+                          disabled={editUploading}
+                          style={{ display: 'none' }}
+                          onChange={handleEditImageSelect}
+                        />
+                      </label>
+                      <span style={{ fontSize: '10.5px', color: 'var(--muted)' }}>
+                        JPEG or PNG. Saved directly to MongoDB Atlas.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label
+                      className="button button-ghost button-small"
+                      style={{ cursor: editUploading ? 'not-allowed' : 'pointer', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Camera size={14} />
+                      <span>{editUploading ? 'Uploading...' : 'Upload Haircut Photo'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/jpg"
+                        disabled={editUploading}
+                        style={{ display: 'none' }}
+                        onChange={handleEditImageSelect}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {editUploadError && (
+                  <div style={{ color: '#ef4444', fontSize: '11.5px', marginTop: '6px' }}>
+                    {editUploadError}
+                  </div>
+                )}
+              </div>
+
+              {/* Visibility choice */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '6px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                  Visibility
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditIsPublic(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '9px 12px',
+                      borderRadius: '6px',
+                      border: editIsPublic ? '1.5px solid var(--gold, #d4af37)' : '1px solid var(--line)',
+                      background: editIsPublic ? 'rgba(212, 175, 55, 0.12)' : 'var(--paper)',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <Globe size={15} style={{ color: editIsPublic ? 'var(--gold, #d4af37)' : 'var(--muted)' }} />
+                    <div>
+                      <strong style={{ display: 'block', fontSize: '11.5px' }}>Public</strong>
+                      <small style={{ fontSize: '9.5px', color: 'var(--muted)' }}>Visible on website</small>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditIsPublic(false)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '9px 12px',
+                      borderRadius: '6px',
+                      border: !editIsPublic ? '1.5px solid var(--gold, #d4af37)' : '1px solid var(--line)',
+                      background: !editIsPublic ? 'rgba(212, 175, 55, 0.12)' : 'var(--paper)',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <Lock size={15} style={{ color: !editIsPublic ? 'var(--gold, #d4af37)' : 'var(--muted)' }} />
+                    <div>
+                      <strong style={{ display: 'block', fontSize: '11.5px' }}>Private</strong>
+                      <small style={{ fontSize: '9.5px', color: 'var(--muted)' }}>Only shop staff</small>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="button button-ghost button-small"
+                  disabled={savingEdit || editUploading}
+                  onClick={() => setEditingReview(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="button button-dark button-small"
+                  disabled={savingEdit || editUploading}
+                >
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

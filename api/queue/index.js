@@ -1,6 +1,26 @@
 import { connectDB } from '../../server/db.js';
 import { Queue } from '../../server/models/Queue.js';
 
+function deduplicateQueue(rawList = []) {
+  const seenApts = new Set();
+  const seenIds = new Set();
+  const result = [];
+  for (const item of rawList) {
+    if (!item || !item.id) continue;
+    if (seenIds.has(item.id)) continue;
+    seenIds.add(item.id);
+
+    if (item.appointmentId && !['Completed', 'Removed', 'Skipped'].includes(item.status)) {
+      if (seenApts.has(item.appointmentId)) {
+        continue;
+      }
+      seenApts.add(item.appointmentId);
+    }
+    result.push(item);
+  }
+  return result;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,8 +33,8 @@ export default async function handler(req, res) {
     await connectDB();
 
     if (req.method === 'GET') {
-      const queue = await Queue.find().sort({ createdAt: 1 }).lean();
-      return res.status(200).json({ success: true, queue });
+      const rawQueue = await Queue.find().sort({ createdAt: 1 }).lean();
+      return res.status(200).json({ success: true, queue: deduplicateQueue(rawQueue) });
     }
 
     if (req.method === 'POST') {
@@ -23,8 +43,24 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Missing queue id' });
       }
       const { _id, ...cleanEntry } = entry;
+
+      let filter = { id: entry.id };
+      if (entry.appointmentId && !['Completed', 'Removed', 'Skipped'].includes(entry.status)) {
+        const activeExisting = await Queue.findOne({
+          appointmentId: entry.appointmentId,
+          status: { $nin: ['Completed', 'Removed', 'Skipped'] }
+        });
+        if (activeExisting) {
+          filter = { id: activeExisting.id };
+          await Queue.deleteMany({
+            appointmentId: entry.appointmentId,
+            id: { $ne: activeExisting.id }
+          });
+        }
+      }
+
       const saved = await Queue.findOneAndUpdate(
-        { id: entry.id },
+        filter,
         { $set: cleanEntry },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );

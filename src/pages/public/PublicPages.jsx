@@ -395,6 +395,42 @@ export function BookingPage() {
 
     return statsMap;
   }, [demo.barbers, demo.appointments, demo.queue, demo.transactions]);
+
+  // Calculate 100% accurate customer ratings and review counts for each barber based on real reviews
+  const barberRatingStats = useMemo(() => {
+    const barbers = demo.barbers || [];
+    const reviews = demo.reviews || [];
+
+    const statsMap = {};
+    barbers.forEach((b) => {
+      const bReviews = reviews.filter((r) => {
+        if (!r) return false;
+        if (r.barberId && b.id && String(r.barberId) === String(b.id)) return true;
+        if (r.barber && b.name && r.barber.trim().toLowerCase() === b.name.trim().toLowerCase()) return true;
+        return false;
+      });
+
+      if (bReviews.length > 0) {
+        const sum = bReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+        const avg = sum / bReviews.length;
+        const rounded = Number(avg.toFixed(1));
+        statsMap[b.id] = {
+          rating: rounded,
+          display: rounded.toFixed(1),
+          count: bReviews.length,
+          hasReviews: true
+        };
+      } else {
+        statsMap[b.id] = {
+          rating: 0,
+          display: 'No reviews',
+          count: 0,
+          hasReviews: false
+        };
+      }
+    });
+    return statsMap;
+  }, [demo.barbers, demo.reviews]);
   const slots = [
     '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
     '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
@@ -783,6 +819,7 @@ export function BookingPage() {
                   const isBlocked = hasActiveBookingWithBarber(item.id);
                   const isUnavail = Boolean(item.isUnavailable || item.status === 'Unavailable' || item.leaveStatus === 'Unavailable');
                   const stats = barberPickStats[item.id] || { count: 0, percentage: 0, isTop: false, badge: null, badgeClass: '' };
+                  const ratingStat = barberRatingStats[item.id] || { rating: 0, display: 'No reviews', count: 0, hasReviews: false };
                   const isSelected = selection.barberId === item.id;
                   return (
                     <button
@@ -860,8 +897,19 @@ export function BookingPage() {
                           <span className="active-booking-badge">
                             ● Active booking exists
                           </span>
+                        ) : ratingStat.hasReviews ? (
+                          <span className="rating-line">
+                            <span className="stars">{stars(ratingStat.rating)}</span>
+                            <em>{ratingStat.display}</em>
+                            <small style={{ color: 'var(--muted)', fontSize: '10px', marginLeft: '2px' }}>
+                              ({ratingStat.count} {ratingStat.count === 1 ? 'review' : 'reviews'})
+                            </small>
+                          </span>
                         ) : (
-                          <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
+                          <span className="rating-line" style={{ color: 'var(--muted)' }}>
+                            <span className="stars" style={{ color: '#c4c0b8' }}>☆☆☆☆☆</span>
+                            <em style={{ fontSize: '11px', color: 'var(--muted)' }}>No reviews yet</em>
+                          </span>
                         )}
                       </div>
                     </button>
