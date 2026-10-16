@@ -256,10 +256,19 @@ export const demoApi = {
     return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Confirmed' } : item) };
   },
   markArrived(state, appointmentId) {
-    const appointment = state.appointments.find((item) => item.id === appointmentId);
+    const appointment = state.appointments.find((item) => item.id === appointmentId || item._id === appointmentId);
     if (!appointment) return state;
-    const exists = state.queue.some((item) => item.appointmentId === appointmentId && !['Removed', 'Completed', 'Skipped'].includes(item.status));
-    if (exists) return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Arrived' } : item) };
+    const aptId = appointment.id || appointment._id || appointmentId;
+    const existingQueueItem = (state.queue || []).find((item) =>
+      (item.appointmentId === aptId || item.appointmentId === appointment.id || item.appointmentId === appointment._id) &&
+      !['Removed', 'Completed', 'Skipped'].includes(item.status)
+    );
+    if (existingQueueItem) {
+      return {
+        ...state,
+        appointments: state.appointments.map((item) => (item.id === appointmentId || item._id === appointmentId) ? { ...item, status: 'Arrived' } : item)
+      };
+    }
     const maxNum = (state.queue || []).reduce((max, q) => {
       const n = parseInt((q.number || '').replace(/\D/g, ''), 10);
       return !isNaN(n) && n > max ? n : max;
@@ -268,20 +277,20 @@ export const demoApi = {
     const entry = {
       id: id('queue'),
       number: `Q-${String(nextNum).padStart(3, '0')}`,
-      customerId: appointment.customerId,
-      customerName: appointment.customerName,
+      customerId: appointment.customerId || '',
+      customerName: appointment.customerName || 'Customer',
       customerEmail: appointment.customerEmail || '',
-      barberId: appointment.barberId,
-      barberName: appointment.barberName,
-      serviceName: appointment.serviceName,
+      barberId: appointment.barberId || '',
+      barberName: appointment.barberName || 'Barber',
+      serviceName: appointment.serviceName || 'Service',
       status: 'Waiting',
       joinedAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
       estimatedMinutes: appointment.duration || 30,
-      appointmentId
+      appointmentId: aptId
     };
     return {
       ...state,
-      appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Arrived' } : item),
+      appointments: state.appointments.map((item) => (item.id === appointmentId || item._id === appointmentId) ? { ...item, status: 'Arrived' } : item),
       queue: [entry, ...state.queue]
     };
   },

@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronRight, Download,
-  FileText, ListOrdered, MoreHorizontal, Package, Plus, Search, ShoppingBag, Star,
+  FileText, ListOrdered, Mail, MoreHorizontal, Package, Plus, Search, ShoppingBag, Star,
   Tag, Trash2, UserPlus, WalletCards, X, Zap
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
 import {
-  sendInviteNotification, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
+  sendInviteNotification, notifyCustomerTurn, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
   saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas
 } from '../../services/api';
 import {
@@ -119,14 +119,14 @@ export function ReceptionistAppointments() {
     const updater = action === 'confirm' ? demoApi.confirmAppointment : action === 'arrived' ? demoApi.markArrived : demoApi.cancelAppointment;
     if (action === 'cancel' && !window.confirm('Cancel this appointment?')) return;
     commit((state) => {
-      const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
+      const prevQueueItem = (state.queue || []).find((q) => q.appointmentId === id);
       const next = updater(state, id);
-      const updatedApt = next.appointments.find((a) => a.id === id);
+      const updatedApt = next.appointments.find((a) => a.id === id || a._id === id);
       if (updatedApt) {
         saveAppointmentToAtlas(updatedApt);
       }
       if (action === 'arrived') {
-        const queueEntry = next.queue.find((q) => q.appointmentId === id);
+        const queueEntry = next.queue.find((q) => q.appointmentId === id || q.appointmentId === updatedApt?.id || q.appointmentId === updatedApt?._id);
         if (queueEntry) {
           saveQueueItemToAtlas(queueEntry);
         }
@@ -239,10 +239,15 @@ export function ReceptionistAppointments() {
                         Confirm
                       </button>
                     )}
-                    {['Confirmed', 'Arrived'].includes(item.status) && (
-                      <button className="button button-soft button-small" onClick={() => act(item.id, 'arrived')}>
+                    {['Pending', 'Confirmed'].includes(item.status) && (
+                      <button className="button button-dark button-small" onClick={() => act(item.id, 'arrived')}>
                         Mark arrived
                       </button>
+                    )}
+                    {item.status === 'Arrived' && (
+                      <Link to="/receptionist/queue" className="button button-soft button-small" style={{ color: 'var(--gold)' }}>
+                        In queue →
+                      </Link>
                     )}
                     {!['Completed', 'Cancelled'].includes(item.status) && (
                       <button className="icon-button" title="Cancel" onClick={() => act(item.id, 'cancel')}>

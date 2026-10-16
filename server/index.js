@@ -756,6 +756,15 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
+// Production Vite SPA Serving (Runs the full MERN application on any Node host)
+const distDir = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
 async function startServer() {
   try {
     console.log('Connecting to MongoDB Atlas...');

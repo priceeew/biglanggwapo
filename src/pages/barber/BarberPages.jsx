@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
-  ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
+  ListOrdered, Mail, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
 } from 'lucide-react';
 import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAppointmentToAtlas, saveQueueItemToAtlas } from '../../services/api';
+import { saveAppointmentToAtlas, saveQueueItemToAtlas, notifyCustomerTurn } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState,
   getCustomerPhoto
@@ -209,10 +209,22 @@ export function BarberDashboard() {
 }
 
 export function BarberAppointments() {
-  const { demo } = useStore();
+  const { demo, commit, notify } = useStore();
   const { barberName, matchesBarber, barber } = useCurrentBarber();
   const list = (demo.appointments || []).filter(matchesBarber);
   const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
+
+  const markArrived = (appointmentId) => {
+    commit((state) => {
+      const next = demoApi.markArrived(state, appointmentId);
+      const updatedApt = next.appointments.find((a) => a.id === appointmentId || a._id === appointmentId);
+      if (updatedApt) saveAppointmentToAtlas(updatedApt);
+      const queueEntry = next.queue.find((q) => q.appointmentId === appointmentId || q.appointmentId === updatedApt?.id || q.appointmentId === updatedApt?._id);
+      if (queueEntry) saveQueueItemToAtlas(queueEntry);
+      return next;
+    });
+    notify('Customer marked arrived and added to your queue!');
+  };
 
   return (
     <>
@@ -262,7 +274,12 @@ export function BarberAppointments() {
                   ) : item.status === 'In Service' ? (
                     <Link className="button button-dark button-small" to="/barber/service-session">In service</Link>
                   ) : (
-                    <Link className="button button-soft button-small" to="/barber/customer-details">Customer details</Link>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {['Pending', 'Confirmed'].includes(item.status) && (
+                        <button className="button button-dark button-small" onClick={() => markArrived(item.id)}>Mark arrived</button>
+                      )}
+                      <Link className="button button-soft button-small" to="/barber/customer-details">Details</Link>
+                    </div>
                   )}
                 </td>
               </tr>
