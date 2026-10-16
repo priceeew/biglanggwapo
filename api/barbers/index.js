@@ -1,5 +1,6 @@
 import { connectDB } from '../../server/db.js';
 import { Barber } from '../../server/models/Barber.js';
+import { ensureHostedImageCloud } from '../../server/utils/hostedImage.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -23,6 +24,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Missing barber id' });
       }
       const { _id, ...cleanBarber } = barber;
+      if (cleanBarber.image) {
+        cleanBarber.image = await ensureHostedImageCloud(cleanBarber.image);
+      }
       const saved = await Barber.findOneAndUpdate(
         { id: barber.id },
         { $set: cleanBarber },

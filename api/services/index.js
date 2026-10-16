@@ -1,5 +1,6 @@
 import { connectDB } from '../../server/db.js';
 import { Service } from '../../server/models/Service.js';
+import { ensureHostedImageCloud } from '../../server/utils/hostedImage.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -23,6 +24,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Missing service id' });
       }
       const { _id, ...cleanService } = service;
+      if (cleanService.image) {
+        cleanService.image = await ensureHostedImageCloud(cleanService.image);
+      }
       const saved = await Service.findOneAndUpdate(
         { id: service.id },
         { $set: cleanService },

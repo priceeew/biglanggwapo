@@ -1,5 +1,6 @@
 import { connectDB } from '../../server/db.js';
 import { Appointment } from '../../server/models/Appointment.js';
+import { ensureHostedImageCloud } from '../../server/utils/hostedImage.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -23,6 +24,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Missing appointment id' });
       }
       const { _id, ...cleanApt } = apt;
+      if (cleanApt.barberImage) {
+        cleanApt.barberImage = await ensureHostedImageCloud(cleanApt.barberImage);
+      }
       const saved = await Appointment.findOneAndUpdate(
         { id: apt.id },
         { $set: cleanApt },

@@ -3,10 +3,10 @@ import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoSt
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
   fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas,
-  fetchDiscountsFromAtlas, fetchTransactionsFromAtlas
+  fetchDiscountsFromAtlas, fetchTransactionsFromAtlas, fetchShopInitFromAtlas
 } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
-import { getAccounts, syncAccountsFromAtlas } from '../data';
+import { getAccounts, syncAccountsFromAtlas, applyAccounts } from '../data';
 
 const StoreContext = createContext(null);
 
@@ -41,95 +41,47 @@ export function StoreProvider({ children }) {
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
-    fetchBarbersFromAtlas().then((barbers) => {
-      if (barbers && Array.isArray(barbers)) {
-        setDemo((prev) => {
-          const updated = { ...prev, barbers };
-          persistDemoState(updated);
-          return updated;
-        });
+    const applyFullSyncData = (data) => {
+      if (!data || typeof data !== 'object') return false;
+      if (data.accounts && typeof data.accounts === 'object') {
+        applyAccounts(data.accounts);
       }
-    });
+      setDemo((prev) => {
+        let updated = { ...prev };
+        if (Array.isArray(data.barbers) && data.barbers.length > 0) updated.barbers = data.barbers;
+        if (Array.isArray(data.services) && data.services.length > 0) updated.services = data.services;
+        if (Array.isArray(data.queue)) updated.queue = data.queue;
+        if (Array.isArray(data.appointments)) updated.appointments = data.appointments;
+        if (Array.isArray(data.reviews)) updated.reviews = data.reviews;
+        if (Array.isArray(data.inventory)) updated.inventory = data.inventory;
+        if (Array.isArray(data.promotions)) updated.promotions = data.promotions;
+        if (Array.isArray(data.transactions)) updated.transactions = data.transactions;
+        if (data.accounts && typeof data.accounts === 'object') {
+          updated = syncAccountsIntoDemoState(updated, data.accounts);
+        }
+        persistDemoState(updated);
+        return updated;
+      });
+      return true;
+    };
 
-    fetchServicesFromAtlas().then((services) => {
-      if (services && Array.isArray(services)) {
-        setDemo((prev) => {
-          const updated = { ...prev, services };
-          persistDemoState(updated);
-          return updated;
-        });
+    // Fast bootstrap: Single roundtrip fetch for all collections from Atlas
+    fetchShopInitFromAtlas().then((data) => {
+      if (data && applyFullSyncData(data)) {
+        return;
       }
-    });
-
-    fetchAppointmentsFromAtlas().then((appointments) => {
-      if (appointments && Array.isArray(appointments)) {
-        setDemo((prev) => {
-          const updated = { ...prev, appointments };
-          persistDemoState(updated);
-          return updated;
-        });
-      }
-    });
-
-    fetchReviewsFromAtlas().then((reviews) => {
-      if (reviews && Array.isArray(reviews)) {
-        setDemo((prev) => {
-          const updated = { ...prev, reviews };
-          persistDemoState(updated);
-          return updated;
-        });
-      }
-    });
-
-    fetchQueueFromAtlas().then((queue) => {
-      if (queue && Array.isArray(queue)) {
-        setDemo((prev) => {
-          const updated = { ...prev, queue };
-          persistDemoState(updated);
-          return updated;
-        });
-      }
-    });
-
-    fetchInventoryFromAtlas().then((inventory) => {
-      if (inventory && Array.isArray(inventory)) {
-        setDemo((prev) => {
-          const updated = { ...prev, inventory };
-          persistDemoState(updated);
-          return updated;
-        });
-      }
-    });
-
-    fetchDiscountsFromAtlas().then((discounts) => {
-      if (discounts && Array.isArray(discounts)) {
-        setDemo((prev) => {
-          const updated = { ...prev, promotions: discounts };
-          persistDemoState(updated);
-          return updated;
-        });
-      }
-    });
-
-    fetchTransactionsFromAtlas().then((transactions) => {
-      if (transactions && Array.isArray(transactions)) {
-        setDemo((prev) => {
-          const updated = { ...prev, transactions };
-          persistDemoState(updated);
-          return updated;
-        });
-      }
-    });
-
-    syncAccountsFromAtlas().then((latestAccounts) => {
-      const accMap = latestAccounts || getAccounts();
-      if (accMap && typeof accMap === 'object') {
-        setDemo((prev) => {
-          const updated = syncAccountsIntoDemoState(prev, accMap);
-          persistDemoState(updated);
-          return updated;
-        });
-      }
+      // Fallback if /api/init is unavailable
+      fetchBarbersFromAtlas().then((b) => b && Array.isArray(b) && setDemo(p => ({ ...p, barbers: b })));
+      fetchServicesFromAtlas().then((s) => s && Array.isArray(s) && setDemo(p => ({ ...p, services: s })));
+      fetchAppointmentsFromAtlas().then((a) => a && Array.isArray(a) && setDemo(p => ({ ...p, appointments: a })));
+      fetchReviewsFromAtlas().then((r) => r && Array.isArray(r) && setDemo(p => ({ ...p, reviews: r })));
+      fetchQueueFromAtlas().then((q) => q && Array.isArray(q) && setDemo(p => ({ ...p, queue: q })));
+      fetchInventoryFromAtlas().then((i) => i && Array.isArray(i) && setDemo(p => ({ ...p, inventory: i })));
+      fetchDiscountsFromAtlas().then((d) => d && Array.isArray(d) && setDemo(p => ({ ...p, promotions: d })));
+      fetchTransactionsFromAtlas().then((t) => t && Array.isArray(t) && setDemo(p => ({ ...p, transactions: t })));
+      syncAccountsFromAtlas().then((acc) => {
+        if (acc) setDemo(p => syncAccountsIntoDemoState(p, acc));
+      });
     });
 
     const handleAccountsUpdated = (e) => {
@@ -154,33 +106,19 @@ export function StoreProvider({ children }) {
       try {
         const isFullSync = forceFull || syncCycle % 4 === 0;
 
-        // High-priority operational feeds (Queue & Appointments)
-        const tasks = [
-          fetchQueueFromAtlas().catch(() => null),
-          fetchAppointmentsFromAtlas().catch(() => null)
-        ];
-
         if (isFullSync) {
-          tasks.push(
-            syncAccountsFromAtlas().catch(() => null),
-            fetchReviewsFromAtlas().catch(() => null),
-            fetchInventoryFromAtlas().catch(() => null),
-            fetchDiscountsFromAtlas().catch(() => null),
-            fetchTransactionsFromAtlas().catch(() => null),
-            fetchBarbersFromAtlas().catch(() => null),
-            fetchServicesFromAtlas().catch(() => null)
-          );
+          // Consolidated full sync in 1 single request
+          const fullData = await fetchShopInitFromAtlas().catch(() => null);
+          if (fullData && applyFullSyncData(fullData)) {
+            return;
+          }
         }
 
-        const results = await Promise.all(tasks);
-        const [latestQueue, latestAppointments] = results;
-        const latestAccounts = isFullSync ? results[2] : null;
-        const latestReviews = isFullSync ? results[3] : null;
-        const latestInventory = isFullSync ? results[4] : null;
-        const latestDiscounts = isFullSync ? results[5] : null;
-        const latestTransactions = isFullSync ? results[6] : null;
-        const latestBarbers = isFullSync ? results[7] : null;
-        const latestServices = isFullSync ? results[8] : null;
+        // Operational high-priority sync: Queue & Appointments (2 small endpoints)
+        const [latestQueue, latestAppointments] = await Promise.all([
+          fetchQueueFromAtlas().catch(() => null),
+          fetchAppointmentsFromAtlas().catch(() => null)
+        ]);
 
         setDemo((prev) => {
           let updated = { ...prev };
@@ -192,34 +130,6 @@ export function StoreProvider({ children }) {
           }
           if (latestAppointments && Array.isArray(latestAppointments)) {
             updated.appointments = latestAppointments;
-            changed = true;
-          }
-          if (latestAccounts && typeof latestAccounts === 'object') {
-            updated = syncAccountsIntoDemoState(updated, latestAccounts);
-            changed = true;
-          }
-          if (latestReviews && Array.isArray(latestReviews)) {
-            updated.reviews = latestReviews;
-            changed = true;
-          }
-          if (latestInventory && Array.isArray(latestInventory)) {
-            updated.inventory = latestInventory;
-            changed = true;
-          }
-          if (latestDiscounts && Array.isArray(latestDiscounts)) {
-            updated.promotions = latestDiscounts;
-            changed = true;
-          }
-          if (latestTransactions && Array.isArray(latestTransactions)) {
-            updated.transactions = latestTransactions;
-            changed = true;
-          }
-          if (latestBarbers && Array.isArray(latestBarbers)) {
-            updated.barbers = latestBarbers;
-            changed = true;
-          }
-          if (latestServices && Array.isArray(latestServices)) {
-            updated.services = latestServices;
             changed = true;
           }
 

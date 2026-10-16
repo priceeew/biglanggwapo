@@ -1,5 +1,6 @@
 import { connectDB } from '../../server/db.js';
 import { Account } from '../../server/models/Account.js';
+import { ensureHostedImageCloud } from '../../server/utils/hostedImage.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -39,10 +40,14 @@ export default async function handler(req, res) {
         }
       }
       const cleanEmail = payload.email.trim().toLowerCase();
+      const { _id, __v, ...cleanPayload } = payload;
+      if (cleanPayload.image) {
+        cleanPayload.image = await ensureHostedImageCloud(cleanPayload.image);
+      }
       const saved = await Account.findOneAndUpdate(
         { email: cleanEmail },
-        { ...payload, email: cleanEmail },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { $set: { ...cleanPayload, email: cleanEmail } },
+        { upsert: true, returnDocument: 'after', new: true, setDefaultsOnInsert: true }
       );
       return res.status(200).json({ success: true, account: saved });
     }

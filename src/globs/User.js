@@ -26,19 +26,32 @@ function loadStoredAccounts() {
 
 export const accounts = loadStoredAccounts();
 
-// Asynchronously pull latest accounts from MongoDB Atlas into local cache
-export async function syncAccountsFromAtlas() {
+export function applyAccounts(newAccounts) {
+  if (newAccounts && typeof newAccounts === 'object') {
+    Object.assign(accounts, newAccounts);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+        window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: accounts }));
+      } catch (err) {
+        console.error('Failed to update accounts storage:', err);
+      }
+    }
+  }
+  return accounts;
+}
+
+// Asynchronously pull latest accounts from MongoDB Atlas into local cache (or apply pre-fetched map)
+export async function syncAccountsFromAtlas(inboundAccounts = null) {
+  if (inboundAccounts && typeof inboundAccounts === 'object') {
+    return applyAccounts(inboundAccounts);
+  }
   try {
     const res = await fetch('/api/accounts');
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.accounts) {
-        Object.assign(accounts, data.accounts);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-          window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: accounts }));
-        }
-        return accounts;
+        return applyAccounts(data.accounts);
       }
     }
   } catch {

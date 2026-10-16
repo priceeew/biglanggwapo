@@ -594,3 +594,17 @@ export async function clearTransactionsInAtlas() {
   }
 }
 
+// Consolidated initial load from MongoDB Atlas (1 single network roundtrip)
+export async function fetchShopInitFromAtlas() {
+  try {
+    const res = await fetch('/api/init');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.data : null;
+  } catch (err) {
+    console.warn('[Bootstrap] /api/init unreachable:', err.message);
+    return null;
+  }
+}
+
+

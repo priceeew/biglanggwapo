@@ -4,10 +4,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-try {
-  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
-} catch {
-  // Ignored in non-supported environments
+if (!process.env.VERCEL && !process.env.AWS_REGION) {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+  } catch {
+    // Ignored in non-supported environments
+  }
 }
 
 let cached = global._mongooseConn;
@@ -18,13 +20,19 @@ export async function connectDB() {
   }
 
   if (mongoose.connection.readyState === 2) {
-    // Already connecting, await the established connection
+    // Already connecting, await the established connection with a race timeout
     await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 3000);
       const onConnected = () => {
+        clearTimeout(timer);
         cleanup();
         resolve();
       };
       const onError = () => {
+        clearTimeout(timer);
         cleanup();
         resolve();
       };
@@ -47,8 +55,9 @@ export async function connectDB() {
 
   try {
     const conn = await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 8000,
-      connectTimeoutMS: 10000
+      autoIndex: false,
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 8000
     });
     global._mongooseConn = conn;
     console.log('MongoDB Atlas connected successfully!');

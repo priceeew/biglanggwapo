@@ -69,6 +69,93 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Consolidated bootstrap endpoint (single roundtrip for fast initial load)
+app.get('/api/init', async (req, res) => {
+  try {
+    await connectDB();
+    const [
+      accountsList,
+      services,
+      barbers,
+      queue,
+      appointments,
+      reviews,
+      inventory,
+      discounts,
+      transactions
+    ] = await Promise.all([
+      Account.find().lean(),
+      Service.find().lean(),
+      Barber.find().lean(),
+      Queue.find().sort({ createdAt: 1 }).lean(),
+      Appointment.find().sort({ createdAt: -1 }).lean(),
+      Review.find().sort({ createdAt: -1 }).lean(),
+      Inventory.find().lean(),
+      Discount.find().lean(),
+      Transaction.find().sort({ createdAt: -1 }).lean()
+    ]);
+
+    const accountsMap = {};
+    for (const acc of accountsList) {
+      if (acc.email) {
+        accountsMap[acc.email.toLowerCase()] = acc;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        accounts: accountsMap,
+        services,
+        barbers,
+        queue,
+        appointments,
+        reviews,
+        inventory,
+        promotions: discounts,
+        transactions
+      }
+    });
+  } catch (err) {
+    console.error('Failed to bootstrap app data:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Automatically offload raw base64 images so MongoDB Atlas documents stay tiny (<1KB)
+async function ensureHostedImage(img, prefix = 'img') {
+  if (!img || typeof img !== 'string' || !img.startsWith('data:image/')) {
+    return img;
+  }
+  const extMatch = img.match(/^data:image\/([a-zA-Z0-9+]+);base64,/);
+  const ext = extMatch ? (extMatch[1] === 'jpeg' ? 'jpg' : extMatch[1]) : 'png';
+  const cleanBase64 = img.includes('base64,') ? img.split('base64,')[1] : img;
+
+  const apiKey = process.env.IMGBB_API_KEY || 'b5f603fbcbfc780cdf47ec7b318b8b38';
+  if (apiKey) {
+    try {
+      const form = new URLSearchParams();
+      form.append('image', cleanBase64);
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(5000)
+      });
+      const data = await res.json();
+      if (data?.data?.url) return data.data.url;
+    } catch {}
+  }
+
+  try {
+    const safeName = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+    const filePath = path.join(uploadsDir, safeName);
+    await fs.promises.writeFile(filePath, Buffer.from(cleanBase64, 'base64'));
+    return `/uploads/${safeName}`;
+  } catch {
+    return img;
+  }
+}
+
 // Accounts API (MongoDB Atlas)
 app.get('/api/accounts', async (req, res) => {
   try {
@@ -105,6 +192,9 @@ app.post('/api/accounts', async (req, res) => {
     }
     const cleanEmail = payload.email.trim().toLowerCase();
     const { _id, __v, ...cleanPayload } = payload;
+    if (cleanPayload.image) {
+      cleanPayload.image = await ensureHostedImage(cleanPayload.image, 'avatar');
+    }
     const saved = await Account.findOneAndUpdate(
       { email: cleanEmail },
       { $set: { ...cleanPayload, email: cleanEmail } },
@@ -151,6 +241,9 @@ app.post('/api/barbers', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing barber id' });
     }
     const { _id, ...cleanBarber } = barber;
+    if (cleanBarber.image) {
+      cleanBarber.image = await ensureHostedImage(cleanBarber.image, 'barber');
+    }
     const saved = await Barber.findOneAndUpdate(
       { id: barber.id },
       { $set: cleanBarber },
@@ -202,6 +295,9 @@ app.post('/api/services', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing service id' });
     }
     const { _id, ...cleanService } = service;
+    if (cleanService.image) {
+      cleanService.image = await ensureHostedImage(cleanService.image, 'service');
+    }
     const saved = await Service.findOneAndUpdate(
       { id: service.id },
       { $set: cleanService },
@@ -253,6 +349,9 @@ app.post('/api/appointments', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing appointment id' });
     }
     const { _id, ...cleanApt } = apt;
+    if (cleanApt.barberImage) {
+      cleanApt.barberImage = await ensureHostedImage(cleanApt.barberImage, 'barber');
+    }
     const saved = await Appointment.findOneAndUpdate(
       { id: apt.id },
       { $set: cleanApt },
