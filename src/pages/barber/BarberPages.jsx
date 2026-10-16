@@ -2,15 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
-  ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards,
-  Camera, Upload, Trash2, Pencil, KeyRound, Eye, EyeOff, ShieldCheck,
-  Sparkles, AlertCircle, Info, Bell, X, BadgeCheck, LockKeyhole, Plus
+  ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
 } from 'lucide-react';
 import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
-import { saveAppointmentToAtlas, saveQueueItemToAtlas, uploadImageFile, saveBarberToAtlas } from '../../services/api';
-import { STANDARD_SCHEDULES } from '../../utils/scheduling';
+import { saveAppointmentToAtlas, saveQueueItemToAtlas } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState,
   getCustomerPhoto
@@ -60,12 +56,25 @@ export function BarberPage({ path }) {
 }
 
 export function BarberDashboard() {
-  const { demo } = useStore();
+  const { demo, commit, notify } = useStore();
   const { barberName, matchesBarber, barber } = useCurrentBarber();
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const current = myQueue.find((item) => item.status === 'In Service');
   const next = myQueue.find((item) => item.status === 'Waiting');
+
+  const callNextClient = (item) => {
+    commit((state) => {
+      const nextState = demoApi.callNext(state, item.id);
+      const updatedQueue = nextState.queue.find((q) => q.id === item.id);
+      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      const apt = nextState.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) saveAppointmentToAtlas(apt);
+      return nextState;
+    });
+    notify(`Called ${item.customerName} to the chair!`);
+    notifyCustomerTurn(item, demo, notify);
+  };
 
   const myAppointments = (demo.appointments || []).filter(matchesBarber);
   const activeApts = myAppointments.filter((item) => !['Cancelled', 'No-show'].includes(item.status));
@@ -135,6 +144,13 @@ export function BarberDashboard() {
                   <h2>{next.customerName} is waiting</h2>
                   <p>{next.serviceName} · Ready to call to chair</p>
                 </div>
+                <button
+                  className="button button-dark button-small"
+                  style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap' }}
+                  onClick={() => callNextClient(next)}
+                >
+                  Call to chair
+                </button>
               </>
             ) : (
               <>
@@ -274,6 +290,7 @@ export function BarberQueue() {
       return next;
     });
     notify(`Called ${item.customerName} to the chair!`);
+    notifyCustomerTurn(item, demo, notify);
   };
 
   const start = (item) => {
@@ -286,6 +303,7 @@ export function BarberQueue() {
       return next;
     });
     notify(`Service started for ${item.customerName}!`);
+    notifyCustomerTurn(item, demo, notify);
   };
 
   return (
@@ -318,6 +336,13 @@ export function BarberQueue() {
             {item.status === 'In Service' && (
               <Link to="/barber/service-session" className="button button-soft button-small">Open chair</Link>
             )}
+            <button
+              className="icon-button"
+              title="Send email alert: Kayo na po ang gugupitan!"
+              onClick={() => notifyCustomerTurn(item, demo, notify)}
+            >
+              <Mail size={16} />
+            </button>
           </div>
         ))}
         {!list.length && <EmptyState title="The queue is clear" copy="When reception marks a customer as arrived or registers a walk-in, they appear here live." />}
@@ -416,6 +441,7 @@ export function ServiceSession() {
         return next;
       });
       notify(`Called ${current.customerName} to the chair!`);
+      notifyCustomerTurn(current, demo, notify);
     } else if (current.status === 'Called') {
       commit((state) => {
         const next = demoApi.startService(state, current.id);
@@ -426,6 +452,7 @@ export function ServiceSession() {
         return next;
       });
       notify(`Service session started for ${current.customerName}!`);
+      notifyCustomerTurn(current, demo, notify);
     } else if (current.status === 'In Service') {
       commit((state) => {
         const next = demoApi.completeService(state, current.id, notes);

@@ -4,6 +4,7 @@ const AppointmentSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   customerId: { type: String },
   customerName: { type: String, required: true },
+  customerEmail: { type: String, default: '' },
   serviceId: { type: String },
   serviceName: { type: String, required: true },
   barberId: { type: String, required: true },

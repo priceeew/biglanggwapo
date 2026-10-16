@@ -5,6 +5,7 @@ const QueueSchema = new mongoose.Schema({
   number: { type: String, required: true },
   customerId: { type: String, default: '' },
   customerName: { type: String, required: true },
+  customerEmail: { type: String, default: '' },
   barberId: { type: String, required: true },
   barberName: { type: String, required: true },
   serviceName: { type: String, required: true },

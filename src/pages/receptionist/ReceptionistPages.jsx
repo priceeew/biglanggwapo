@@ -3,17 +3,14 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronRight, Download,
   FileText, ListOrdered, MoreHorizontal, Package, Plus, Search, ShoppingBag, Star,
-  Tag, Trash2, UserPlus, WalletCards, X, Zap, Camera, Upload, Pencil,
-  KeyRound, Eye, EyeOff, ShieldCheck, UserRound, Bell, BadgeCheck, LockKeyhole,
-  Clock3, Sparkles
+  Tag, Trash2, UserPlus, WalletCards, X, Zap
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
 import {
   sendInviteNotification, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
-  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas,
-  uploadImageFile
+  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas
 } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
@@ -408,6 +405,7 @@ export function QueueManagement() {
 
   const act = (id, type) => {
     if (type === 'remove' && !window.confirm('Remove this queue entry?')) return;
+    const targetItem = demo.queue.find((q) => q.id === id);
     const api = type === 'start' ? demoApi.startService : type === 'skip' ? demoApi.skipQueue : demoApi.removeQueue;
     commit((state) => {
       const next = api(state, id);
@@ -422,6 +420,9 @@ export function QueueManagement() {
       return next;
     });
     notify(type === 'start' ? 'Customer called into service.' : `Queue entry ${type}ped.`);
+    if (type === 'start' && targetItem) {
+      notifyCustomerTurn(targetItem, demo, notify);
+    }
   };
 
   return (
@@ -460,6 +461,13 @@ export function QueueManagement() {
                   <ChevronRight size={16} />
                 </button>
               )}
+              <button
+                className="icon-button"
+                title="Send email alert: Kayo na po ang gugupitan!"
+                onClick={() => notifyCustomerTurn(item, demo, notify)}
+              >
+                <Mail size={16} />
+              </button>
               <button className="icon-button" title="Remove" onClick={() => act(item.id, 'remove')}>
                 <X size={16} />
               </button>
