@@ -585,7 +585,7 @@ export function AdminManagementPage({ collection }) {
         phone: formData.phone.trim(),
         image: formData.image || ''
       }));
-      saveAccount({
+      await saveAccount({
         email: cleanEmail,
         password: formData.password,
         role: 'receptionist',
@@ -644,7 +644,7 @@ export function AdminManagementPage({ collection }) {
       };
       commit((state) => demoApi.addBarber(state, newBarberObj));
       saveBarberToAtlas(newBarberObj);
-      saveAccount({
+      await saveAccount({
         email: cleanEmail,
         password: formData.password,
         role: 'barber',
@@ -686,7 +686,7 @@ export function AdminManagementPage({ collection }) {
         preferences: formData.preferences.trim(),
         notes: formData.notes.trim()
       }));
-      saveAccount({
+      await saveAccount({
         email: cleanEmail,
         password: formData.password,
         role: 'customer',

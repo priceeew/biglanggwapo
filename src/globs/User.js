@@ -33,11 +33,6 @@ export async function syncAccountsFromAtlas() {
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.accounts) {
-        Object.keys(accounts).forEach((k) => {
-          if (k !== 'admin@biglanggwapo.com' && !data.accounts[k]) {
-            delete accounts[k];
-          }
-        });
         Object.assign(accounts, data.accounts);
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
@@ -74,7 +69,7 @@ export function revokeSession({ email, id, name, reason = 'deactivated' }) {
   } catch {}
 }
 
-export function saveAccount(account) {
+export async function saveAccount(account) {
   if (!account || !account.email) return;
   const cleanEmail = account.email.trim().toLowerCase();
   accounts[cleanEmail] = { ...(accounts[cleanEmail] || {}), ...account, email: cleanEmail };
@@ -92,12 +87,23 @@ export function saveAccount(account) {
 
   // Sync to MongoDB Atlas
   try {
-    fetch('/api/accounts', {
+    const res = await fetch('/api/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(accounts[cleanEmail])
-    }).catch(() => {});
-  } catch {}
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data.success && data.account) {
+      accounts[cleanEmail] = { ...accounts[cleanEmail], ...data.account };
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+      }
+    } else if (res.status >= 400) {
+      console.warn('[Accounts] Atlas save returned error:', data.message || res.statusText);
+    }
+  } catch (err) {
+    console.warn('[Accounts] Could not reach server to sync account:', err.message);
+  }
 
   return accounts[cleanEmail];
 }

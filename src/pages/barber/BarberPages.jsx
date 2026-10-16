@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
-  ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
+  ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards,
+  Camera, Upload, Trash2, Pencil, KeyRound, Eye, EyeOff, ShieldCheck,
+  Sparkles, AlertCircle, Info, Bell, X, BadgeCheck, LockKeyhole, Plus
 } from 'lucide-react';
 import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAppointmentToAtlas, saveQueueItemToAtlas } from '../../services/api';
+import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
+import { saveAppointmentToAtlas, saveQueueItemToAtlas, uploadImageFile, saveBarberToAtlas } from '../../services/api';
+import { STANDARD_SCHEDULES } from '../../utils/scheduling';
 import {
-  BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState
+  BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState,
+  getCustomerPhoto
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
 
@@ -50,6 +55,7 @@ export function BarberPage({ path }) {
   if (path === '/barber/service-session') return <ServiceSession />;
   if (path === '/barber/schedule') return <BarberSchedule />;
   if (path === '/barber/reviews') return <BarberReviewsPage />;
+  if (path === '/barber/profile') return <BarberProfile />;
   return <BarberPerformance />;
 }
 
@@ -618,17 +624,50 @@ export function BarberPerformance() {
       <SectionCard title={`All Client Reviews & Ratings (${myReviews.length})`} description="Feedback and ratings left by clients who sat in your chair.">
         <DataTable columns={['Client & Date', 'Service', 'Rating', 'Feedback']}>
           <tbody>
-            {myReviews.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <div className="table-person">
-                    <span className="avatar avatar-xs">{(r.customer || 'CU').slice(0, 2).toUpperCase()}</span>
-                    <div>
-                      <strong>{r.customer || 'Anonymous'}</strong>
-                      <small className="table-sub">{humanDate(r.date)}</small>
+            {myReviews.map((r) => {
+              const custPhoto = getCustomerPhoto(r, demo);
+              return (
+                <tr key={r.id}>
+                  <td>
+                    <div className="table-person">
+                      {custPhoto ? (
+                        <>
+                          <img
+                            key={custPhoto}
+                            src={custPhoto}
+                            alt={r.customer || 'Customer'}
+                            className="avatar avatar-xs"
+                            style={{
+                              width: 26,
+                              height: 26,
+                              objectFit: 'cover',
+                              borderRadius: '50%',
+                              border: '1px solid var(--gold)',
+                              flexShrink: 0,
+                              display: 'block'
+                            }}
+                            onLoad={(e) => {
+                              e.currentTarget.style.display = 'block';
+                              if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'none';
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                            }}
+                          />
+                          <span className="avatar avatar-xs" style={{ display: 'none' }}>
+                            {(r.customer || 'CU').slice(0, 2).toUpperCase()}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="avatar avatar-xs">{(r.customer || 'CU').slice(0, 2).toUpperCase()}</span>
+                      )}
+                      <div>
+                        <strong>{r.customer || 'Anonymous'}</strong>
+                        <small className="table-sub">{humanDate(r.date)}</small>
+                      </div>
                     </div>
-                  </div>
-                </td>
+                  </td>
                 <td>{r.service || 'Haircut'}</td>
                 <td>
                   <span style={{ color: 'var(--gold)', letterSpacing: '1px' }}>{stars(r.rating || 5)}</span>
@@ -647,7 +686,8 @@ export function BarberPerformance() {
                   )}
                 </td>
               </tr>
-            ))}
+            );
+          })}
           </tbody>
         </DataTable>
         {!myReviews.length && (
@@ -666,3 +706,764 @@ export function BarberReviewsPage() {
   const { barber, barberName } = useCurrentBarber();
   return <ReviewsManagement role="barber" barberFilter={barber || { name: barberName }} />;
 }
+
+const POPULAR_SPECIALTIES = [
+  'Fade Specialist',
+  'Beard Sculpting',
+  'Taper & Edge Up',
+  'Classic Pompadour',
+  'Razor Shave',
+  'Scissor Mastery',
+  'Hair Art & Designs',
+  'Hot Towel Treatment',
+  'Kids Haircut'
+];
+
+export function BarberProfile() {
+  const { session, updateSession, notify, commit, demo } = useStore();
+  const { barber, barberId, barberName, matchesBarber } = useCurrentBarber();
+
+  const getInitialPhoto = () => {
+    const acc = session?.email ? getAccounts()[session.email.toLowerCase()] : null;
+    return session?.photoUrl || session?.image || barber?.photoUrl || barber?.image || acc?.photoUrl || acc?.image || '';
+  };
+
+  const [editing, setEditing] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState(getInitialPhoto);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const [name, setName] = useState(barber?.name || session?.name || 'Barber');
+  const [phone, setPhone] = useState(barber?.phone || session?.phone || '');
+  const [specialty, setSpecialty] = useState(barber?.specialty || session?.specialty || 'Classic Fades, Beard Grooming');
+  const [bio, setBio] = useState(barber?.bio || session?.bio || 'Skilled professional barber at Biglang Gwapo.');
+  const [schedule, setSchedule] = useState(barber?.schedule || session?.schedule || STANDARD_SCHEDULES[0]);
+  const [leaveStatus, setLeaveStatus] = useState(barber?.leaveStatus || 'Active / On Duty');
+  const [leaveNotes, setLeaveNotes] = useState(barber?.leaveNotes || '');
+
+  // Password change state
+  const [showPasswordSection, setShowPasswordSection] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [isUpdatingPwd, setIsUpdatingPwd] = useState(false);
+
+  // Preference alerts state
+  const prefKey = `biglanggwapo-barber-prefs-${session?.email || 'default'}`;
+  const loadPrefs = () => {
+    try {
+      const saved = window.localStorage.getItem(prefKey);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { appointmentAlerts: true, queueChimes: true, breakReminders: false };
+  };
+  const [prefs, setPrefs] = useState(loadPrefs);
+
+  const togglePref = (key) => {
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { window.localStorage.setItem(prefKey, JSON.stringify(next)); } catch {}
+      notify('Alert preferences updated.');
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (barber || session) {
+      if (barber?.name || session?.name) setName(barber?.name || session?.name || '');
+      if (barber?.phone || session?.phone) setPhone(barber?.phone || session?.phone || '');
+      if (barber?.specialty || session?.specialty) setSpecialty(barber?.specialty || session?.specialty || '');
+      if (barber?.bio || session?.bio) setBio(barber?.bio || session?.bio || '');
+      if (barber?.schedule || session?.schedule) setSchedule(barber?.schedule || session?.schedule || STANDARD_SCHEDULES[0]);
+      if (barber?.leaveStatus) setLeaveStatus(barber.leaveStatus);
+      if (barber?.leaveNotes) setLeaveNotes(barber.leaveNotes);
+      const latestPhoto = getInitialPhoto();
+      setPhotoUrl(latestPhoto);
+    }
+  }, [barber, session]);
+
+  const initials = barber?.initials || (name ? name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'BR');
+
+  const toggleSpecialtyChip = (chip) => {
+    if (!editing) return;
+    const currentList = specialty ? specialty.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    if (currentList.some((s) => s.toLowerCase() === chip.toLowerCase())) {
+      const next = currentList.filter((s) => s.toLowerCase() !== chip.toLowerCase());
+      setSpecialty(next.join(', '));
+    } else {
+      const next = [...currentList, chip];
+      setSpecialty(next.join(', '));
+    }
+  };
+
+  const isSpecialtySelected = (chip) => {
+    if (!specialty) return false;
+    const currentList = specialty.split(',').map((s) => s.trim().toLowerCase());
+    return currentList.includes(chip.toLowerCase());
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png'];
+    const validExt = /\.(jpe?g|png)$/i;
+    if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+      e.target.value = '';
+      return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      e.target.value = '';
+      return notify('Image must be under 10MB', 'error');
+    }
+
+    // Immediate optimistic local preview for instant UI update without refresh
+    const localPreview = URL.createObjectURL(file);
+    setPhotoUrl(localPreview);
+    if (updateSession) {
+      updateSession({ photoUrl: localPreview, image: localPreview });
+    }
+
+    setIsUploadingPhoto(true);
+    notify('Uploading profile picture to cloud...');
+
+    try {
+      const res = await uploadImageFile(file);
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+
+      if (res && res.success && res.url) {
+        const newPhoto = res.url;
+        setPhotoUrl(newPhoto);
+
+        if (updateSession) {
+          updateSession({ photoUrl: newPhoto, image: newPhoto });
+        }
+
+        if (session?.email) {
+          saveAccount({
+            email: session.email,
+            photoUrl: newPhoto,
+            image: newPhoto,
+            name: name.trim(),
+            phone: phone.trim()
+          });
+        }
+
+        const bId = barber?.id || session?.barberId || barberId;
+        commit((state) => {
+          const updatedBarbers = (state.barbers || []).map((b) => {
+            if (b.id === bId || (b.email && b.email.toLowerCase() === (session?.email || '').toLowerCase())) {
+              return { ...b, image: newPhoto, photoUrl: newPhoto };
+            }
+            return b;
+          });
+          return { ...state, barbers: updatedBarbers };
+        });
+
+        if (barber) {
+          saveBarberToAtlas({ ...barber, image: newPhoto, photoUrl: newPhoto }).catch(() => {});
+        }
+
+        notify('Profile picture updated successfully!', 'success');
+      } else {
+        notify(res?.error || 'Failed to upload profile picture.', 'error');
+      }
+    } catch (err) {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+      notify(`Upload failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handlePhotoRemove = () => {
+    setPhotoUrl('');
+    if (updateSession) {
+      updateSession({ photoUrl: '', image: '' });
+    }
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        photoUrl: '',
+        image: '',
+        name: name.trim(),
+        phone: phone.trim()
+      });
+    }
+    const bId = barber?.id || session?.barberId || barberId;
+    commit((state) => {
+      const updatedBarbers = (state.barbers || []).map((b) => {
+        if (b.id === bId || (b.email && b.email.toLowerCase() === (session?.email || '').toLowerCase())) {
+          return { ...b, image: '', photoUrl: '' };
+        }
+        return b;
+      });
+      return { ...state, barbers: updatedBarbers };
+    });
+    if (barber) {
+      saveBarberToAtlas({ ...barber, image: '', photoUrl: '' }).catch(() => {});
+    }
+    notify('Profile picture removed.', 'success');
+  };
+
+  const handleSaveProfile = async () => {
+    if (!name.trim()) {
+      return notify('Barber name cannot be empty.', 'error');
+    }
+    if (phone.trim()) {
+      const phoneError = validatePhone(phone);
+      if (phoneError) return notify(phoneError, 'error');
+    }
+
+    setEditing(false);
+    const bId = barber?.id || session?.barberId || barberId;
+    const computedStatus = leaveStatus === 'On Leave' ? 'On Leave' : leaveStatus === 'On Break' ? 'On Break' : 'On shift';
+    const updatedBarberData = {
+      name: name.trim(),
+      phone: phone.trim(),
+      specialty: specialty.trim() || 'All-around cuts',
+      bio: bio.trim(),
+      schedule,
+      leaveStatus,
+      leaveNotes: leaveNotes.trim(),
+      status: computedStatus,
+      photoUrl,
+      image: photoUrl
+    };
+
+    if (updateSession) {
+      updateSession({
+        ...updatedBarberData,
+        barberId: bId
+      });
+    }
+
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        name: updatedBarberData.name,
+        phone: updatedBarberData.phone,
+        specialty: updatedBarberData.specialty,
+        bio: updatedBarberData.bio,
+        schedule: updatedBarberData.schedule,
+        image: photoUrl,
+        photoUrl,
+        role: 'barber',
+        barberId: bId
+      });
+    }
+
+    commit((state) => {
+      const cleanEmail = (session?.email || '').toLowerCase().trim();
+      const updatedBarbers = (state.barbers || []).map((b) => {
+        if (b.id === bId || (cleanEmail && b.email && b.email.toLowerCase() === cleanEmail)) {
+          return { ...b, ...updatedBarberData };
+        }
+        return b;
+      });
+
+      const updatedApts = (state.appointments || []).map((a) => {
+        if (a.barberId === bId || (a.barberName && a.barberName.toLowerCase() === (barber?.name || '').toLowerCase())) {
+          return { ...a, barberName: updatedBarberData.name };
+        }
+        return a;
+      });
+
+      const updatedQueue = (state.queue || []).map((q) => {
+        if (q.barberId === bId || (q.barberName && q.barberName.toLowerCase() === (barber?.name || '').toLowerCase())) {
+          return { ...q, barberName: updatedBarberData.name };
+        }
+        return q;
+      });
+
+      return {
+        ...state,
+        barbers: updatedBarbers,
+        appointments: updatedApts,
+        queue: updatedQueue
+      };
+    });
+
+    try {
+      const fullBarberPayload = {
+        ...(barber || {}),
+        id: bId,
+        ...updatedBarberData
+      };
+      await saveBarberToAtlas(fullBarberPayload);
+    } catch (err) {
+      console.warn('Failed to sync barber to Atlas:', err);
+    }
+
+    notify('Barber profile & shift customization saved successfully!', 'success');
+  };
+
+  const handleUpdatePassword = (e) => {
+    e.preventDefault();
+    if (!newPassword) {
+      return notify('Please enter a new password.', 'error');
+    }
+    const pwdErr = validatePassword(newPassword);
+    if (pwdErr) {
+      return notify(pwdErr, 'error');
+    }
+    if (newPassword !== confirmPassword) {
+      return notify('Passwords do not match.', 'error');
+    }
+
+    setIsUpdatingPwd(true);
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        password: newPassword
+      });
+      notify('Password updated successfully!', 'success');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordSection(false);
+    } else {
+      notify('Unable to update password: No logged in session email found.', 'error');
+    }
+    setIsUpdatingPwd(false);
+  };
+
+  const myAppointments = (demo.appointments || []).filter(matchesBarber);
+  const completedCount = myAppointments.filter((a) => a.status === 'Completed').length;
+  const myReviews = (demo.reviews || []).filter(
+    (r) => r.barber && barberName && r.barber.toLowerCase().includes(barberName.toLowerCase())
+  );
+  const avgRating = myReviews.length > 0
+    ? (myReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / myReviews.length).toFixed(1)
+    : (barber?.rating ? Number(barber.rating).toFixed(1) : '5.0');
+
+  // Password requirements real-time check
+  const hasEightChars = newPassword.length >= 8;
+  const hasNumber = /\d/.test(newPassword);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(newPassword);
+  const passwordsMatch = newPassword && newPassword === confirmPassword;
+
+  return (
+    <>
+      <BentoStats
+        items={[
+          ['Barber chair', name, Scissors, specialty || 'All-around cuts'],
+          ['Phone number', phone || 'Not registered', BadgeCheck, 'SMS booking updates'],
+          ['Duty status', leaveStatus, Clock3, schedule.split('·')[0].trim() || 'Working shift'],
+          ['Client rating', `${avgRating} ★`, Star, `${myReviews.length} client review${myReviews.length === 1 ? '' : 's'}`]
+        ]}
+      />
+
+      <Toolbar
+        title="Barber Profile & Settings"
+        description="Customize your professional barber profile, specialization, working hours, and security settings."
+      />
+
+      <div className="profile-layout">
+        <div className="profile-card">
+          <div className="profile-header">
+            <div className="profile-avatar-wrapper">
+              {photoUrl ? (
+                <img
+                  key={photoUrl}
+                  src={photoUrl}
+                  alt={name}
+                  className="profile-avatar-img"
+                  onLoad={(e) => {
+                    e.currentTarget.style.display = 'block';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'none';
+                    }
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                    }
+                  }}
+                />
+              ) : null}
+              <span
+                className="avatar avatar-xl"
+                style={{
+                  display: photoUrl ? 'none' : 'inline-grid',
+                  width: 78,
+                  height: 78,
+                  fontSize: '20px'
+                }}
+              >
+                {initials}
+              </span>
+
+              <label
+                className="profile-avatar-camera-btn"
+                title={photoUrl ? 'Change profile picture' : 'Upload profile picture'}
+                style={{ opacity: isUploadingPhoto ? 0.7 : 1, cursor: isUploadingPhoto ? 'wait' : 'pointer' }}
+              >
+                <Camera size={14} />
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  disabled={isUploadingPhoto}
+                  style={{ display: 'none' }}
+                  onChange={handlePhotoUpload}
+                />
+              </label>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0 }}>{name}</h2>
+                <span className="status-badge active" style={{ fontSize: '10px' }}>
+                  <i /> {leaveStatus}
+                </span>
+              </div>
+              <p style={{ marginTop: '4px' }}>
+                {session?.email || barber?.email || 'barber@biglanggwapo.com'} · {completedCount} haircuts completed
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <label
+                  className="button button-soft button-small"
+                  style={{ cursor: isUploadingPhoto ? 'wait' : 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Upload size={13} />
+                  {isUploadingPhoto ? 'Uploading photo...' : photoUrl ? 'Change photo' : 'Upload photo'}
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                    disabled={isUploadingPhoto}
+                    style={{ display: 'none' }}
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
+                {photoUrl && (
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={handlePhotoRemove}
+                    style={{ color: 'var(--red)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={13} /> Remove
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              onClick={() => setEditing(!editing)}
+            >
+              <Pencil size={14} /> {editing ? 'Cancel' : 'Edit profile'}
+            </button>
+          </div>
+
+          <div className="profile-fields">
+            <label className="field-label">
+              Full name
+              <input
+                className="input"
+                autoComplete="off"
+                disabled={!editing}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Marco Reyes"
+              />
+            </label>
+
+            <label className="field-label">
+              Email address
+              <input
+                className="input"
+                disabled
+                value={session?.email || barber?.email || 'barber@biglanggwapo.com'}
+                readOnly
+              />
+            </label>
+
+            <label className="field-label">
+              Contact mobile number
+              <input
+                className="input"
+                type="tel"
+                inputMode="numeric"
+                maxLength={11}
+                disabled={!editing}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                placeholder="09170000000"
+              />
+            </label>
+
+            <div className="field-label">
+              Specialties & cuts
+              <input
+                className="input"
+                disabled={!editing}
+                value={specialty}
+                onChange={(e) => setSpecialty(e.target.value)}
+                placeholder="e.g. Fade Specialist, Beard Sculpting, Classic Pompadour"
+              />
+              <span style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+                {editing ? 'Click chips below to toggle popular haircut specialties:' : 'Popular specialties offered:'}
+              </span>
+              <div className="profile-tag-group">
+                {POPULAR_SPECIALTIES.map((spec) => {
+                  const active = isSpecialtySelected(spec);
+                  return (
+                    <button
+                      key={spec}
+                      type="button"
+                      className={`profile-tag-chip ${active ? 'active' : ''}`}
+                      onClick={() => toggleSpecialtyChip(spec)}
+                      disabled={!editing}
+                    >
+                      {active ? <Check size={11} /> : <Plus size={11} />}
+                      {spec}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="field-label">
+              Barber public bio & greeting
+              <textarea
+                className="input textarea"
+                disabled={!editing}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Share your grooming philosophy and experience..."
+                rows={3}
+              />
+            </label>
+
+            <hr className="profile-section-divider" />
+            <div className="profile-section-heading">
+              <Clock3 size={15} color="var(--gold)" /> Shift Schedule & Duty Availability
+            </div>
+
+            <label className="field-label">
+              Permanent working shift
+              <select
+                className="input"
+                disabled={!editing}
+                value={schedule}
+                onChange={(e) => setSchedule(e.target.value)}
+              >
+                {STANDARD_SCHEDULES.map((sch) => (
+                  <option key={sch} value={sch}>
+                    {sch}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <label className="field-label">
+                Duty availability status
+                <select
+                  className="input"
+                  disabled={!editing}
+                  value={leaveStatus}
+                  onChange={(e) => setLeaveStatus(e.target.value)}
+                >
+                  <option value="Active / On Duty">Active / On Duty</option>
+                  <option value="On Break">On Break</option>
+                  <option value="On Leave">On Leave / Unavailable</option>
+                </select>
+              </label>
+
+              <label className="field-label">
+                Duty / Break note
+                <input
+                  className="input"
+                  disabled={!editing}
+                  value={leaveNotes}
+                  onChange={(e) => setLeaveNotes(e.target.value)}
+                  placeholder="e.g. Lunch break until 2:00 PM"
+                />
+              </label>
+            </div>
+          </div>
+
+          {editing && (
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+              <button
+                type="button"
+                className="button button-dark"
+                onClick={handleSaveProfile}
+              >
+                Save changes <Check size={15} />
+              </button>
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="settings-card">
+          <span className="eyebrow gold">Account & Security</span>
+
+          <div className="setting-row">
+            <div>
+              <strong>Account Password</strong>
+              <small>Manage and update your staff login password.</small>
+            </div>
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              onClick={() => setShowPasswordSection(!showPasswordSection)}
+            >
+              <KeyRound size={13} /> {showPasswordSection ? 'Hide' : 'Change password'}
+            </button>
+          </div>
+
+          {showPasswordSection && (
+            <form onSubmit={handleUpdatePassword} style={{ background: 'var(--paper)', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <label className="field-label">
+                  New Password
+                  <div className="password-input">
+                    <input
+                      className="input"
+                      type={showPwd ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 8 chars, 1 number, 1 special"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwd(!showPwd)}
+                      tabIndex={-1}
+                      title={showPwd ? 'Hide' : 'Show'}
+                    >
+                      {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </label>
+
+                <label className="field-label">
+                  Confirm New Password
+                  <input
+                    className="input"
+                    type={showPwd ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                  />
+                </label>
+
+                <div className="password-req-box">
+                  <div className={`password-req-item ${hasEightChars ? 'met' : ''}`}>
+                    {hasEightChars ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#999' }} />}
+                    At least 8 characters
+                  </div>
+                  <div className={`password-req-item ${hasNumber ? 'met' : ''}`}>
+                    {hasNumber ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#999' }} />}
+                    At least one number (0–9)
+                  </div>
+                  <div className={`password-req-item ${hasSpecial ? 'met' : ''}`}>
+                    {hasSpecial ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#999' }} />}
+                    At least one special character (!@#$%^&*...)
+                  </div>
+                  {confirmPassword && (
+                    <div className={`password-req-item ${passwordsMatch ? 'met' : ''}`}>
+                      {passwordsMatch ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--red)' }} />}
+                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    type="submit"
+                    className="button button-dark button-small"
+                    disabled={isUpdatingPwd || !hasEightChars || !hasNumber || !hasSpecial || !passwordsMatch}
+                  >
+                    Update Password <LockKeyhole size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() => {
+                      setShowPasswordSection(false);
+                      setNewPassword('');
+                      setConfirmPassword('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          <hr className="profile-section-divider" />
+          <span className="eyebrow gold">Notification Preferences</span>
+
+          <div className="setting-row">
+            <div>
+              <strong>Queue Chair Alerts</strong>
+              <small>Audio chime and visual prompt when client is assigned.</small>
+            </div>
+            <button
+              type="button"
+              className={`toggle ${prefs.queueChimes ? 'active' : ''}`}
+              onClick={() => togglePref('queueChimes')}
+              aria-label="Toggle queue alerts"
+            >
+              <span />
+            </button>
+          </div>
+
+          <div className="setting-row">
+            <div>
+              <strong>Appointment Reminders</strong>
+              <small>15-minute advance notification for upcoming bookings.</small>
+            </div>
+            <button
+              type="button"
+              className={`toggle ${prefs.appointmentAlerts ? 'active' : ''}`}
+              onClick={() => togglePref('appointmentAlerts')}
+              aria-label="Toggle appointment reminders"
+            >
+              <span />
+            </button>
+          </div>
+
+          <div className="setting-row">
+            <div>
+              <strong>Break Time Alerts</strong>
+              <small>Reminder prompts when break period begins and ends.</small>
+            </div>
+            <button
+              type="button"
+              className={`toggle ${prefs.breakReminders ? 'active' : ''}`}
+              onClick={() => togglePref('breakReminders')}
+              aria-label="Toggle break alerts"
+            >
+              <span />
+            </button>
+          </div>
+
+          <hr className="profile-section-divider" />
+          <div style={{ background: '#fcfaf6', border: '1px solid #ebdcc5', borderRadius: '8px', padding: '14px', fontSize: '11px', color: '#684a1e' }}>
+            <strong style={{ display: 'block', color: 'var(--ink)', marginBottom: '4px' }}>
+              Biglang Gwapo Barber Shop · Pulilan Branch
+            </strong>
+            Station: <strong>Chair #{barber?.id ? barber.id.replace('bar-', '').toUpperCase() : '1'}</strong> · Assigned Desk
+            <p style={{ margin: '6px 0 0', fontSize: '10.5px', color: 'var(--muted)' }}>
+              Profile changes synchronize in real-time across the booking calendar, walk-in register, and customer search.
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+

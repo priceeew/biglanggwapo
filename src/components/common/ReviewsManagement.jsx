@@ -4,9 +4,10 @@ import {
   Upload, Image as ImageIcon, Scissors, User, MessageSquare
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars, today } from '../../context/StoreContext';
+import { getAccounts } from '../../data';
 import { saveReviewToAtlas, deleteReviewFromAtlas, uploadImageFile } from '../../services/api';
 import {
-  BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState
+  BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, getCustomerPhoto
 } from './UIComponents';
 
 export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
@@ -189,11 +190,23 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
     const selectedBarber = (demo.barbers || []).find((b) => b.id === formBarberId);
     const selectedService = (demo.services || []).find((s) => s.id === formServiceId);
 
+    const trimmedCustomer = formCustomer.trim();
+    const cleanCustomerName = trimmedCustomer.toLowerCase();
+    const matchedCustomer = (demo.customers || []).find((c) =>
+      c.name && c.name.toLowerCase().trim() === cleanCustomerName
+    );
+    const matchedAcc = Object.values(getAccounts ? getAccounts() : {}).find((a) =>
+      a.name && a.name.toLowerCase().trim() === cleanCustomerName
+    );
+    const customerImage = matchedCustomer?.photoUrl || matchedCustomer?.image || matchedAcc?.photoUrl || matchedAcc?.image || '';
+    const customerId = matchedCustomer?.id || matchedAcc?.customerId || matchedAcc?._id || '';
+
     const newReview = {
       id: `rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      customer: formCustomer.trim(),
-      initials: formCustomer.trim().split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU',
-      customerId: '',
+      customer: trimmedCustomer,
+      customerImage,
+      initials: trimmedCustomer.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'CU',
+      customerId,
       barber: selectedBarber?.name || 'Shop Barber',
       barberId: selectedBarber?.id || formBarberId,
       service: selectedService?.name || 'Haircut Service',
@@ -347,7 +360,40 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
                 <tr key={r.id}>
                   <td>
                     <div className="table-person">
-                      <span className="avatar avatar-xs">{(r.customer || 'CU').slice(0, 2).toUpperCase()}</span>
+                      {getCustomerPhoto(r, demo) ? (
+                        <>
+                          <img
+                            key={getCustomerPhoto(r, demo)}
+                            src={getCustomerPhoto(r, demo)}
+                            alt={r.customer}
+                            className="avatar avatar-xs"
+                            style={{
+                              width: 26,
+                              height: 26,
+                              objectFit: 'cover',
+                              borderRadius: '50%',
+                              border: '1px solid var(--gold)',
+                              flexShrink: 0,
+                              display: 'block'
+                            }}
+                            onLoad={(e) => {
+                              e.currentTarget.style.display = 'block';
+                              if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'none';
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                            }}
+                          />
+                          <span className="avatar avatar-xs" style={{ display: 'none' }}>
+                            {(r.customer || 'CU').slice(0, 2).toUpperCase()}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="avatar avatar-xs">
+                          {(r.customer || 'CU').slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
                       <div>
                         <strong>{r.customer || 'Anonymous Client'}</strong>
                         <small className="table-sub">{humanDate(r.date)}</small>

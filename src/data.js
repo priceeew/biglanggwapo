@@ -56,7 +56,8 @@ export const navItems = {
     { label: 'Payment & Checkout', path: '/receptionist/payments', icon: 'WalletCards' },
     { label: 'Products & Retail', path: '/receptionist/products', icon: 'ShoppingBag' },
     { label: 'Customer Reviews', path: '/receptionist/reviews', icon: 'Star' },
-    { label: 'Daily Transactions', path: '/receptionist/transactions', icon: 'ReceiptText' }
+    { label: 'Daily Transactions', path: '/receptionist/transactions', icon: 'ReceiptText' },
+    { label: 'My Profile', path: '/receptionist/profile', icon: 'UserRound' }
   ],
   barber: [
     { label: 'Overview', path: '/barber', icon: 'LayoutDashboard' },
@@ -66,7 +67,8 @@ export const navItems = {
     { label: 'Service Session', path: '/barber/service-session', icon: 'Scissors' },
     { label: 'Customer Reviews', path: '/barber/reviews', icon: 'Star' },
     { label: 'My Schedule', path: '/barber/schedule', icon: 'Clock3' },
-    { label: 'My Performance', path: '/barber/performance', icon: 'TrendingUp' }
+    { label: 'My Performance', path: '/barber/performance', icon: 'TrendingUp' },
+    { label: 'My Profile', path: '/barber/profile', icon: 'UserRound' }
   ],
   admin: [
     { label: 'Overview', path: '/admin', icon: 'LayoutDashboard' },
@@ -88,7 +90,7 @@ export const navItems = {
 export const routeManifest = [
   ['/', 'Home'], ['/services', 'Services'], ['/barbers', 'Barbers'], ['/booking', 'Booking'],
   ['/customer', 'Customer Overview'], ['/my-appointments', 'My Appointments'], ['/queue-status', 'Queue Status'], ['/service-history', 'Service History'], ['/reviews', 'Reviews & Ratings'], ['/profile', 'My Profile'],
-  ['/receptionist', 'Receptionist Dashboard'], ['/receptionist/appointments', 'Appointment Management'], ['/receptionist/walk-ins', 'Walk-in Registration'], ['/receptionist/queue', 'Queue Management'], ['/receptionist/customers', 'Customer Management'], ['/receptionist/payments', 'Payment & Checkout'], ['/receptionist/products', 'Products & Retail'], ['/receptionist/reviews', 'Customer Reviews'], ['/receptionist/transactions', 'Daily Transactions'],
-  ['/barber', 'Barber Dashboard'], ['/barber/appointments', 'Barber Appointments'], ['/barber/queue', 'Barber Queue'], ['/barber/customer-details', 'Customer Details'], ['/barber/service-session', 'Service Session'], ['/barber/reviews', 'Barber Reviews'], ['/barber/schedule', 'Barber Schedule'], ['/barber/performance', 'Barber Performance'],
+  ['/receptionist', 'Receptionist Dashboard'], ['/receptionist/appointments', 'Appointment Management'], ['/receptionist/walk-ins', 'Walk-in Registration'], ['/receptionist/queue', 'Queue Management'], ['/receptionist/customers', 'Customer Management'], ['/receptionist/payments', 'Payment & Checkout'], ['/receptionist/products', 'Products & Retail'], ['/receptionist/reviews', 'Customer Reviews'], ['/receptionist/transactions', 'Daily Transactions'], ['/receptionist/profile', 'Receptionist Profile & Settings'],
+  ['/barber', 'Barber Dashboard'], ['/barber/appointments', 'Barber Appointments'], ['/barber/queue', 'Barber Queue'], ['/barber/customer-details', 'Customer Details'], ['/barber/service-session', 'Service Session'], ['/barber/reviews', 'Barber Reviews'], ['/barber/schedule', 'Barber Schedule'], ['/barber/performance', 'Barber Performance'], ['/barber/profile', 'Barber Profile & Settings'],
   ['/admin', 'Admin Dashboard'], ['/admin/receptionists', 'Manage Receptionists'], ['/admin/barbers', 'Manage Barbers'], ['/admin/customers', 'Manage Customers'], ['/admin/services', 'Manage Services'], ['/admin/appointments', 'Manage Appointments'], ['/admin/schedules', 'Manage Schedules'], ['/admin/transactions', 'Manage Transactions'], ['/admin/reports', 'Reports & Analytics'], ['/admin/inventory', 'Inventory Management'], ['/admin/promotions', 'Promotions & Discounts'], ['/admin/reviews', 'Customer Reviews'], ['/admin/settings', 'System Settings']
 ].map(([path, title]) => ({ path, title }));

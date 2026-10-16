@@ -5,6 +5,35 @@ import {
   ZoomIn, X
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
+import { getAccounts } from '../../data';
+
+export function getCustomerPhoto(review, demo) {
+  if (!review) return '';
+  if (review.customerImage) return review.customerImage;
+  if (review.customerPhoto) return review.customerPhoto;
+
+  const cleanName = (review.customer || '').toLowerCase().trim();
+  const cId = review.customerId;
+
+  // 1. Look up in demo.customers
+  const cust = (demo?.customers || []).find((c) =>
+    (cId && c.id === cId) ||
+    (cleanName && c.name && c.name.toLowerCase().trim() === cleanName)
+  );
+  if (cust?.photoUrl) return cust.photoUrl;
+  if (cust?.image) return cust.image;
+
+  // 2. Look up in registered accounts
+  const accounts = typeof getAccounts === 'function' ? getAccounts() : {};
+  const matchedAcc = Object.values(accounts || {}).find((a) =>
+    (cId && (a.customerId === cId || a._id === cId || a.id === cId)) ||
+    (cleanName && a.name && a.name.toLowerCase().trim() === cleanName)
+  );
+  if (matchedAcc?.photoUrl) return matchedAcc.photoUrl;
+  if (matchedAcc?.image) return matchedAcc.image;
+
+  return '';
+}
 
 export function Toast({ toast }) {
   if (!toast) return null;
@@ -247,11 +276,45 @@ export function ReviewCard({ review, onImageClick }) {
   const { demo } = useStore();
   const appointment = demo?.appointments?.find((a) => a.id === review.appointmentId);
   const serviceName = review.serviceName || review.service || appointment?.serviceName;
+  const customerPhoto = getCustomerPhoto(review, demo);
 
   return (
     <article className="review-card">
       <div className="review-top">
-        <span className="avatar avatar-sm">{review.initials}</span>
+        {customerPhoto ? (
+          <>
+            <img
+              key={customerPhoto}
+              src={customerPhoto}
+              alt={review.customer}
+              className="avatar avatar-sm"
+              style={{
+                width: 34,
+                height: 34,
+                objectFit: 'cover',
+                borderRadius: '50%',
+                border: '1.5px solid var(--gold)',
+                flexShrink: 0,
+                display: 'block'
+              }}
+              onLoad={(e) => {
+                e.currentTarget.style.display = 'block';
+                if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'none';
+              }}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+              }}
+            />
+            <span className="avatar avatar-sm" style={{ display: 'none' }}>
+              {review.initials || (review.customer ? review.customer.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'CU')}
+            </span>
+          </>
+        ) : (
+          <span className="avatar avatar-sm">
+            {review.initials || (review.customer ? review.customer.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'CU')}
+          </span>
+        )}
         <div>
           <strong>{review.customer}</strong>
           <small style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>

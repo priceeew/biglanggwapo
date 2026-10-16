@@ -901,6 +901,7 @@ export function CustomerReviews() {
   };
 
   // Show reviews submitted by the currently logged-in customer
+  const currentCustomerPhoto = session?.photoUrl || session?.image || (session?.email ? getAccounts()[session.email.toLowerCase()]?.photoUrl : '') || '';
   const myReviews = demo.reviews.filter((review) => 
     (review.customerId && review.customerId === currentCustomerId) ||
     review.customer === currentCustomerName ||
@@ -911,19 +912,25 @@ export function CustomerReviews() {
       return {
         ...review,
         customer: currentCustomerName,
+        customerImage: review.customerImage || currentCustomerPhoto,
         initials: currentInitials
       };
     }
-    return review;
+    return {
+      ...review,
+      customerImage: review.customerImage || (review.customer === currentCustomerName ? currentCustomerPhoto : '')
+    };
   });
 
   const submit = (event) => {
     event.preventDefault();
     if (!eligible) return notify('Reviews are available after a completed demo service.', 'error');
     if (!rating || !comment.trim()) return notify('Choose a rating and add feedback.', 'error');
+    const customerImg = session?.photoUrl || session?.image || (session?.email ? getAccounts()[session.email.toLowerCase()]?.photoUrl : '') || '';
     const newReview = {
       id: `rev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       customer: currentCustomerName,
+      customerImage: customerImg,
       initials: currentInitials,
       customerId: currentCustomerId,
       barber: eligible.barberName,
@@ -1152,6 +1159,13 @@ export function CustomerProfile() {
       return notify('Image must be under 10MB', 'error');
     }
 
+    // Immediate optimistic local preview for instant UI update without refresh
+    const localPreview = URL.createObjectURL(file);
+    setPhotoUrl(localPreview);
+    if (updateSession) {
+      updateSession({ photoUrl: localPreview, image: localPreview });
+    }
+
     setIsUploadingPhoto(true);
     notify('Uploading profile picture to cloud...');
 
@@ -1249,9 +1263,16 @@ export function CustomerProfile() {
             <div className="profile-avatar-wrapper">
               {photoUrl ? (
                 <img
+                  key={photoUrl}
                   src={photoUrl}
                   alt={name}
                   className="profile-avatar-img"
+                  onLoad={(e) => {
+                    e.currentTarget.style.display = 'block';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'none';
+                    }
+                  }}
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
                     if (e.currentTarget.nextElementSibling) {

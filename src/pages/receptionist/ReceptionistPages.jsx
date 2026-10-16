@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronRight, Download,
   FileText, ListOrdered, MoreHorizontal, Package, Plus, Search, ShoppingBag, Star,
-  Tag, Trash2, UserPlus, WalletCards, X, Zap
+  Tag, Trash2, UserPlus, WalletCards, X, Zap, Camera, Upload, Pencil,
+  KeyRound, Eye, EyeOff, ShieldCheck, UserRound, Bell, BadgeCheck, LockKeyhole,
+  Clock3, Sparkles
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAccount, validatePassword, validatePhone } from '../../data';
+import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
 import {
   sendInviteNotification, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
-  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas
+  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas,
+  uploadImageFile
 } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
@@ -27,6 +30,7 @@ export function ReceptionistPage({ path }) {
   if (path === '/receptionist/payments') return <PaymentPage />;
   if (path === '/receptionist/products') return <ReceptionistProductsPage />;
   if (path === '/receptionist/reviews') return <ReceptionistReviewsPage />;
+  if (path === '/receptionist/profile') return <ReceptionistProfile />;
   return <TransactionsPage />;
 }
 
@@ -485,7 +489,7 @@ export function CustomerManagement() {
     `${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(query.toLowerCase())
   );
 
-  const handleCreateCustomer = (e) => {
+  const handleCreateCustomer = async (e) => {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password) {
       return notify('All fields (Name, Email, Phone, Password) are required.', 'error');
@@ -516,7 +520,7 @@ export function CustomerManagement() {
     };
 
     commit((state) => demoApi.addCustomer(state, createdCustomer));
-    saveAccount({
+    await saveAccount({
       email: cleanEmail,
       password: form.password,
       role: 'customer',
@@ -1190,3 +1194,707 @@ export function TransactionsPage() {
     </>
   );
 }
+
+export function useCurrentReceptionist() {
+  const { demo, session } = useStore();
+
+  const cleanEmail = (session?.email || '').toLowerCase().trim();
+  const matched = (demo.receptionists || []).find((r) =>
+    (session?.receptionistId && r.id === session.receptionistId) ||
+    (cleanEmail && r.email && r.email.toLowerCase().trim() === cleanEmail) ||
+    (session?.name && r.name && r.name.toLowerCase().trim() === session.name.toLowerCase().trim())
+  );
+
+  const receptionistId = session?.receptionistId || matched?.id || demo.receptionists?.[0]?.id || 'rec-1';
+  const receptionistName = session?.name || matched?.name || demo.receptionists?.[0]?.name || 'Receptionist';
+  const receptionist = matched || demo.receptionists?.[0] || null;
+
+  return { receptionist, receptionistId, receptionistName };
+}
+
+const DESK_TITLE_PRESETS = [
+  'Front Desk Officer',
+  'Lead Cashier & Host',
+  'Queue & Booking Specialist',
+  'Customer Experience Lead',
+  'Store Shift Supervisor'
+];
+
+const RECEPTION_SCHEDULES = [
+  'Morning Shift · 8:30 AM – 5:30 PM (Break: 12:00 PM – 1:00 PM)',
+  'Mid Shift · 10:00 AM – 7:00 PM (Break: 1:30 PM – 2:30 PM)',
+  'Closing Shift · 11:30 AM – 8:30 PM (Break: 2:30 PM – 3:30 PM)',
+  'Full Day Weekend · 9:00 AM – 8:00 PM (Break: 1:00 PM – 2:00 PM)'
+];
+
+export function ReceptionistProfile() {
+  const { session, updateSession, notify, commit, demo } = useStore();
+  const { receptionist, receptionistId, receptionistName } = useCurrentReceptionist();
+
+  const getInitialPhoto = () => {
+    const acc = session?.email ? getAccounts()[session.email.toLowerCase()] : null;
+    return session?.photoUrl || session?.image || receptionist?.photoUrl || receptionist?.image || acc?.photoUrl || acc?.image || '';
+  };
+
+  const [editing, setEditing] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState(getInitialPhoto);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const [name, setName] = useState(receptionist?.name || session?.name || 'Receptionist');
+  const [phone, setPhone] = useState(receptionist?.phone || session?.phone || '');
+  const [deskTitle, setDeskTitle] = useState(receptionist?.deskTitle || session?.deskTitle || 'Front Desk Officer');
+  const [deskNotes, setDeskNotes] = useState(receptionist?.deskNotes || session?.deskNotes || 'Station 1 · Active & Ready');
+  const [shiftSchedule, setShiftSchedule] = useState(receptionist?.shiftSchedule || session?.shiftSchedule || RECEPTION_SCHEDULES[0]);
+  const [dailyGreeting, setDailyGreeting] = useState(receptionist?.dailyGreeting || session?.dailyGreeting || 'Welcome to Biglang Gwapo! Please take a seat or check in at the counter.');
+
+  // Password change state
+  const [showPasswordSection, setShowPasswordSection] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [isUpdatingPwd, setIsUpdatingPwd] = useState(false);
+
+  // Preference alerts state
+  const prefKey = `biglanggwapo-receptionist-prefs-${session?.email || 'default'}`;
+  const loadPrefs = () => {
+    try {
+      const saved = window.localStorage.getItem(prefKey);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { walkInAlerts: true, appointmentAlerts: true, checkoutSound: false };
+  };
+  const [prefs, setPrefs] = useState(loadPrefs);
+
+  const togglePref = (key) => {
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { window.localStorage.setItem(prefKey, JSON.stringify(next)); } catch {}
+      notify('Alert preferences updated.');
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (receptionist || session) {
+      if (receptionist?.name || session?.name) setName(receptionist?.name || session?.name || '');
+      if (receptionist?.phone || session?.phone) setPhone(receptionist?.phone || session?.phone || '');
+      if (receptionist?.deskTitle || session?.deskTitle) setDeskTitle(receptionist?.deskTitle || session?.deskTitle || 'Front Desk Officer');
+      if (receptionist?.deskNotes || session?.deskNotes) setDeskNotes(receptionist?.deskNotes || session?.deskNotes || 'Station 1 · Active & Ready');
+      if (receptionist?.shiftSchedule || session?.shiftSchedule) setShiftSchedule(receptionist?.shiftSchedule || session?.shiftSchedule || RECEPTION_SCHEDULES[0]);
+      if (receptionist?.dailyGreeting || session?.dailyGreeting) setDailyGreeting(receptionist?.dailyGreeting || session?.dailyGreeting || '');
+      const latestPhoto = getInitialPhoto();
+      setPhotoUrl(latestPhoto);
+    }
+  }, [receptionist, session]);
+
+  const initials = receptionist?.initials || (name ? name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'RC');
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png'];
+    const validExt = /\.(jpe?g|png)$/i;
+    if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+      e.target.value = '';
+      return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      e.target.value = '';
+      return notify('Image must be under 10MB', 'error');
+    }
+
+    // Immediate optimistic local preview for instant UI update without refresh
+    const localPreview = URL.createObjectURL(file);
+    setPhotoUrl(localPreview);
+    if (updateSession) {
+      updateSession({ photoUrl: localPreview, image: localPreview });
+    }
+
+    setIsUploadingPhoto(true);
+    notify('Uploading profile picture to cloud...');
+
+    try {
+      const res = await uploadImageFile(file);
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+
+      if (res && res.success && res.url) {
+        const newPhoto = res.url;
+        setPhotoUrl(newPhoto);
+
+        if (updateSession) {
+          updateSession({ photoUrl: newPhoto, image: newPhoto });
+        }
+
+        if (session?.email) {
+          saveAccount({
+            email: session.email,
+            photoUrl: newPhoto,
+            image: newPhoto,
+            name: name.trim(),
+            phone: phone.trim()
+          });
+        }
+
+        const rId = receptionist?.id || session?.receptionistId || receptionistId;
+        commit((state) => {
+          const cleanEmail = (session?.email || '').toLowerCase().trim();
+          const updatedRecs = (state.receptionists || []).map((r) => {
+            if (r.id === rId || (r.email && r.email.toLowerCase().trim() === cleanEmail)) {
+              return { ...r, image: newPhoto, photoUrl: newPhoto };
+            }
+            return r;
+          });
+          return { ...state, receptionists: updatedRecs };
+        });
+
+        notify('Profile picture updated successfully!', 'success');
+      } else {
+        notify(res?.error || 'Failed to upload profile picture.', 'error');
+      }
+    } catch (err) {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+      notify(`Upload failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handlePhotoRemove = () => {
+    setPhotoUrl('');
+    if (updateSession) {
+      updateSession({ photoUrl: '', image: '' });
+    }
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        photoUrl: '',
+        image: '',
+        name: name.trim(),
+        phone: phone.trim()
+      });
+    }
+    const rId = receptionist?.id || session?.receptionistId || receptionistId;
+    commit((state) => {
+      const cleanEmail = (session?.email || '').toLowerCase().trim();
+      const updatedRecs = (state.receptionists || []).map((r) => {
+        if (r.id === rId || (r.email && r.email.toLowerCase().trim() === cleanEmail)) {
+          return { ...r, image: '', photoUrl: '' };
+        }
+        return r;
+      });
+      return { ...state, receptionists: updatedRecs };
+    });
+    notify('Profile picture removed.', 'success');
+  };
+
+  const handleSaveProfile = async () => {
+    if (!name.trim()) {
+      return notify('Receptionist name cannot be empty.', 'error');
+    }
+    if (phone.trim()) {
+      const phoneError = validatePhone(phone);
+      if (phoneError) return notify(phoneError, 'error');
+    }
+
+    setEditing(false);
+    const rId = receptionist?.id || session?.receptionistId || receptionistId;
+    const updatedRecData = {
+      name: name.trim(),
+      phone: phone.trim(),
+      deskTitle: deskTitle.trim() || 'Front Desk Officer',
+      deskNotes: deskNotes.trim(),
+      shiftSchedule,
+      dailyGreeting: dailyGreeting.trim(),
+      photoUrl,
+      image: photoUrl
+    };
+
+    if (updateSession) {
+      updateSession({
+        ...updatedRecData,
+        receptionistId: rId
+      });
+    }
+
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        name: updatedRecData.name,
+        phone: updatedRecData.phone,
+        deskTitle: updatedRecData.deskTitle,
+        deskNotes: updatedRecData.deskNotes,
+        shiftSchedule: updatedRecData.shiftSchedule,
+        image: photoUrl,
+        photoUrl,
+        role: 'receptionist',
+        receptionistId: rId
+      });
+    }
+
+    commit((state) => {
+      const cleanEmail = (session?.email || '').toLowerCase().trim();
+      const updatedRecs = (state.receptionists || []).map((r) => {
+        if (r.id === rId || (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)) {
+          return { ...r, ...updatedRecData };
+        }
+        return r;
+      });
+      return {
+        ...state,
+        receptionists: updatedRecs
+      };
+    });
+
+    notify('Receptionist profile & front-desk customization saved successfully!', 'success');
+  };
+
+  const handleUpdatePassword = (e) => {
+    e.preventDefault();
+    if (!newPassword) {
+      return notify('Please enter a new password.', 'error');
+    }
+    const pwdErr = validatePassword(newPassword);
+    if (pwdErr) {
+      return notify(pwdErr, 'error');
+    }
+    if (newPassword !== confirmPassword) {
+      return notify('Passwords do not match.', 'error');
+    }
+
+    setIsUpdatingPwd(true);
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        password: newPassword
+      });
+      notify('Password updated successfully!', 'success');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordSection(false);
+    } else {
+      notify('Unable to update password: No logged in session email found.', 'error');
+    }
+    setIsUpdatingPwd(false);
+  };
+
+  // Password requirements real-time check
+  const hasEightChars = newPassword.length >= 8;
+  const hasNumber = /\d/.test(newPassword);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>_\-+=\\/\[\]~`]/.test(newPassword);
+  const passwordsMatch = newPassword && newPassword === confirmPassword;
+
+  const todayAppointments = (demo.appointments || []).filter((item) => item.date === today);
+  const todayTransactions = (demo.transactions || []).filter((item) => item.date === today);
+  const sales = todayTransactions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+  return (
+    <>
+      <BentoStats
+        items={[
+          ['Front Desk Lead', name, UserRound, deskTitle || 'Front Desk Officer'],
+          ['Contact phone', phone || 'Not registered', BadgeCheck, 'Station phone & SMS'],
+          ['Front Desk Shift', shiftSchedule.split('·')[0].trim() || 'Day Shift', Clock3, 'Station 1 Active'],
+          ["Today's Sales", currency(sales), WalletCards, `${todayTransactions.length} transaction${todayTransactions.length === 1 ? '' : 's'} verified`]
+        ]}
+      />
+
+      <Toolbar
+        title="Receptionist Profile & Settings"
+        description="Customize your front-desk identity, shift schedule, daily announcements, and account security."
+      />
+
+      <div className="profile-layout">
+        <div className="profile-card">
+          <div className="profile-header">
+            <div className="profile-avatar-wrapper">
+              {photoUrl ? (
+                <img
+                  key={photoUrl}
+                  src={photoUrl}
+                  alt={name}
+                  className="profile-avatar-img"
+                  onLoad={(e) => {
+                    e.currentTarget.style.display = 'block';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'none';
+                    }
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                    }
+                  }}
+                />
+              ) : null}
+              <span
+                className="avatar avatar-xl"
+                style={{
+                  display: photoUrl ? 'none' : 'inline-grid',
+                  width: 78,
+                  height: 78,
+                  fontSize: '20px'
+                }}
+              >
+                {initials}
+              </span>
+
+              <label
+                className="profile-avatar-camera-btn"
+                title={photoUrl ? 'Change profile picture' : 'Upload profile picture'}
+                style={{ opacity: isUploadingPhoto ? 0.7 : 1, cursor: isUploadingPhoto ? 'wait' : 'pointer' }}
+              >
+                <Camera size={14} />
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  disabled={isUploadingPhoto}
+                  style={{ display: 'none' }}
+                  onChange={handlePhotoUpload}
+                />
+              </label>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0 }}>{name}</h2>
+                <span className="status-badge active" style={{ fontSize: '10px' }}>
+                  <i /> Station 1 Active
+                </span>
+              </div>
+              <p style={{ marginTop: '4px' }}>
+                {session?.email || receptionist?.email || 'receptionist@biglanggwapo.com'} · {deskTitle}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <label
+                  className="button button-soft button-small"
+                  style={{ cursor: isUploadingPhoto ? 'wait' : 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Upload size={13} />
+                  {isUploadingPhoto ? 'Uploading photo...' : photoUrl ? 'Change photo' : 'Upload photo'}
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                    disabled={isUploadingPhoto}
+                    style={{ display: 'none' }}
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
+                {photoUrl && (
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={handlePhotoRemove}
+                    style={{ color: 'var(--red)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={13} /> Remove
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              onClick={() => setEditing(!editing)}
+            >
+              <Pencil size={14} /> {editing ? 'Cancel' : 'Edit profile'}
+            </button>
+          </div>
+
+          <div className="profile-fields">
+            <label className="field-label">
+              Full name
+              <input
+                className="input"
+                autoComplete="off"
+                disabled={!editing}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Maria Santos"
+              />
+            </label>
+
+            <label className="field-label">
+              Email address
+              <input
+                className="input"
+                disabled
+                value={session?.email || receptionist?.email || 'receptionist@biglanggwapo.com'}
+                readOnly
+              />
+            </label>
+
+            <label className="field-label">
+              Contact mobile number
+              <input
+                className="input"
+                type="tel"
+                inputMode="numeric"
+                maxLength={11}
+                disabled={!editing}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                placeholder="09170000000"
+              />
+            </label>
+
+            <div className="field-label">
+              Front desk title & position
+              <input
+                className="input"
+                disabled={!editing}
+                value={deskTitle}
+                onChange={(e) => setDeskTitle(e.target.value)}
+                placeholder="e.g. Front Desk Officer"
+              />
+              <span style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+                {editing ? 'Quick select preset role title:' : 'Standard desk positions:'}
+              </span>
+              <div className="profile-tag-group">
+                {DESK_TITLE_PRESETS.map((preset) => {
+                  const active = deskTitle.toLowerCase() === preset.toLowerCase();
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      className={`profile-tag-chip ${active ? 'active' : ''}`}
+                      onClick={() => editing && setDeskTitle(preset)}
+                      disabled={!editing}
+                    >
+                      {active ? <Check size={11} /> : <Plus size={11} />}
+                      {preset}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <hr className="profile-section-divider" />
+            <div className="profile-section-heading">
+              <Clock3 size={15} color="var(--gold)" /> Front Desk Shift & Operating Schedule
+            </div>
+
+            <label className="field-label">
+              Assigned desk shift
+              <select
+                className="input"
+                disabled={!editing}
+                value={shiftSchedule}
+                onChange={(e) => setShiftSchedule(e.target.value)}
+              >
+                {RECEPTION_SCHEDULES.map((sch) => (
+                  <option key={sch} value={sch}>
+                    {sch}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field-label">
+              Station status note
+              <input
+                className="input"
+                disabled={!editing}
+                value={deskNotes}
+                onChange={(e) => setDeskNotes(e.target.value)}
+                placeholder="e.g. Station 1 · Register Ready & Checked"
+              />
+            </label>
+
+            <label className="field-label">
+              Daily greeting & shift handover notice
+              <textarea
+                className="input textarea"
+                disabled={!editing}
+                value={dailyGreeting}
+                onChange={(e) => setDailyGreeting(e.target.value)}
+                placeholder="Greeting message or handover instructions for team members..."
+                rows={3}
+              />
+            </label>
+          </div>
+
+          {editing && (
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+              <button
+                type="button"
+                className="button button-dark"
+                onClick={handleSaveProfile}
+              >
+                Save changes <Check size={15} />
+              </button>
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="settings-card">
+          <span className="eyebrow gold">Account & Security</span>
+
+          <div className="setting-row">
+            <div>
+              <strong>Account Password</strong>
+              <small>Manage and update your staff login password.</small>
+            </div>
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              onClick={() => setShowPasswordSection(!showPasswordSection)}
+            >
+              <KeyRound size={13} /> {showPasswordSection ? 'Hide' : 'Change password'}
+            </button>
+          </div>
+
+          {showPasswordSection && (
+            <form onSubmit={handleUpdatePassword} style={{ background: 'var(--paper)', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <label className="field-label">
+                  New Password
+                  <div className="password-input">
+                    <input
+                      className="input"
+                      type={showPwd ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 8 chars, 1 number, 1 special"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwd(!showPwd)}
+                      tabIndex={-1}
+                      title={showPwd ? 'Hide' : 'Show'}
+                    >
+                      {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </label>
+
+                <label className="field-label">
+                  Confirm New Password
+                  <input
+                    className="input"
+                    type={showPwd ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                  />
+                </label>
+
+                <div className="password-req-box">
+                  <div className={`password-req-item ${hasEightChars ? 'met' : ''}`}>
+                    {hasEightChars ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#999' }} />}
+                    At least 8 characters
+                  </div>
+                  <div className={`password-req-item ${hasNumber ? 'met' : ''}`}>
+                    {hasNumber ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#999' }} />}
+                    At least one number (0–9)
+                  </div>
+                  <div className={`password-req-item ${hasSpecial ? 'met' : ''}`}>
+                    {hasSpecial ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#999' }} />}
+                    At least one special character (!@#$%^&*...)
+                  </div>
+                  {confirmPassword && (
+                    <div className={`password-req-item ${passwordsMatch ? 'met' : ''}`}>
+                      {passwordsMatch ? <Check size={12} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--red)' }} />}
+                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    type="submit"
+                    className="button button-dark button-small"
+                    disabled={isUpdatingPwd || !hasEightChars || !hasNumber || !hasSpecial || !passwordsMatch}
+                  >
+                    Update Password <LockKeyhole size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() => {
+                      setShowPasswordSection(false);
+                      setNewPassword('');
+                      setConfirmPassword('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          <hr className="profile-section-divider" />
+          <span className="eyebrow gold">Front Desk Preferences</span>
+
+          <div className="setting-row">
+            <div>
+              <strong>Walk-in Arrival Alerts</strong>
+              <small>Play alert chime when a new walk-in customer is added.</small>
+            </div>
+            <button
+              type="button"
+              className={`toggle ${prefs.walkInAlerts ? 'active' : ''}`}
+              onClick={() => togglePref('walkInAlerts')}
+              aria-label="Toggle walk-in alerts"
+            >
+              <span />
+            </button>
+          </div>
+
+          <div className="setting-row">
+            <div>
+              <strong>Appointment Check-in Reminders</strong>
+              <small>Notify front desk when scheduled booking window opens.</small>
+            </div>
+            <button
+              type="button"
+              className={`toggle ${prefs.appointmentAlerts ? 'active' : ''}`}
+              onClick={() => togglePref('appointmentAlerts')}
+              aria-label="Toggle appointment reminders"
+            >
+              <span />
+            </button>
+          </div>
+
+          <div className="setting-row">
+            <div>
+              <strong>Cash Register Sound</strong>
+              <small>Chime confirmation on successful checkout completion.</small>
+            </div>
+            <button
+              type="button"
+              className={`toggle ${prefs.checkoutSound ? 'active' : ''}`}
+              onClick={() => togglePref('checkoutSound')}
+              aria-label="Toggle checkout sound"
+            >
+              <span />
+            </button>
+          </div>
+
+          <hr className="profile-section-divider" />
+          <div style={{ background: '#fcfaf6', border: '1px solid #ebdcc5', borderRadius: '8px', padding: '14px', fontSize: '11px', color: '#684a1e' }}>
+            <strong style={{ display: 'block', color: 'var(--ink)', marginBottom: '4px' }}>
+              Biglang Gwapo Barber Shop · Front Counter
+            </strong>
+            Station: <strong>Front Desk 1</strong> · Reception & POS Register
+            <p style={{ margin: '6px 0 0', fontSize: '10.5px', color: 'var(--muted)' }}>
+              Authorized to register walk-ins, manage appointments, collect payments, and manage retail product stock.
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+

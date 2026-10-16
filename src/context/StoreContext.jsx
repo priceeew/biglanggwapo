@@ -142,42 +142,64 @@ export function StoreProvider({ children }) {
     };
     window.addEventListener('biglanggwapo-accounts-updated', handleAccountsUpdated);
 
-    // Aggressive periodic synchronization across devices for all Atlas collections
-    const syncAtlasData = async () => {
+    // Intelligent periodic synchronization with concurrency overlap guard
+    let isSyncing = false;
+    let syncCycle = 0;
+
+    const syncAtlasData = async (forceFull = false) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      syncCycle++;
+
       try {
-        const [
-          latestAccounts, latestQueue, latestReviews, latestAppointments,
-          latestInventory, latestDiscounts, latestTransactions, latestBarbers, latestServices
-        ] = await Promise.all([
-          syncAccountsFromAtlas().catch(() => null),
+        const isFullSync = forceFull || syncCycle % 4 === 0;
+
+        // High-priority operational feeds (Queue & Appointments)
+        const tasks = [
           fetchQueueFromAtlas().catch(() => null),
-          fetchReviewsFromAtlas().catch(() => null),
-          fetchAppointmentsFromAtlas().catch(() => null),
-          fetchInventoryFromAtlas().catch(() => null),
-          fetchDiscountsFromAtlas().catch(() => null),
-          fetchTransactionsFromAtlas().catch(() => null),
-          fetchBarbersFromAtlas().catch(() => null),
-          fetchServicesFromAtlas().catch(() => null)
-        ]);
+          fetchAppointmentsFromAtlas().catch(() => null)
+        ];
+
+        if (isFullSync) {
+          tasks.push(
+            syncAccountsFromAtlas().catch(() => null),
+            fetchReviewsFromAtlas().catch(() => null),
+            fetchInventoryFromAtlas().catch(() => null),
+            fetchDiscountsFromAtlas().catch(() => null),
+            fetchTransactionsFromAtlas().catch(() => null),
+            fetchBarbersFromAtlas().catch(() => null),
+            fetchServicesFromAtlas().catch(() => null)
+          );
+        }
+
+        const results = await Promise.all(tasks);
+        const [latestQueue, latestAppointments] = results;
+        const latestAccounts = isFullSync ? results[2] : null;
+        const latestReviews = isFullSync ? results[3] : null;
+        const latestInventory = isFullSync ? results[4] : null;
+        const latestDiscounts = isFullSync ? results[5] : null;
+        const latestTransactions = isFullSync ? results[6] : null;
+        const latestBarbers = isFullSync ? results[7] : null;
+        const latestServices = isFullSync ? results[8] : null;
 
         setDemo((prev) => {
           let updated = { ...prev };
           let changed = false;
 
-          if (latestAccounts && typeof latestAccounts === 'object') {
-            updated = syncAccountsIntoDemoState(updated, latestAccounts);
-            changed = true;
-          }
           if (latestQueue && Array.isArray(latestQueue)) {
             updated.queue = latestQueue;
             changed = true;
           }
-          if (latestReviews && Array.isArray(latestReviews)) {
-            updated.reviews = latestReviews;
-            changed = true;
-          }
           if (latestAppointments && Array.isArray(latestAppointments)) {
             updated.appointments = latestAppointments;
+            changed = true;
+          }
+          if (latestAccounts && typeof latestAccounts === 'object') {
+            updated = syncAccountsIntoDemoState(updated, latestAccounts);
+            changed = true;
+          }
+          if (latestReviews && Array.isArray(latestReviews)) {
+            updated.reviews = latestReviews;
             changed = true;
           }
           if (latestInventory && Array.isArray(latestInventory)) {
@@ -208,25 +230,27 @@ export function StoreProvider({ children }) {
         });
       } catch (err) {
         console.warn('Atlas periodic sync error:', err);
+      } finally {
+        isSyncing = false;
       }
     };
 
     const handleWindowFocus = () => {
-      syncAtlasData();
+      syncAtlasData(true);
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        syncAtlasData();
+        syncAtlasData(true);
       }
     };
 
     window.addEventListener('focus', handleWindowFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Fast polling interval (3.5 seconds) so actions sync across users without page reloads
+    // Controlled 6-second polling interval for operational data with overlap guard
     const syncInterval = setInterval(() => {
-      syncAtlasData();
-    }, 3500);
+      syncAtlasData(false);
+    }, 6000);
 
     const handleStorageChange = (e) => {
       if (e.key === 'biglanggwapo-revoked-session') {

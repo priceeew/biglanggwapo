@@ -5,6 +5,7 @@ const ReviewSchema = new mongoose.Schema({
   customer: { type: String, required: true },
   initials: { type: String, default: 'CU' },
   customerId: { type: String, default: '' },
+  customerImage: { type: String, default: '' },
   barber: { type: String, default: '' },
   barberId: { type: String, default: '' },
   service: { type: String, default: '' },

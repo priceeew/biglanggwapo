@@ -215,10 +215,15 @@ export function PublicLayout({ children }) {
                   ) : getUserPhoto(session, demo) ? (
                     <>
                       <img
+                        key={getUserPhoto(session, demo)}
                         src={getUserPhoto(session, demo)}
                         alt={session.name || 'User'}
                         className="brand-logo avatar-sm"
                         style={{ width: 34, height: 34, objectFit: 'cover' }}
+                        onLoad={(e) => {
+                          e.currentTarget.style.display = 'block';
+                          if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'none';
+                        }}
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
                           if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
@@ -252,9 +257,14 @@ export function PublicLayout({ children }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                             {getUserPhoto(session, demo) ? (
                               <img
+                                key={getUserPhoto(session, demo)}
                                 src={getUserPhoto(session, demo)}
                                 alt={session.name || 'Customer'}
                                 style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--gold)', flexShrink: 0 }}
+                                onLoad={(e) => {
+                                  e.currentTarget.style.display = 'block';
+                                  if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'none';
+                                }}
                                 onError={(e) => {
                                   e.currentTarget.style.display = 'none';
                                   if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
@@ -443,16 +453,30 @@ export function StaffLayout({ role, children }) {
             <button className="icon-button" title="Help">
               <CircleHelp size={18} />
             </button>
-            <div className="staff-user">
+            <div
+              className={`staff-user ${['barber', 'receptionist', 'customer'].includes(role) ? 'staff-user-clickable' : ''}`}
+              title={role === 'barber' ? 'Barber Profile & Settings' : role === 'receptionist' ? 'Receptionist Profile & Settings' : role === 'customer' ? 'Customer Profile & Settings' : 'Admin Desk'}
+              onClick={() => {
+                if (role === 'barber') navigate('/barber/profile');
+                else if (role === 'receptionist') navigate('/receptionist/profile');
+                else if (role === 'customer') navigate('/profile');
+              }}
+              style={['barber', 'receptionist', 'customer'].includes(role) ? { cursor: 'pointer' } : {}}
+            >
               {session?.role === 'admin' ? (
                 <img src="/logo.png" alt="Biglang Gwapo Logo" className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
               ) : getUserPhoto(session, demo, role) ? (
                 <>
                   <img
+                    key={getUserPhoto(session, demo, role)}
                     src={getUserPhoto(session, demo, role)}
                     alt={session?.name || 'User'}
                     className="brand-logo avatar-sm"
                     style={{ width: 34, height: 34, objectFit: 'cover' }}
+                    onLoad={(e) => {
+                      e.currentTarget.style.display = 'block';
+                      if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'none';
+                    }}
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';

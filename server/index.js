@@ -104,13 +104,16 @@ app.post('/api/accounts', async (req, res) => {
       }
     }
     const cleanEmail = payload.email.trim().toLowerCase();
+    const { _id, __v, ...cleanPayload } = payload;
     const saved = await Account.findOneAndUpdate(
       { email: cleanEmail },
-      { ...payload, email: cleanEmail },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { $set: { ...cleanPayload, email: cleanEmail } },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
+    console.log(`[API] Account saved to MongoDB Atlas: ${cleanEmail} (${saved.role || 'customer'})`);
     res.json({ success: true, account: saved });
   } catch (err) {
+    console.error(`[API] Failed to save account ${req.body?.email}:`, err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

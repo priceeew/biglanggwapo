@@ -12,7 +12,7 @@ export function RegisterPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
   const [regError, setRegError] = useState('');
 
-  const submitRegister = (event) => {
+  const submitRegister = async (event) => {
     event.preventDefault();
     setRegError('');
     if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.password || !form.confirm) {
@@ -47,7 +47,7 @@ export function RegisterPage() {
       phone: form.phone.trim(),
       redirectPath: '/booking'
     };
-    saveAccount(newCustomer);
+    await saveAccount(newCustomer);
     commit((state) => demoApi.addCustomer(state, {
       name: form.name.trim(),
       email: cleanEmail,
