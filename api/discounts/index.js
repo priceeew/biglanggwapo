@@ -32,6 +32,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const id = req.query.id;
+      if (id) {
+        await Discount.deleteOne({ id });
+        return res.status(200).json({ success: true, message: 'Discount deleted' });
+      }
       await Discount.deleteMany({});
       return res.status(200).json({ success: true, message: 'All discounts cleared' });
     }
