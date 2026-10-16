@@ -8,6 +8,7 @@ import { Queue } from '../../server/models/Queue.js';
 import { Review } from '../../server/models/Review.js';
 import { Service } from '../../server/models/Service.js';
 import { Transaction } from '../../server/models/Transaction.js';
+import { Notification } from '../../server/models/Notification.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -29,7 +30,8 @@ export default async function handler(req, res) {
       reviews,
       inventory,
       discounts,
-      transactions
+      transactions,
+      notifications
     ] = await Promise.all([
       Account.find().lean(),
       Service.find().lean(),
@@ -39,7 +41,8 @@ export default async function handler(req, res) {
       Review.find().sort({ createdAt: -1 }).lean(),
       Inventory.find().lean(),
       Discount.find().lean(),
-      Transaction.find().sort({ createdAt: -1 }).lean()
+      Transaction.find().sort({ createdAt: -1 }).lean(),
+      Notification.find().sort({ createdAt: -1 }).limit(100).lean()
     ]);
 
     const accountsMap = {};
@@ -60,7 +63,8 @@ export default async function handler(req, res) {
         reviews,
         inventory,
         promotions: discounts,
-        transactions
+        transactions,
+        notifications
       }
     });
   } catch (error) {

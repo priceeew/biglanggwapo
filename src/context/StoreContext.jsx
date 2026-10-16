@@ -3,7 +3,8 @@ import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoSt
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
   fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas,
-  fetchDiscountsFromAtlas, fetchTransactionsFromAtlas, fetchShopInitFromAtlas
+  fetchDiscountsFromAtlas, fetchTransactionsFromAtlas, fetchShopInitFromAtlas,
+  fetchNotificationsFromAtlas
 } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr } from '../utils/scheduling';
 import { getAccounts, syncAccountsFromAtlas, applyAccounts } from '../data';
@@ -56,12 +57,38 @@ export function StoreProvider({ children }) {
         if (Array.isArray(data.inventory)) updated.inventory = data.inventory;
         if (Array.isArray(data.promotions)) updated.promotions = data.promotions;
         if (Array.isArray(data.transactions)) updated.transactions = data.transactions;
+        if (Array.isArray(data.notifications)) updated.notifications = data.notifications;
         if (data.accounts && typeof data.accounts === 'object') {
           updated = syncAccountsIntoDemoState(updated, data.accounts);
         }
         persistDemoState(updated);
         return updated;
       });
+
+      // Automatically sync updated barber profile photo to active barber session
+      if (Array.isArray(data.barbers) && data.barbers.length > 0) {
+        setSession((prevSession) => {
+          if (!prevSession || prevSession.role !== 'barber') return prevSession;
+          const cleanEmail = (prevSession.email || '').toLowerCase().trim();
+          const matched = data.barbers.find((b) =>
+            (prevSession.barberId && b.id === prevSession.barberId) ||
+            (cleanEmail && b.email && b.email.toLowerCase().trim() === cleanEmail) ||
+            (prevSession.name && b.name && b.name.toLowerCase().trim() === prevSession.name.toLowerCase().trim())
+          );
+          if (matched && (matched.image || matched.photoUrl)) {
+            const freshImg = matched.image || matched.photoUrl;
+            if (prevSession.photoUrl !== freshImg || prevSession.image !== freshImg) {
+              const updatedSession = { ...prevSession, photoUrl: freshImg, image: freshImg };
+              try {
+                window.sessionStorage.setItem('biglanggwapo-session', JSON.stringify(updatedSession));
+              } catch {}
+              return updatedSession;
+            }
+          }
+          return prevSession;
+        });
+      }
+
       return true;
     };
 
@@ -114,10 +141,11 @@ export function StoreProvider({ children }) {
           }
         }
 
-        // Operational high-priority sync: Queue & Appointments (2 small endpoints)
-        const [latestQueue, latestAppointments] = await Promise.all([
+        // Operational high-priority sync: Queue, Appointments & Notifications
+        const [latestQueue, latestAppointments, latestNotifications] = await Promise.all([
           fetchQueueFromAtlas().catch(() => null),
-          fetchAppointmentsFromAtlas().catch(() => null)
+          fetchAppointmentsFromAtlas().catch(() => null),
+          fetchNotificationsFromAtlas().catch(() => null)
         ]);
 
         setDemo((prev) => {
@@ -130,6 +158,10 @@ export function StoreProvider({ children }) {
           }
           if (latestAppointments && Array.isArray(latestAppointments)) {
             updated.appointments = latestAppointments;
+            changed = true;
+          }
+          if (latestNotifications && Array.isArray(latestNotifications)) {
+            updated.notifications = latestNotifications;
             changed = true;
           }
 
@@ -157,8 +189,9 @@ export function StoreProvider({ children }) {
     window.addEventListener('focus', handleWindowFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Controlled 6-second polling interval for operational data with overlap guard
+    // Controlled 6-second polling interval for operational data with overlap and visibility guard
     const syncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       syncAtlasData(false);
     }, 6000);
 

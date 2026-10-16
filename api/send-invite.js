@@ -1,4 +1,4 @@
-import { sendInvitationEmail, sendTurnNotificationEmail } from '../server/services/emailService.js';
+import { sendInvitationEmail, sendTurnNotificationEmail, sendCancellationEmail } from '../server/services/emailService.js';
 
 export default async function handler(req, res) {
   // CORS configuration
@@ -45,6 +45,34 @@ export default async function handler(req, res) {
       return res.status(500).json({
         success: false,
         message: 'Failed to send turn notification email.',
+        error: result.error
+      });
+    }
+
+    if (type === 'cancellation' || type === 'cancel-appointment') {
+      const result = await sendCancellationEmail({
+        to,
+        customerName: name,
+        barberName: barberName || 'Your Barber',
+        serviceName: serviceName || 'Haircut & Styling',
+        date: req.body?.date || '',
+        time: req.body?.time || '',
+        reason: req.body?.reason || 'Schedule update',
+        message: req.body?.message || '',
+        portalUrl: portalUrl || 'https://biglanggwapo.vercel.app'
+      });
+
+      if (result.success) {
+        return res.status(200).json({
+          success: true,
+          message: 'Cancellation email sent successfully!',
+          previewUrl: result.previewUrl
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send cancellation email.',
         error: result.error
       });
     }

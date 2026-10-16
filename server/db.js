@@ -12,40 +12,19 @@ if (!process.env.VERCEL && !process.env.AWS_REGION) {
   }
 }
 
-let cached = global._mongooseConn;
+let cached = global._mongoose;
+if (!cached) {
+  cached = global._mongoose = { conn: null, promise: null };
+}
 
 export async function connectDB() {
-  if (mongoose.connection.readyState === 1) {
-    return mongoose.connection;
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
   }
 
-  if (mongoose.connection.readyState === 2) {
-    // Already connecting, await the established connection with a race timeout
-    await new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 3000);
-      const onConnected = () => {
-        clearTimeout(timer);
-        cleanup();
-        resolve();
-      };
-      const onError = () => {
-        clearTimeout(timer);
-        cleanup();
-        resolve();
-      };
-      const cleanup = () => {
-        mongoose.connection.off('connected', onConnected);
-        mongoose.connection.off('error', onError);
-      };
-      mongoose.connection.once('connected', onConnected);
-      mongoose.connection.once('error', onError);
-    });
-    if (mongoose.connection.readyState === 1) {
-      return mongoose.connection;
-    }
+  if (mongoose.connection.readyState === 1) {
+    cached.conn = mongoose.connection;
+    return cached.conn;
   }
 
   const uri = process.env.MONGODB_URI;
@@ -53,17 +32,57 @@ export async function connectDB() {
     throw new Error('MONGODB_URI is not defined in environment variables.');
   }
 
-  try {
-    const conn = await mongoose.connect(uri, {
+  if (!cached.promise) {
+    const opts = {
       autoIndex: false,
+      maxPoolSize: 10,
+      minPoolSize: 0,
+      maxIdleTimeMS: 15000,
       serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 8000
+      connectTimeoutMS: 8000,
+      socketTimeoutMS: 30000
+    };
+
+    cached.promise = mongoose.connect(uri, opts).then((m) => {
+      console.log('MongoDB Atlas connection established (pool: 10, idleTimeout: 15s)');
+      return m;
+    }).catch((err) => {
+      cached.promise = null;
+      cached.conn = null;
+      console.error('MongoDB Atlas connection failed:', err.message);
+      throw err;
     });
-    global._mongooseConn = conn;
-    console.log('MongoDB Atlas connected successfully!');
-    return conn;
+  }
+
+  try {
+    cached.conn = await cached.promise;
   } catch (err) {
-    console.error('MongoDB Atlas connection error:', err.message);
+    cached.promise = null;
+    cached.conn = null;
     throw err;
   }
+
+  return cached.conn;
 }
+
+// Cleanup connection references when connection is lost
+mongoose.connection.on('disconnected', () => {
+  if (cached) {
+    cached.conn = null;
+    cached.promise = null;
+  }
+});
+
+// Close connections cleanly on termination to prevent Atlas connection exhaustion
+const closeConnection = async () => {
+  try {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.connection.close(false);
+      console.log('MongoDB Atlas connection cleanly closed on process termination.');
+    }
+  } catch {}
+};
+
+process.once('SIGINT', closeConnection);
+process.once('SIGTERM', closeConnection);
+

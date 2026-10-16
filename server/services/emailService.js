@@ -256,3 +256,127 @@ export async function sendTurnNotificationEmail({
   }
 }
 
+export async function sendCancellationEmail({
+  to,
+  customerName,
+  barberName = 'Your Barber',
+  serviceName = 'Haircut & Styling',
+  date = '',
+  time = '',
+  reason = 'Schedule conflict',
+  message = '',
+  portalUrl = 'http://localhost:3000'
+}) {
+  try {
+    const transporter = await getTransporter();
+    const subject = `Appointment Cancellation Notice - Biglang Gwapo Barbershop`;
+
+    const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${subject}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f7f6f2; margin: 0; padding: 24px; color: #1a1a1a; }
+        .container { max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e6e2d8; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
+        .header { background: #1c1c1c; padding: 32px 24px; text-align: center; border-bottom: 3px solid #b88a44; }
+        .logo-title { color: #ffffff; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; margin: 0; text-transform: uppercase; }
+        .logo-subtitle { color: #b88a44; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 6px; }
+        .content { padding: 32px 28px; line-height: 1.6; }
+        .greeting { font-size: 20px; font-weight: 700; color: #1c1c1c; margin-top: 0; margin-bottom: 12px; }
+        .cancel-badge { display: inline-block; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
+        .message-box { background: #fffdf5; border: 1px solid #f2ecdd; border-left: 4px solid #b88a44; border-radius: 6px; padding: 16px 18px; margin: 20px 0; font-size: 14px; color: #2d2a26; line-height: 1.6; }
+        .message-box strong { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #b88a44; margin-bottom: 6px; }
+        .card { background: #fdfbf7; border: 1px solid #ede8dc; border-radius: 8px; padding: 20px; margin: 24px 0; }
+        .card-row { margin-bottom: 10px; font-size: 14px; border-bottom: 1px dashed #ede8dc; padding-bottom: 8px; }
+        .card-row:last-child { margin-bottom: 0; border-bottom: none; padding-bottom: 0; }
+        .label { color: #88857d; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; display: block; margin-bottom: 2px; }
+        .value { color: #1c1c1c; font-weight: 600; font-size: 15px; }
+        .button-wrapper { text-align: center; margin: 30px 0 20px; }
+        .btn { display: inline-block; background: #1c1c1c; color: #ffffff !important; text-decoration: none; padding: 13px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em; border: 1px solid #b88a44; }
+        .footer { background: #f9f8f5; border-top: 1px solid #ede8dc; padding: 20px 24px; text-align: center; font-size: 12px; color: #8c8980; line-height: 1.5; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1 class="logo-title">BIGLANG GWAPO</h1>
+          <div class="logo-subtitle">Barbershop · Pulilan, Bulacan</div>
+        </div>
+        <div class="content">
+          <span class="cancel-badge">Appointment Cancelled</span>
+          <h2 class="greeting">Hello, ${customerName}!</h2>
+          <p>
+            We regret to inform you that your scheduled appointment at <strong>Biglang Gwapo Barbershop</strong> has been cancelled.
+          </p>
+
+          ${message ? `
+          <div class="message-box">
+            <strong>Message from Receptionist:</strong>
+            ${String(message).replace(/\n/g, '<br>')}
+          </div>
+          ` : ''}
+
+          <div class="card">
+            <div class="card-row">
+              <span class="label">Service</span>
+              <span class="value">${serviceName}</span>
+            </div>
+            <div class="card-row">
+              <span class="label">Barber</span>
+              <span class="value">${barberName}</span>
+            </div>
+            <div class="card-row">
+              <span class="label">Originally Scheduled For</span>
+              <span class="value">${date ? date + (time ? ' at ' + time : '') : time}</span>
+            </div>
+            ${reason ? `
+            <div class="card-row">
+              <span class="label">Reason</span>
+              <span class="value">${reason}</span>
+            </div>` : ''}
+          </div>
+
+          <p style="font-size: 13.5px; color: #555;">
+            We sincerely apologize for the inconvenience. You are always welcome to pick another date or time slot that suits your schedule.
+          </p>
+
+          <div class="button-wrapper">
+            <a href="${portalUrl}/booking" class="btn" target="_blank">Book a New Appointment &rarr;</a>
+          </div>
+        </div>
+
+        <div class="footer">
+          <strong>Biglang Gwapo Barbershop</strong><br>
+          180 Cutcot National Highway, Pulilan, Bulacan<br>
+          Operating Hours: Mon–Sun · 9:00 AM–8:00 PM
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+
+    const info = await transporter.sendMail({
+      from: `"Biglang Gwapo Barbershop" <${process.env.EMAIL_USER || 'no-reply@biglanggwapo.com'}>`,
+      to,
+      subject,
+      html: htmlContent
+    });
+
+    console.log(`[Cancellation Email Sent] To: ${to} | Customer: ${customerName} | MessageId: ${info.messageId}`);
+    
+    let previewUrl = null;
+    if (nodemailer.getTestMessageUrl(info)) {
+      previewUrl = nodemailer.getTestMessageUrl(info);
+      console.log(`[Test Email Preview URL]: ${previewUrl}`);
+    }
+
+    return { success: true, messageId: info.messageId, previewUrl };
+  } catch (error) {
+    console.error('Error sending cancellation email:', error);
+    return { success: false, error: error.message };
+  }
+}
+

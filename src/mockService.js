@@ -1,7 +1,7 @@
 import { appointments as seedAppointments, barbers, customers, inventory, promotions, queue as seedQueue, receptionists, reviews, services, settings, transactions } from './data';
 import { getSlotAvailability, STANDARD_SCHEDULES } from './utils/scheduling';
 
-const STORAGE_KEY = 'biglanggwapo-demo-v12';
+const STORAGE_KEY = 'biglanggwapo-demo-v14';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 export function getInitialDemoState() {
@@ -25,7 +25,7 @@ export function loadDemoState() {
     let stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) {
       // Clear legacy localStorage keys that held old mock records
-      ['biglanggwapo-demo-v11', 'biglanggwapo-demo-v10', 'biglanggwapo-demo-v9', 'biglanggwapo-demo-v8', 'biglanggwapo-demo-v7', 'biglanggwapo-demo-v6', 'biglanggwapo-demo-v5', 'biglanggwapo-demo-v4', 'biglanggwapo-accounts-v2'].forEach((k) => {
+      ['biglanggwapo-demo-v13', 'biglanggwapo-demo-v12', 'biglanggwapo-demo-v11', 'biglanggwapo-demo-v10', 'biglanggwapo-demo-v9', 'biglanggwapo-demo-v8', 'biglanggwapo-demo-v7', 'biglanggwapo-demo-v6', 'biglanggwapo-demo-v5', 'biglanggwapo-demo-v4', 'biglanggwapo-accounts-v2'].forEach((k) => {
         try { window.localStorage.removeItem(k); } catch {}
       });
       const fresh = getInitialDemoState();
@@ -294,8 +294,22 @@ export const demoApi = {
       queue: [entry, ...state.queue]
     };
   },
-  cancelAppointment(state, appointmentId) {
-    return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Cancelled' } : item), queue: state.queue.filter((item) => item.appointmentId !== appointmentId) };
+  cancelAppointment(state, appointmentId, reason = '', message = '') {
+    return {
+      ...state,
+      appointments: state.appointments.map((item) =>
+        item.id === appointmentId
+          ? {
+              ...item,
+              status: 'Cancelled',
+              cancellationReason: reason || item.cancellationReason || '',
+              cancellationMessage: message || item.cancellationMessage || '',
+              cancelledAt: new Date().toISOString()
+            }
+          : item
+      ),
+      queue: state.queue.filter((item) => item.appointmentId !== appointmentId)
+    };
   },
   rescheduleAppointment(state, appointmentId, date, time) {
     const existingApt = state.appointments.find((a) => a.id === appointmentId);
@@ -431,7 +445,7 @@ export const demoApi = {
     return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, paymentStatus: 'Paid' } : item), transactions: [transaction, ...state.transactions] };
   },
   addReview(state, payload) {
-    return { ...state, reviews: [{ id: id('rev'), ...payload, date: new Date().toISOString().slice(0, 10), public: true }, ...state.reviews] };
+    return { ...state, reviews: [{ id: id('rev'), date: new Date().toISOString().slice(0, 10), public: true, ...payload }, ...state.reviews] };
   },
   saveSettings(state, changes) { return { ...state, settings: { ...state.settings, ...changes } }; },
   toggleActive(state, collection, itemId, field = 'active') { return { ...state, [collection]: state[collection].map((item) => item.id === itemId ? { ...item, [field]: !item[field] } : item) }; },

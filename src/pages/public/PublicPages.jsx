@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
-  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Tag, Zap
+  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Tag, Zap, Flame, Users, TrendingUp
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
@@ -305,6 +305,96 @@ export function BookingPage() {
   };
 
   const barber = demo.barbers.find((item) => item.id === selection.barberId);
+
+  // Calculate 100% accurate customer pick rate stats for each barber based on real database bookings
+  const barberPickStats = useMemo(() => {
+    const barbers = demo.barbers || [];
+    const appointments = demo.appointments || [];
+    const queue = demo.queue || [];
+    const transactions = demo.transactions || [];
+
+    const counts = {};
+    barbers.forEach((b) => {
+      counts[b.id] = 0;
+    });
+
+    // 1. Appointments (Valid non-cancelled customer bookings)
+    appointments.forEach((apt) => {
+      if (['Cancelled', 'No-show'].includes(apt.status)) return;
+      if (apt.barberId && counts[apt.barberId] !== undefined) {
+        counts[apt.barberId]++;
+      } else if (apt.barberName) {
+        const match = barbers.find((b) => b.name?.trim().toLowerCase() === apt.barberName?.trim().toLowerCase());
+        if (match) counts[match.id]++;
+      }
+    });
+
+    // 2. Queue (Walk-in entries without appointmentId to prevent double-counting)
+    queue.forEach((q) => {
+      if (q.appointmentId) return;
+      if (['Cancelled', 'Removed', 'Skipped'].includes(q.status)) return;
+      if (q.barberId && counts[q.barberId] !== undefined) {
+        counts[q.barberId]++;
+      } else if (q.barberName) {
+        const match = barbers.find((b) => b.name?.trim().toLowerCase() === q.barberName?.trim().toLowerCase());
+        if (match) counts[match.id]++;
+      }
+    });
+
+    // 3. Transactions (Direct walk-in payments without appointmentId)
+    transactions.forEach((tx) => {
+      if (tx.appointmentId) return;
+      if (tx.barberId && counts[tx.barberId] !== undefined) {
+        counts[tx.barberId]++;
+      } else if (tx.barberName) {
+        const match = barbers.find((b) => b.name?.trim().toLowerCase() === tx.barberName?.trim().toLowerCase());
+        if (match) counts[match.id]++;
+      }
+    });
+
+    const totalActualChoices = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    const statsMap = {};
+    let maxCount = 0;
+    let topBarberId = null;
+
+    barbers.forEach((b) => {
+      const count = counts[b.id] || 0;
+      const pct = totalActualChoices > 0 ? Math.round((count / totalActualChoices) * 100) : 0;
+
+      if (count > maxCount) {
+        maxCount = count;
+        topBarberId = b.id;
+      }
+
+      statsMap[b.id] = {
+        count,
+        percentage: pct,
+        isTop: false,
+        badge: null,
+        badgeClass: '',
+        totalShopPicks: totalActualChoices
+      };
+    });
+
+    // Badges assigned purely from real customer booking volume
+    if (totalActualChoices > 0 && maxCount > 0) {
+      barbers.forEach((b) => {
+        const stat = statsMap[b.id];
+        if (!stat || stat.count === 0) return;
+        if (b.id === topBarberId) {
+          stat.isTop = true;
+          stat.badge = 'Top choice';
+          stat.badgeClass = 'top-choice';
+        } else if (stat.percentage >= 20 || stat.count >= 2) {
+          stat.badge = 'Often chosen';
+          stat.badgeClass = 'often-chosen';
+        }
+      });
+    }
+
+    return statsMap;
+  }, [demo.barbers, demo.appointments, demo.queue, demo.transactions]);
   const slots = [
     '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
     '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
@@ -692,9 +782,12 @@ export function BookingPage() {
                 {demo.barbers.filter((item) => item.working).map((item) => {
                   const isBlocked = hasActiveBookingWithBarber(item.id);
                   const isUnavail = Boolean(item.isUnavailable || item.status === 'Unavailable' || item.leaveStatus === 'Unavailable');
+                  const stats = barberPickStats[item.id] || { count: 0, percentage: 0, isTop: false, badge: null, badgeClass: '' };
+                  const isSelected = selection.barberId === item.id;
                   return (
                     <button
-                      className={`choice-card barber-choice ${selection.barberId === item.id ? 'selected' : ''} ${isBlocked || isUnavail ? 'disabled-choice' : ''}`}
+                      type="button"
+                      className={`choice-card barber-choice ${isSelected ? 'selected' : ''} ${isBlocked || isUnavail ? 'disabled-choice' : ''}`}
                       key={item.id}
                       onClick={() => {
                         if (isUnavail) {
@@ -708,43 +801,69 @@ export function BookingPage() {
                         setSelection({ ...selection, barberId: item.id });
                       }}
                     >
-                      {item.image ? (
-                        <img
-                          src={item.image}
-                          alt={item.name}
-                          style={{
-                            width: '56px',
-                            height: '56px',
-                            borderRadius: '50%',
-                            objectFit: 'cover',
-                            border: selection.barberId === item.id ? '2px solid var(--gold)' : '2px solid var(--line)',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
-                            marginBottom: '6px'
-                          }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            if (e.currentTarget.nextElementSibling) {
-                              e.currentTarget.nextElementSibling.style.display = 'inline-grid';
-                            }
-                          }}
-                        />
-                      ) : null}
-                      <span className="avatar avatar-md" style={{ display: item.image ? 'none' : 'inline-grid' }}>
-                        {item.initials || (item.name || '').slice(0, 2).toUpperCase()}
-                      </span>
-                      <strong>{item.name}</strong>
-                      <small>{item.specialty}</small>
-                      {isUnavail ? (
-                        <span className="active-booking-badge" style={{ color: '#b91c1c', background: '#fee2e2', borderColor: '#fca5a5' }}>
-                          ● Unavailable
-                        </span>
-                      ) : isBlocked ? (
-                        <span className="active-booking-badge">
-                          ● Active booking exists
-                        </span>
-                      ) : (
-                        <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
-                      )}
+                      <div className="barber-choice-top-row">
+                        <div className="barber-choice-avatar-wrap">
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="barber-choice-avatar-img"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                if (e.currentTarget.nextElementSibling) {
+                                  e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                                }
+                              }}
+                            />
+                          ) : null}
+                          <span className="avatar avatar-md" style={{ display: item.image ? 'none' : 'inline-grid' }}>
+                            {item.initials || (item.name || '').slice(0, 2).toUpperCase()}
+                          </span>
+                        </div>
+                        {stats.badge && !isUnavail && !isBlocked && (
+                          <span className={`pickrate-badge ${stats.badgeClass}`}>
+                            {stats.badge === 'Top choice' ? <Flame size={11} /> : <TrendingUp size={11} />}
+                            {stats.badge}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="barber-choice-info">
+                        <strong>{item.name}</strong>
+                        <small>{item.specialty || 'All-around barber'}</small>
+                      </div>
+
+                      <div className="barber-pickrate-container">
+                        <div className="barber-pickrate-row">
+                          <span className="barber-pickrate-label">
+                            <Users size={11} /> Pick rate
+                          </span>
+                          <span className="barber-pickrate-pct">
+                            <strong>{stats.percentage}%</strong>
+                            <small>({stats.count} {stats.count === 1 ? 'choice' : 'choices'})</small>
+                          </span>
+                        </div>
+                        <div className="barber-pickrate-bar">
+                          <span
+                            className={`barber-pickrate-fill ${stats.isTop ? 'gold' : ''}`}
+                            style={{ width: `${stats.count > 0 ? Math.max(stats.percentage, 6) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="barber-choice-footer">
+                        {isUnavail ? (
+                          <span className="active-booking-badge" style={{ color: '#b91c1c', background: '#fee2e2', borderColor: '#fca5a5' }}>
+                            ● Unavailable
+                          </span>
+                        ) : isBlocked ? (
+                          <span className="active-booking-badge">
+                            ● Active booking exists
+                          </span>
+                        ) : (
+                          <span className="rating-line">{stars(item.rating)} <em>{item.rating}</em></span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}

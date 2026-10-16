@@ -42,6 +42,65 @@ export async function sendTurnNotification({ to, customerName, barberName, servi
   }
 }
 
+export async function sendCancellationNotification({
+  appointment,
+  recipientEmail,
+  reason,
+  message
+}) {
+  if (!recipientEmail || !recipientEmail.includes('@') || recipientEmail.includes('example.com')) {
+    console.warn('[Cancellation Email] No valid recipient email provided:', recipientEmail);
+    return { success: false, error: 'No valid customer email' };
+  }
+
+  const payload = {
+    type: 'cancellation',
+    to: recipientEmail,
+    name: appointment?.customerName || 'Customer',
+    barberName: appointment?.barberName || 'Barber',
+    serviceName: appointment?.serviceName || 'Haircut Service',
+    date: appointment?.date || '',
+    time: appointment?.time || '',
+    reason: reason || 'Schedule update',
+    message: message || '',
+    portalUrl: window.location.origin
+  };
+
+  try {
+    const res = await fetch('/api/send-cancellation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (data.previewUrl) {
+        console.log('[Cancellation Email Preview URL]:', data.previewUrl);
+      }
+      return data;
+    }
+    // Fallback to /api/send-invite
+    const fallbackRes = await fetch('/api/send-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await fallbackRes.json();
+  } catch (err) {
+    try {
+      const fallbackRes = await fetch('/api/send-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      return await fallbackRes.json();
+    } catch (fallbackErr) {
+      console.warn('Backend cancellation email notification API unreachable:', fallbackErr.message);
+      return { success: false, error: 'Email service unreachable: ' + fallbackErr.message };
+    }
+  }
+}
+
 // In-memory set to prevent duplicate email alerts within a session for the same queue item
 const notifiedTurns = new Set();
 
@@ -606,5 +665,61 @@ export async function fetchShopInitFromAtlas() {
     return null;
   }
 }
+
+// Notifications API (MongoDB Atlas - collection: 'notification')
+export async function fetchNotificationsFromAtlas(params = {}) {
+  try {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`/api/notifications${query ? `?${query}` : ''}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.success ? data.notifications : [];
+  } catch (err) {
+    console.warn('Failed to fetch notifications from Atlas:', err);
+    return [];
+  }
+}
+
+export async function saveNotificationToAtlas(notification) {
+  try {
+    const res = await fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(notification)
+    });
+    const data = await res.json().catch(() => ({}));
+    return { success: res.ok && data.success, notification: data.notification };
+  } catch (err) {
+    console.error('Failed to save notification to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function markNotificationsReadInAtlas(idOrIds) {
+  try {
+    const payload = Array.isArray(idOrIds) ? { ids: idOrIds } : { id: idOrIds };
+    const res = await fetch('/api/notifications/mark-read', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    console.error('Failed to mark notifications read in Atlas:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteNotificationFromAtlas(id) {
+  try {
+    const res = await fetch(`/api/notifications/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return await res.json().catch(() => ({ success: res.ok }));
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 
 

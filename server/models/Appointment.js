@@ -18,6 +18,10 @@ const AppointmentSchema = new mongoose.Schema({
   paymentStatus: { type: String, default: 'Unpaid' },
   source: { type: String, default: 'Online' },
   notes: { type: String, default: '' },
+  cancellationReason: { type: String, default: '' },
+  cancellationMessage: { type: String, default: '' },
+  cancelledAt: { type: String, default: '' },
+  cancelledBy: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 

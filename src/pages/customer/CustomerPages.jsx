@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Camera, Check, ChevronLeft,
-  ChevronRight, Clock3, Download, FileText, ListOrdered, Pencil, Plus,
+  ChevronRight, Clock3, Download, FileText, Globe, ListOrdered, Lock, Pencil, Plus,
   ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, Trash2, Upload, UserRound,
   Users, WalletCards, X
 } from 'lucide-react';
@@ -576,7 +576,8 @@ export function CustomerAppointments() {
   const mine = demo.appointments.filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
   const upcomingList = mine.filter((item) => !['Completed', 'Cancelled'].includes(item.status));
   const completedList = mine.filter((item) => item.status === 'Completed');
-  const list = tab === 'Upcoming' ? upcomingList : completedList;
+  const cancelledList = mine.filter((item) => item.status === 'Cancelled');
+  const list = tab === 'Upcoming' ? upcomingList : tab === 'Completed' ? completedList : cancelledList;
   const queueEntry = demo.queue.find((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
 
   const cancel = (id) => {
@@ -587,7 +588,7 @@ export function CustomerAppointments() {
     if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
       commit((state) => {
         const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
-        const next = demoApi.cancelAppointment(state, id);
+        const next = demoApi.cancelAppointment(state, id, 'Cancelled by customer', 'Appointment was cancelled by customer request.');
         const apt = next.appointments.find((a) => a.id === id);
         if (apt) saveAppointmentToAtlas(apt);
         if (prevQueueItem) deleteQueueItemFromAtlas(prevQueueItem.id);
@@ -604,7 +605,7 @@ export function CustomerAppointments() {
           ['Upcoming visits', `${upcomingList.length} booked`, CalendarDays, upcomingList[0] ? `${humanDate(upcomingList[0].date)} · ${upcomingList[0].time}` : 'No upcoming bookings'],
           ['Queue status', queueEntry ? `${queueEntry.number} (${queueEntry.status})` : 'Not in queue', ListOrdered, queueEntry ? `~${queueEntry.estimatedMinutes}m wait` : 'Ready when you arrive'],
           ['Completed visits', `${completedList.length} finished`, Scissors, 'Logged in history'],
-          ['Preferred barber', upcomingList[0]?.barberName || 'Marco Reyes', Star, 'Master Barber']
+          ['Cancelled visits', `${cancelledList.length} cancelled`, AlertTriangle, 'Past cancellations']
         ]}
       />
 
@@ -626,6 +627,9 @@ export function CustomerAppointments() {
         <button className={tab === 'Completed' ? 'active' : ''} onClick={() => setTab('Completed')}>
           Completed <span>{completedList.length}</span>
         </button>
+        <button className={tab === 'Cancelled' ? 'active' : ''} onClick={() => setTab('Cancelled')}>
+          Cancelled <span>{cancelledList.length}</span>
+        </button>
       </div>
 
       <SectionCard>
@@ -643,8 +647,8 @@ export function CustomerAppointments() {
         ) : (
           <EmptyState
             icon={CalendarDays}
-            title={tab === 'Upcoming' ? 'No upcoming appointments' : 'No completed appointments yet'}
-            copy={tab === 'Upcoming' ? 'Book a chair and your next visit will land here.' : 'Completed appointments will appear here after your session.'}
+            title={tab === 'Upcoming' ? 'No upcoming appointments' : tab === 'Completed' ? 'No completed appointments yet' : 'No cancelled appointments'}
+            copy={tab === 'Upcoming' ? 'Book a chair and your next visit will land here.' : tab === 'Completed' ? 'Completed appointments will appear here after your session.' : 'You have no cancelled appointments on record.'}
             action={
               tab === 'Upcoming' && (
                 <Link className="button button-dark" to="/booking">
@@ -790,27 +794,37 @@ export function CustomerQueue() {
 export function CustomerHistory() {
   const { demo, notify, session } = useStore();
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState('All');
   const currentCustomerId = session?.customerId || 'cust-demo';
   const currentCustomerName = session?.name;
-  const history = demo.appointments.filter((item) => (item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)) && item.status === 'Completed');
-  const filtered = history.filter((item) => `${item.serviceName} ${item.barberName} ${item.notes || ''}`.toLowerCase().includes(query.toLowerCase()));
-  const totalSpent = history.reduce((sum, item) => sum + (item.price || 0), 0);
+  const userAppointments = demo.appointments.filter(
+    (item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName)
+  );
+  const completedList = userAppointments.filter((item) => item.status === 'Completed');
+  const cancelledList = userAppointments.filter((item) => item.status === 'Cancelled');
+  const allHistory = userAppointments.filter((item) => ['Completed', 'Cancelled'].includes(item.status));
+
+  const list = tab === 'Completed' ? completedList : tab === 'Cancelled' ? cancelledList : allHistory;
+  const filtered = list.filter((item) =>
+    `${item.serviceName} ${item.barberName} ${item.cancellationReason || ''} ${item.cancellationMessage || ''} ${item.notes || ''}`.toLowerCase().includes(query.toLowerCase())
+  );
+  const totalSpent = completedList.reduce((sum, item) => sum + (item.price || 0), 0);
 
   return (
     <>
       <BentoStats
         items={[
-          ['Completed visits', `${history.length} services`, Scissors, 'All finished cuts'],
+          ['Completed visits', `${completedList.length} services`, Scissors, 'All finished cuts'],
+          ['Cancelled visits', `${cancelledList.length} cancelled`, AlertTriangle, 'Past cancellations'],
           ['Total spent', currency(totalSpent), WalletCards, 'Paid in full'],
-          ['Favorite barber', history[0]?.barberName || 'Marco Reyes', Star, 'Master Barber'],
-          ['Last visit', history[0] ? humanDate(history[0].date) : 'None', CalendarDays, 'Up to date']
+          ['Favorite barber', completedList[0]?.barberName || allHistory[0]?.barberName || 'Marco Reyes', Star, 'Master Barber']
         ]}
       />
 
       <Toolbar
         title="Service history"
         count={filtered.length}
-        description="Every finished service, receipt, and barber note in one place."
+        description="Every finished service, receipt, barber note, and cancellation record in one place."
         query={query}
         setQuery={setQuery}
         action={
@@ -820,39 +834,89 @@ export function CustomerHistory() {
         }
       />
 
+      <div className="tabs">
+        <button className={tab === 'All' ? 'active' : ''} onClick={() => setTab('All')}>
+          All <span>{allHistory.length}</span>
+        </button>
+        <button className={tab === 'Completed' ? 'active' : ''} onClick={() => setTab('Completed')}>
+          Completed <span>{completedList.length}</span>
+        </button>
+        <button className={tab === 'Cancelled' ? 'active' : ''} onClick={() => setTab('Cancelled')}>
+          Cancelled <span>{cancelledList.length}</span>
+        </button>
+      </div>
+
       <SectionCard>
         {filtered.length ? (
           <div className="history-list" style={{ padding: '16px' }}>
-            {filtered.map((item) => (
-              <div className="history-card" key={item.id}>
-                <div className="history-date">
-                  <strong>{new Date(`${item.date}T00:00:00`).getDate()}</strong>
-                  <span>{new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short' })}</span>
+            {filtered.map((item) => {
+              const isCancelled = item.status === 'Cancelled';
+              return (
+                <div className={`history-card ${isCancelled ? 'cancelled' : ''}`} key={item.id}>
+                  <div className="history-date">
+                    <strong>{new Date(`${item.date}T00:00:00`).getDate()}</strong>
+                    <span>{new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short' })}</span>
+                  </div>
+                  <div className="history-main">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span className="eyebrow">{item.serviceName}</span>
+                      <StatusBadge status={item.status} />
+                    </div>
+                    <h3>{item.barberName}</h3>
+                    {isCancelled ? (
+                      <div className="cancellation-reason-box">
+                        <strong>
+                          <AlertTriangle size={13} />
+                          Cancelled{item.cancellationReason ? `: ${item.cancellationReason}` : ''}
+                        </strong>
+                        {item.cancellationMessage ? (
+                          <p>{item.cancellationMessage}</p>
+                        ) : (
+                          <p>This appointment was cancelled.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p>{item.notes || 'Service completed with a clean, tailored finish.'}</p>
+                    )}
+                  </div>
+                  <div className="history-side">
+                    {isCancelled ? (
+                      <>
+                        <span>
+                          <small style={{ color: 'var(--red)', fontWeight: 700 }}>Cancelled</small>
+                          <s style={{ color: 'var(--muted)', fontSize: '12px' }}>{currency(item.price)}</s>
+                        </span>
+                        <Link
+                          to={`/booking?service=${item.serviceId || ''}&barber=${item.barberId || ''}`}
+                          className="button button-dark button-small"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '6px' }}
+                        >
+                          <Scissors size={13} /> Rebook
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          <small>Paid</small>
+                          <strong>{currency(item.price)}</strong>
+                        </span>
+                        <button
+                          className="button button-ghost button-small"
+                          onClick={() => notify(`Receipt for ${item.serviceName} (${currency(item.price)}) downloaded.`)}
+                        >
+                          <FileText size={15} /> Receipt
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="history-main">
-                  <span className="eyebrow">{item.serviceName}</span>
-                  <h3>{item.barberName}</h3>
-                  <p>{item.notes || 'Service completed with a clean, tailored finish.'}</p>
-                </div>
-                <div className="history-side">
-                  <span>
-                    <small>Paid</small>
-                    <strong>{currency(item.price)}</strong>
-                  </span>
-                  <button
-                    className="button button-ghost button-small"
-                    onClick={() => notify(`Receipt for ${item.serviceName} (${currency(item.price)}) downloaded.`)}
-                  >
-                    <FileText size={15} /> Receipt
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <EmptyState
-            title="No completed services yet"
-            copy="Your finished visits and receipts will appear here once your service is marked complete."
+            title={tab === 'Completed' ? 'No completed services yet' : tab === 'Cancelled' ? 'No cancelled appointments' : 'No service history yet'}
+            copy={tab === 'Completed' ? 'Your finished visits and receipts will appear here once your service is marked complete.' : tab === 'Cancelled' ? 'You have no cancelled appointments.' : 'Your appointment records and receipts will appear here.'}
           />
         )}
       </SectionCard>
@@ -894,6 +958,7 @@ export function CustomerReviews() {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [image, setImage] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [activePhotoModal, setActivePhotoModal] = useState(null);
@@ -945,6 +1010,34 @@ export function CustomerReviews() {
     };
   });
 
+  const toggleReviewPrivacy = async (review) => {
+    const currentIsPublic = review.public !== false;
+    const newPublic = !currentIsPublic;
+    const updated = { ...review, public: newPublic };
+
+    // Optimistic update
+    commit((state) => ({
+      ...state,
+      reviews: (state.reviews || []).map((r) => (r.id === review.id ? updated : r))
+    }));
+
+    try {
+      const res = await saveReviewToAtlas(updated);
+      if (res && res.success === false) {
+        notify('Failed to update review visibility in database.', 'error');
+      } else {
+        notify(
+          newPublic
+            ? 'Your review is now public on the shop website.'
+            : 'Your review is now private (visible only to shop staff).',
+          'success'
+        );
+      }
+    } catch (err) {
+      notify(`Failed to update review visibility: ${err.message}`, 'error');
+    }
+  };
+
   const submit = (event) => {
     event.preventDefault();
     if (!eligible) return notify('Reviews are available after a completed demo service.', 'error');
@@ -965,14 +1058,15 @@ export function CustomerReviews() {
       image: image || undefined,
       appointmentId: eligible.id,
       date: new Date().toISOString().slice(0, 10),
-      public: true
+      public: isPublic
     };
     saveReviewToAtlas(newReview).catch((err) => console.warn('Failed saving review to Atlas:', err));
     commit((state) => demoApi.addReview(state, newReview));
     setRating(0);
     setComment('');
     setImage('');
-    notify('Thanks for sharing your review.');
+    setIsPublic(true);
+    notify(isPublic ? 'Thanks for sharing your review! It is now public.' : 'Thanks for sharing your feedback! It is saved privately for shop staff.');
   };
 
   return (
@@ -1103,6 +1197,73 @@ export function CustomerReviews() {
                   )}
                 </div>
 
+                <div style={{ marginTop: '14px', marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
+                    Review visibility
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsPublic(true)}
+                      disabled={!eligible}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: isPublic ? '1.5px solid var(--gold, #d4af37)' : '1px solid rgba(255,255,255,0.15)',
+                        background: isPublic ? 'rgba(212, 175, 55, 0.12)' : 'rgba(255,255,255,0.04)',
+                        color: '#fff',
+                        textAlign: 'left',
+                        cursor: eligible ? 'pointer' : 'not-allowed',
+                        opacity: eligible ? 1 : 0.6,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Globe size={18} style={{ color: isPublic ? 'var(--gold, #d4af37)' : '#888', flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13px', color: isPublic ? 'var(--gold, #d4af37)' : '#fff' }}>
+                          Public Review
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px', lineHeight: 1.35 }}>
+                          Display on website testimonials and public ratings.
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsPublic(false)}
+                      disabled={!eligible}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: !isPublic ? '1.5px solid var(--gold, #d4af37)' : '1px solid rgba(255,255,255,0.15)',
+                        background: !isPublic ? 'rgba(212, 175, 55, 0.12)' : 'rgba(255,255,255,0.04)',
+                        color: '#fff',
+                        textAlign: 'left',
+                        cursor: eligible ? 'pointer' : 'not-allowed',
+                        opacity: eligible ? 1 : 0.6,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Lock size={18} style={{ color: !isPublic ? 'var(--gold, #d4af37)' : '#888', flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13px', color: !isPublic ? 'var(--gold, #d4af37)' : '#fff' }}>
+                          Private Review
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#aaa', marginTop: '2px', lineHeight: 1.35 }}>
+                          Visible only to barbershop staff and manager.
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <button className="button button-dark" disabled={!eligible || uploading}>
                   {uploading ? 'Uploading photo...' : 'Submit review'} <Send size={16} />
                 </button>
@@ -1114,13 +1275,97 @@ export function CustomerReviews() {
         <SectionCard title="Your submitted reviews" description="Feedback you provided">
           <div style={{ padding: '20px' }}>
             <div className="submitted-reviews" style={{ maxWidth: '100%' }}>
-              {myReviews.map((review) => (
-                <ReviewCard
-                  key={review.id}
-                  review={review}
-                  onImageClick={(img, rev) => setActivePhotoModal({ image: img, review: rev })}
-                />
-              ))}
+              {myReviews.map((review) => {
+                const isReviewPublic = review.public !== false;
+                return (
+                  <ReviewCard
+                    key={review.id}
+                    review={review}
+                    onImageClick={(img, rev) => setActivePhotoModal({ image: img, review: rev })}
+                  >
+                    <div
+                      style={{
+                        marginTop: '12px',
+                        paddingTop: '10px',
+                        borderTop: '1px solid var(--line, rgba(0,0,0,0.08))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '8px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isReviewPublic ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: '#15803d',
+                              background: 'rgba(34, 197, 94, 0.1)',
+                              padding: '3px 8px',
+                              borderRadius: '12px',
+                              border: '1px solid rgba(34, 197, 94, 0.25)'
+                            }}
+                          >
+                            <Globe size={11} /> Public (Visible on website)
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: '#64748b',
+                              background: 'rgba(100, 116, 139, 0.1)',
+                              padding: '3px 8px',
+                              borderRadius: '12px',
+                              border: '1px solid rgba(100, 116, 139, 0.25)'
+                            }}
+                          >
+                            <Lock size={11} /> Private (Only shop staff)
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleReviewPrivacy(review)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--line)',
+                          background: 'var(--white)',
+                          color: 'var(--ink)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title={isReviewPublic ? 'Change to private so only staff can see it' : 'Change to public to display on website'}
+                      >
+                        {isReviewPublic ? (
+                          <>
+                            <Lock size={12} /> Make Private
+                          </>
+                        ) : (
+                          <>
+                            <Globe size={12} /> Make Public
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </ReviewCard>
+                );
+              })}
               {!myReviews.length && (
                 <EmptyState
                   icon={Star}

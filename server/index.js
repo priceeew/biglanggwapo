@@ -15,7 +15,8 @@ import { Inventory } from './models/Inventory.js';
 import { Queue } from './models/Queue.js';
 import { Discount } from './models/Discount.js';
 import { Transaction } from './models/Transaction.js';
-import { sendInvitationEmail, sendTurnNotificationEmail } from './services/emailService.js';
+import { Notification } from './models/Notification.js';
+import { sendInvitationEmail, sendTurnNotificationEmail, sendCancellationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
 try {
@@ -82,7 +83,8 @@ app.get('/api/init', async (req, res) => {
       reviews,
       inventory,
       discounts,
-      transactions
+      transactions,
+      notifications
     ] = await Promise.all([
       Account.find().lean(),
       Service.find().lean(),
@@ -92,7 +94,8 @@ app.get('/api/init', async (req, res) => {
       Review.find().sort({ createdAt: -1 }).lean(),
       Inventory.find().lean(),
       Discount.find().lean(),
-      Transaction.find().sort({ createdAt: -1 }).lean()
+      Transaction.find().sort({ createdAt: -1 }).lean(),
+      Notification.find().sort({ createdAt: -1 }).limit(100).lean()
     ]);
 
     const accountsMap = {};
@@ -113,7 +116,8 @@ app.get('/api/init', async (req, res) => {
         reviews,
         inventory,
         promotions: discounts,
-        transactions
+        transactions,
+        notifications
       }
     });
   } catch (err) {
@@ -243,12 +247,31 @@ app.post('/api/barbers', async (req, res) => {
     const { _id, ...cleanBarber } = barber;
     if (cleanBarber.image) {
       cleanBarber.image = await ensureHostedImage(cleanBarber.image, 'barber');
+      cleanBarber.photoUrl = cleanBarber.image;
     }
     const saved = await Barber.findOneAndUpdate(
       { id: barber.id },
       { $set: cleanBarber },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+
+    // Synchronize photo and details to the corresponding Account in Atlas
+    if (cleanBarber.email) {
+      await Account.findOneAndUpdate(
+        { email: cleanBarber.email.toLowerCase().trim() },
+        {
+          $set: {
+            image: cleanBarber.image || '',
+            photoUrl: cleanBarber.image || '',
+            name: cleanBarber.name,
+            phone: cleanBarber.phone,
+            specialty: cleanBarber.specialty,
+            schedule: cleanBarber.schedule,
+            status: cleanBarber.status || 'Active'
+          }
+        }
+      );
+    }
     res.json({ success: true, barber: saved });
   } catch (err) {
     console.error('Error saving barber:', err);
@@ -639,6 +662,93 @@ app.delete('/api/transactions', async (req, res) => {
   }
 });
 
+// Notifications API (MongoDB Atlas - connects directly to 'notification' collection)
+app.get('/api/notifications', async (req, res) => {
+  try {
+    await connectDB();
+    const { email, role, customerId, barberId } = req.query;
+    let filter = {};
+    if (email || role || customerId || barberId) {
+      const orClauses = [];
+      if (role) {
+        orClauses.push({ recipientRole: role }, { recipientRole: 'all' }, { recipientRole: '' }, { recipientRole: { $exists: false } });
+      }
+      if (email) {
+        orClauses.push({ recipientEmail: email.toLowerCase().trim() });
+      }
+      if (customerId) {
+        orClauses.push({ recipientId: customerId });
+      }
+      if (barberId) {
+        orClauses.push({ recipientId: barberId });
+      }
+      filter = { $or: orClauses };
+    }
+    const notifications = await Notification.find(filter).sort({ createdAt: -1 }).limit(100).lean();
+    res.json({ success: true, notifications });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/notifications', async (req, res) => {
+  try {
+    await connectDB();
+    const notif = req.body;
+    if (!notif || !notif.id) {
+      return res.status(400).json({ success: false, message: 'Missing notification id' });
+    }
+    const { _id, ...cleanNotif } = notif;
+    if (cleanNotif.recipientEmail) {
+      cleanNotif.recipientEmail = cleanNotif.recipientEmail.toLowerCase().trim();
+    }
+    const saved = await Notification.findOneAndUpdate(
+      { id: notif.id },
+      { $set: cleanNotif },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, notification: saved });
+  } catch (err) {
+    console.error('Error saving notification:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.patch('/api/notifications/mark-read', async (req, res) => {
+  try {
+    await connectDB();
+    const { id, ids } = req.body;
+    if (id) {
+      await Notification.updateOne({ id }, { $set: { read: true } });
+    } else if (Array.isArray(ids) && ids.length > 0) {
+      await Notification.updateMany({ id: { $in: ids } }, { $set: { read: true } });
+    }
+    res.json({ success: true, message: 'Notifications marked as read' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/notifications/:id', async (req, res) => {
+  try {
+    await connectDB();
+    await Notification.deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Notification deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/notifications', async (req, res) => {
+  try {
+    await connectDB();
+    await Notification.deleteMany({});
+    res.json({ success: true, message: 'All notifications cleared' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Email Notification endpoints (Invitation & Turn Alerts)
 const handleEmailSend = async (req, res) => {
   try {
@@ -672,6 +782,34 @@ const handleEmailSend = async (req, res) => {
       });
     }
 
+    if (type === 'cancellation' || type === 'cancel-appointment') {
+      const result = await sendCancellationEmail({
+        to,
+        customerName: name,
+        barberName: barberName || 'Your Barber',
+        serviceName: serviceName || 'Haircut & Styling',
+        date: req.body.date || '',
+        time: req.body.time || '',
+        reason: req.body.reason || 'Schedule update',
+        message: req.body.message || '',
+        portalUrl: portalUrl || 'http://localhost:3000'
+      });
+
+      if (result.success) {
+        return res.json({
+          success: true,
+          message: 'Cancellation email sent successfully!',
+          previewUrl: result.previewUrl
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send cancellation email.',
+        error: result.error
+      });
+    }
+
     const result = await sendInvitationEmail({
       to,
       name,
@@ -700,6 +838,7 @@ const handleEmailSend = async (req, res) => {
 
 app.post('/api/send-invite', handleEmailSend);
 app.post('/api/notify-turn', handleEmailSend);
+app.post('/api/send-cancellation', handleEmailSend);
 
 // Image Upload Endpoint (ImgBB Cloud with local static storage fallback)
 app.post('/api/upload', async (req, res) => {

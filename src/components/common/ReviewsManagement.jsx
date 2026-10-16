@@ -70,8 +70,12 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
     return matchQuery && matchRating && matchVisibility;
   });
 
-  // Toggle Hide / Unhide action
+  // Toggle Hide / Unhide action (Admin only)
   const handleToggleHide = async (review) => {
+    if (role !== 'admin') {
+      notify('Only administrators can change review visibility.', 'error');
+      return;
+    }
     const willHide = !isHidden(review);
     const updatedReview = {
       ...review,
@@ -352,7 +356,13 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
       />
 
       <SectionCard>
-        <DataTable columns={['Client & Date', 'Barber & Service', 'Rating', 'Visibility', 'Review & Feedback', 'Actions']}>
+        <DataTable
+          columns={
+            role === 'admin'
+              ? ['Client & Date', 'Barber & Service', 'Rating', 'Visibility', 'Review & Feedback', 'Actions']
+              : ['Client & Date', 'Barber & Service', 'Rating', 'Visibility', 'Review & Feedback']
+          }
+        >
           <tbody>
             {filtered.map((r) => {
               const hidden = isHidden(r);
@@ -433,43 +443,28 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
                       />
                     )}
                   </td>
-                  <td>
-                    <div className="row-actions" style={{ gap: '6px' }}>
-                      <button
-                        type="button"
-                        className={`button button-small ${hidden ? 'button-soft' : 'button-ghost'}`}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}
-                        onClick={() => handleToggleHide(r)}
-                        title={hidden ? 'Unhide review to display on public testimonials' : 'Hide review from public testimonials'}
-                      >
-                        {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
-                        <span>{hidden ? 'Unhide' : 'Hide'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className="button button-ghost button-small danger-text"
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}
-                        onClick={() => openDeleteModal(r)}
-                        title="Delete review from database"
-                      >
-                        <Trash2 size={13} />
-                        <span>Delete</span>
-                      </button>
-                    </div>
-                  </td>
+                  {role === 'admin' && (
+                    <td>
+                      <div className="row-actions" style={{ gap: '6px' }}>
+                        <button
+                          type="button"
+                          className={`button button-small ${hidden ? 'button-soft' : 'button-ghost'}`}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '11px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}
+                          onClick={() => handleToggleHide(r)}
+                          title={hidden ? 'Unhide review to display on public testimonials' : 'Hide review from public testimonials'}
+                        >
+                          {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+                          <span>{hidden ? 'Unhide' : 'Hide'}</span>
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -483,55 +478,6 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
           />
         )}
       </SectionCard>
-
-      {/* Delete Confirmation Modal */}
-      {reviewToDelete && (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setReviewToDelete(null)}>
-          <div className="modal-card" style={{ maxWidth: '420px' }}>
-            <button className="modal-close" onClick={() => setReviewToDelete(null)} aria-label="Close dialog">
-              <X size={18} />
-            </button>
-            <div className="modal-heading">
-              <div className="modal-mark" style={{ background: '#fee2e2', color: '#b91c1c' }}>
-                <AlertTriangle size={22} />
-              </div>
-              <span className="eyebrow" style={{ color: '#b91c1c' }}>Confirm Permanent Deletion</span>
-              <h2>Delete Review?</h2>
-              <p>This action cannot be undone. The review record will be permanently deleted from MongoDB Atlas.</p>
-            </div>
-
-            <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '14px', borderRadius: '8px', marginBottom: '18px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <strong>{reviewToDelete.customer || 'Anonymous'}</strong>
-                <span style={{ color: 'var(--gold)' }}>{stars(reviewToDelete.rating || 5)}</span>
-              </div>
-              <small style={{ color: 'var(--muted)', display: 'block', marginBottom: '8px' }}>
-                Barber: {reviewToDelete.barber} · Service: {reviewToDelete.service || reviewToDelete.serviceName}
-              </small>
-              <p style={{ margin: 0, fontSize: '12px', fontStyle: 'italic', color: 'var(--charcoal)' }}>
-                “{reviewToDelete.comment || 'No text feedback.'}”
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                type="button"
-                className="button button-ghost button-full"
-                onClick={() => setReviewToDelete(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="button button-danger button-full"
-                onClick={handleConfirmDelete}
-              >
-                <Trash2 size={15} /> Yes, Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add Review Modal */}
       {isAdding && (

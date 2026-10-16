@@ -9,6 +9,7 @@ export function RegisterPage() {
   const { login, notify, commit } = useStore();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
   const [regError, setRegError] = useState('');
 
@@ -136,18 +137,27 @@ export function RegisterPage() {
             </div>
           </label>
           <label className="field-label">Confirm password
-            <input
-              className="input"
-              type="password"
-              value={form.confirm}
-              onChange={(e) => {
-                setForm({ ...form, confirm: e.target.value });
-                if (regError) setRegError('');
-              }}
-              required
-              minLength={8}
-              placeholder="*********"
-            />
+            <div className="password-input">
+              <input
+                className="input"
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={form.confirm}
+                onChange={(e) => {
+                  setForm({ ...form, confirm: e.target.value });
+                  if (regError) setRegError('');
+                }}
+                required
+                minLength={8}
+                placeholder="*********"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              >
+                {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
             {form.confirm && (
               <span style={{ color: form.password === form.confirm ? '#16a34a' : '#dc2626', fontSize: '10px', marginTop: '4px' }}>
                 {form.password === form.confirm ? 'Passwords match' : 'Passwords do not match'}

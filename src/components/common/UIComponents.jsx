@@ -1,8 +1,8 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Scissors, ArrowRight, FileText, CheckCircle2, CircleHelp, Search, Filter, TrendingUp,
-  ZoomIn, X
+  ZoomIn, X, AlertTriangle
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
 import { getAccounts } from '../../data';
@@ -272,7 +272,7 @@ export function ReviewPhotoModal({ modalData, onClose }) {
   );
 }
 
-export function ReviewCard({ review, onImageClick }) {
+export function ReviewCard({ review, onImageClick, children }) {
   const { demo } = useStore();
   const appointment = demo?.appointments?.find((a) => a.id === review.appointmentId);
   const serviceName = review.serviceName || review.service || appointment?.serviceName;
@@ -381,6 +381,7 @@ export function ReviewCard({ review, onImageClick }) {
         </div>
       )}
       <small className="review-date">{humanDate(review.date)}</small>
+      {children}
     </article>
   );
 }
@@ -426,6 +427,29 @@ export function AppointmentCard({ appointment, onCancel, onReschedule }) {
           <span style={{ fontSize: '12px', padding: '6px 12px', background: 'rgba(197, 160, 89, 0.15)', color: 'var(--gold)', fontWeight: 600, borderRadius: '6px', border: '1px solid rgba(197, 160, 89, 0.3)' }}>
             In Chair · Haircut in progress
           </span>
+        </div>
+      ) : appointment.status === 'Cancelled' ? (
+        <div style={{ gridColumn: '2 / -1', marginTop: '6px' }}>
+          <div className="cancellation-reason-box">
+            <strong>
+              <AlertTriangle size={13} />
+              Cancelled{appointment.cancellationReason ? `: ${appointment.cancellationReason}` : ''}
+            </strong>
+            {appointment.cancellationMessage ? (
+              <p>{appointment.cancellationMessage}</p>
+            ) : (
+              <p>This appointment has been cancelled.</p>
+            )}
+          </div>
+          <div className="appointment-actions" style={{ marginTop: '10px' }}>
+            <Link
+              to={`/booking?service=${appointment.serviceId || ''}&barber=${appointment.barberId || ''}`}
+              className="button button-dark button-small"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Scissors size={13} /> Rebook Chair
+            </Link>
+          </div>
         </div>
       ) : !['Completed', 'Cancelled'].includes(appointment.status) && (
         <div className="appointment-actions">

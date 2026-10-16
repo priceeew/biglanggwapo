@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useStore, rolePath } from '../../context/StoreContext';
 import { navItems, routeManifest, getAccounts } from '../../data';
+import { NotificationBell } from '../common/NotificationBell';
 
 const IconMap = {
   LayoutDashboard, CalendarDays, UserPlus, ListOrdered, Users, WalletCards,
@@ -28,36 +29,43 @@ export function getUserPhoto(session, demo, currentRole) {
   const accounts = typeof getAccounts === 'function' ? getAccounts() : {};
   const cleanEmail = (session.email || '').toLowerCase().trim();
   const acc = cleanEmail ? accounts[cleanEmail] : null;
-
-  // 1. Direct session or account image
-  if (session.photoUrl) return session.photoUrl;
-  if (session.image) return session.image;
-  if (acc?.photoUrl) return acc.photoUrl;
-  if (acc?.image) return acc.image;
-
   const role = session.role || currentRole;
 
-  // 2. Barber photo
+  // 1. Barber: Live barber record from demo.barbers (updated by admin) takes precedence
   if (role === 'barber') {
     const b = (demo?.barbers || []).find((barber) =>
       (session.barberId && barber.id === session.barberId) ||
       (cleanEmail && barber.email && barber.email.toLowerCase().trim() === cleanEmail) ||
       (session.name && barber.name && barber.name.toLowerCase().trim() === session.name.toLowerCase().trim())
     );
-    if (b?.image) return b.image;
-    if (b?.photoUrl) return b.photoUrl;
+    if (b?.image || b?.photoUrl) return b.image || b.photoUrl;
   }
 
-  // 3. Customer photo
+  // 2. Receptionist: Live receptionist record takes precedence
+  if (role === 'receptionist') {
+    const r = (demo?.receptionists || []).find((rec) =>
+      (session.receptionistId && rec.id === session.receptionistId) ||
+      (cleanEmail && rec.email && rec.email.toLowerCase().trim() === cleanEmail) ||
+      (session.name && rec.name && rec.name.toLowerCase().trim() === session.name.toLowerCase().trim())
+    );
+    if (r?.image || r?.photoUrl) return r.image || r.photoUrl;
+  }
+
+  // 3. Customer: Live customer record takes precedence
   if (role === 'customer') {
     const c = (demo?.customers || []).find((cust) =>
       (session.customerId && cust.id === session.customerId) ||
       (cleanEmail && cust.email && cust.email.toLowerCase().trim() === cleanEmail) ||
       (session.name && cust.name && cust.name.toLowerCase().trim() === session.name.toLowerCase().trim())
     );
-    if (c?.image) return c.image;
-    if (c?.photoUrl) return c.photoUrl;
+    if (c?.image || c?.photoUrl) return c.image || c.photoUrl;
   }
+
+  // 4. Fallback to direct session or account image
+  if (session.photoUrl) return session.photoUrl;
+  if (session.image) return session.image;
+  if (acc?.photoUrl) return acc.photoUrl;
+  if (acc?.image) return acc.image;
 
   // 4. Receptionist photo
   if (role === 'receptionist') {
@@ -204,7 +212,8 @@ export function PublicLayout({ children }) {
             </button>
 
             {session ? (
-              <div className="nav-profile-wrapper" ref={dropdownRef}>
+              <div className="nav-profile-wrapper" ref={dropdownRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <NotificationBell session={session} role={session.role} />
                 <button
                   type="button"
                   className="profile-trigger"
@@ -453,6 +462,7 @@ export function StaffLayout({ role, children }) {
             <button className="icon-button" title="Help">
               <CircleHelp size={18} />
             </button>
+            <NotificationBell session={session} role={role} />
             <div
               className={`staff-user ${['barber', 'receptionist', 'customer'].includes(role) ? 'staff-user-clickable' : ''}`}
               title={role === 'barber' ? 'Barber Profile & Settings' : role === 'receptionist' ? 'Receptionist Profile & Settings' : role === 'customer' ? 'Customer Profile & Settings' : 'Admin Desk'}

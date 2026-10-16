@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronRight, Download,
+  AlertTriangle, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronRight, Download,
   FileText, ListOrdered, Mail, MoreHorizontal, Package, Plus, Search, ShoppingBag, Star,
-  Tag, Trash2, UserPlus, WalletCards, X, Zap
+  Tag, Trash2, UserPlus, WalletCards, X, Zap, Eye, EyeOff, KeyRound,
+  BadgeCheck, Camera, Upload, Pencil, Clock3, LockKeyhole, UserRound
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
 import {
   sendInviteNotification, notifyCustomerTurn, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
-  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas
+  saveTransactionToAtlas, deleteTransactionFromAtlas, saveInventoryToAtlas, deleteReviewFromAtlas,
+  sendCancellationNotification
 } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentRow, QueueMini, DataTable,
   StatusBadge, EmptyState, StatCard
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
+import { isBarberOnLeave, isRestDay } from '../../utils/scheduling';
+import { addSystemNotification } from '../../services/notificationService';
 
 export function ReceptionistPage({ path }) {
   if (path === '/receptionist') return <ReceptionistDashboard />;
@@ -110,19 +114,62 @@ export function ReceptionistAppointments() {
   const { demo, commit, notify } = useStore();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
+  const [actionModal, setActionModal] = useState(null);
+
+  const [cancelModalApt, setCancelModalApt] = useState(null);
+  const [cancelReason, setCancelReason] = useState('Barber unavailable');
+  const [cancelMessage, setCancelMessage] = useState('');
+  const [cancelEmail, setCancelEmail] = useState('');
+  const [sendEmailNotice, setSendEmailNotice] = useState(true);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
 
   const filtered = demo.appointments.filter(
     (item) => `${item.customerName} ${item.serviceName} ${item.barberName}`.toLowerCase().includes(query.toLowerCase()) && (status === 'All' || item.status === status)
   );
 
-  const act = (id, action) => {
+  const resolveCustomerEmail = (apt) => {
+    if (apt?.customerEmail && apt.customerEmail.includes('@') && !apt.customerEmail.includes('example.com')) {
+      return apt.customerEmail;
+    }
+    const cust = (demo.customers || []).find(
+      (c) => (apt?.customerId && c.id === apt.customerId) || (apt?.customerName && c.name?.trim().toLowerCase() === apt.customerName.trim().toLowerCase())
+    );
+    if (cust?.email && cust.email.includes('@') && !cust.email.includes('example.com')) {
+      return cust.email;
+    }
+    try {
+      const raw = window.localStorage.getItem('biglanggwapo-accounts-v2');
+      if (raw) {
+        const list = Object.values(JSON.parse(raw));
+        const matched = list.find((acc) => acc?.email && acc.email.includes('@') && !acc.email.includes('example.com') && acc.name?.trim().toLowerCase() === apt?.customerName?.trim().toLowerCase());
+        if (matched?.email) return matched.email;
+      }
+    } catch {}
+    return apt?.customerEmail || '';
+  };
+
+  const openCancelModal = (apt) => {
+    const email = resolveCustomerEmail(apt);
+    setCancelModalApt(apt);
+    setCancelEmail(email);
+    setCancelReason('Barber unavailable');
+    setCancelMessage(`Dear ${apt.customerName},\n\nWe regret to inform you that your appointment for ${apt.serviceName} with ${apt.barberName} on ${humanDate(apt.date)} at ${apt.time} has been cancelled due to barber unavailability. Please feel free to reschedule your visit on our website at your convenience. We apologize for any inconvenience.`);
+    setSendEmailNotice(Boolean(email));
+  };
+
+  const act = (id, action, cancelInfo = null) => {
     const updater = action === 'confirm' ? demoApi.confirmAppointment : action === 'arrived' ? demoApi.markArrived : demoApi.cancelAppointment;
-    if (action === 'cancel' && !window.confirm('Cancel this appointment?')) return;
     commit((state) => {
       const prevQueueItem = (state.queue || []).find((q) => q.appointmentId === id);
-      const next = updater(state, id);
+      const next = updater(state, id, cancelInfo?.reason, cancelInfo?.message);
       const updatedApt = next.appointments.find((a) => a.id === id || a._id === id);
       if (updatedApt) {
+        if (cancelInfo) {
+          updatedApt.cancellationReason = cancelInfo.reason || '';
+          updatedApt.cancellationMessage = cancelInfo.message || '';
+          updatedApt.cancelledAt = new Date().toISOString();
+          updatedApt.cancelledBy = 'Receptionist';
+        }
         saveAppointmentToAtlas(updatedApt);
       }
       if (action === 'arrived') {
@@ -136,6 +183,53 @@ export function ReceptionistAppointments() {
       return next;
     });
     notify(action === 'arrived' ? 'Customer marked arrived and added to the queue.' : `Appointment ${action}ed.`);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelModalApt) return;
+    const apt = cancelModalApt;
+    setIsSubmittingCancel(true);
+
+    // Cancel in local store and Atlas with reason and message
+    act(apt.id, 'cancel', { reason: cancelReason, message: cancelMessage });
+
+    // Store a persistent system notification targeted to this customer
+    addSystemNotification({
+      title: 'Appointment Cancelled',
+      message: `Your booking for ${apt.serviceName} with ${apt.barberName} on ${humanDate(apt.date)} at ${apt.time} was cancelled by front desk.${cancelReason ? ` Reason: ${cancelReason}.` : ''}${cancelMessage ? ` "${cancelMessage}"` : ''}`,
+      type: 'cancelled',
+      recipientRole: 'customer',
+      recipientId: apt.customerId,
+      recipientEmail: cancelEmail || apt.customerEmail,
+      recipientName: apt.customerName,
+      actionUrl: '/service-history',
+      actionLabel: 'Service History',
+      urgent: true
+    });
+
+    // Deliver email if requested
+    if (sendEmailNotice && cancelEmail) {
+      try {
+        const res = await sendCancellationNotification({
+          appointment: apt,
+          recipientEmail: cancelEmail,
+          reason: cancelReason,
+          message: cancelMessage
+        });
+        if (res && res.success) {
+          notify(`Appointment cancelled and email notification sent to ${cancelEmail}!`, 'success');
+        } else {
+          notify(`Appointment cancelled, but email could not be delivered: ${res?.error || 'Service error'}`, 'warning');
+        }
+      } catch (err) {
+        notify(`Appointment cancelled, but email could not be delivered: ${err.message}`, 'warning');
+      }
+    } else {
+      notify(`Appointment for ${apt.customerName} cancelled.`);
+    }
+
+    setIsSubmittingCancel(false);
+    setCancelModalApt(null);
   };
 
   return (
@@ -235,12 +329,18 @@ export function ReceptionistAppointments() {
                 <td>
                   <div className="row-actions">
                     {item.status === 'Pending' && (
-                      <button className="button button-soft button-small" onClick={() => act(item.id, 'confirm')}>
+                      <button
+                        className="button button-soft button-small"
+                        onClick={() => setActionModal({ type: 'confirm', apt: item })}
+                      >
                         Confirm
                       </button>
                     )}
-                    {['Pending', 'Confirmed'].includes(item.status) && (
-                      <button className="button button-dark button-small" onClick={() => act(item.id, 'arrived')}>
+                    {item.status === 'Confirmed' && (
+                      <button
+                        className="button button-dark button-small"
+                        onClick={() => setActionModal({ type: 'arrived', apt: item })}
+                      >
                         Mark arrived
                       </button>
                     )}
@@ -250,11 +350,21 @@ export function ReceptionistAppointments() {
                       </Link>
                     )}
                     {!['Completed', 'Cancelled'].includes(item.status) && (
-                      <button className="icon-button" title="Cancel" onClick={() => act(item.id, 'cancel')}>
+                      <button
+                        className="icon-button"
+                        title="Cancel appointment"
+                        onClick={() => openCancelModal(item)}
+                      >
                         <X size={16} />
                       </button>
                     )}
-                    <button className="icon-button" title="View details"><MoreHorizontal size={17} /></button>
+                    <button
+                      className="icon-button"
+                      title="View details"
+                      onClick={() => setActionModal({ type: item.status === 'Pending' ? 'confirm' : 'arrived', apt: item })}
+                    >
+                      <MoreHorizontal size={17} />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -263,6 +373,606 @@ export function ReceptionistAppointments() {
         </DataTable>
         {!filtered.length && <EmptyState title="No bookings match" copy="Try a different search or status filter." />}
       </SectionCard>
+
+      {actionModal && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => e.target === e.currentTarget && setActionModal(null)}
+        >
+          <div className="modal-card" style={{ maxWidth: '480px' }}>
+            <button
+              className="modal-close"
+              onClick={() => setActionModal(null)}
+              aria-label="Close dialog"
+            >
+              <X size={18} />
+            </button>
+
+            {actionModal.type === 'confirm' ? (
+              <>
+                <div className="modal-heading">
+                  <div className="modal-mark">
+                    <BadgeCheck size={22} />
+                  </div>
+                  <h2>Confirm Appointment</h2>
+                  <p>Verify booking schedule and barber availability before confirming.</p>
+                </div>
+
+                <div
+                  style={{
+                    background: 'var(--paper)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    marginBottom: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span className="eyebrow gold">Customer</span>
+                      <strong style={{ fontSize: '15px' }}>{actionModal.apt.customerName}</strong>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
+                        {actionModal.apt.source || 'Online Booking'}
+                      </small>
+                    </div>
+                    <span className="status-badge pending">
+                      <i></i>Pending
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '10px',
+                      borderTop: '1px solid var(--line)',
+                      paddingTop: '10px'
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                        Service
+                      </span>
+                      <strong style={{ fontSize: '12px' }}>{actionModal.apt.serviceName}</strong>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
+                        {currency(actionModal.apt.price)} · {actionModal.apt.duration}m
+                      </small>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                        Schedule
+                      </span>
+                      <strong style={{ fontSize: '12px' }}>{humanDate(actionModal.apt.date)}</strong>
+                      <small style={{ display: 'block', color: 'var(--gold)', fontWeight: 600, fontSize: '11px' }}>
+                        {actionModal.apt.time}
+                      </small>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--line)', paddingTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--mono)', minWidth: '50px' }}>
+                      Barber:
+                    </span>
+                    <strong style={{ fontSize: '12px' }}>{actionModal.apt.barberName}</strong>
+                  </div>
+                </div>
+
+                {/* Validation Checks */}
+                {(() => {
+                  const barber = (demo.barbers || []).find(
+                    (b) => b.id === actionModal.apt.barberId || b.name === actionModal.apt.barberName
+                  );
+                  const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
+                  const onLeave = barber ? isBarberOnLeave(barber, actionModal.apt.date) : false;
+                  const onRest = barber ? isRestDay(barber, actionModal.apt.date) : false;
+
+                  const existingConflict = (demo.appointments || []).find(
+                    (a) =>
+                      a.id !== actionModal.apt.id &&
+                      (a.barberId === actionModal.apt.barberId || a.barberName === actionModal.apt.barberName) &&
+                      a.date === actionModal.apt.date &&
+                      a.time === actionModal.apt.time &&
+                      ['Confirmed', 'Arrived', 'In Service'].includes(a.status)
+                  );
+
+                  return (
+                    <div style={{ marginBottom: '20px' }}>
+                      <span className="eyebrow" style={{ marginBottom: '8px' }}>
+                        Booking Validation
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {isUnavail ? (
+                          <div
+                            style={{
+                              padding: '9px 12px',
+                              background: '#fef2f2',
+                              border: '1px solid #fecaca',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#991b1b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                            <span>
+                              <strong>Warning:</strong> Barber {actionModal.apt.barberName} is currently marked unavailable.
+                            </span>
+                          </div>
+                        ) : onLeave ? (
+                          <div
+                            style={{
+                              padding: '9px 12px',
+                              background: '#fef2f2',
+                              border: '1px solid #fecaca',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#991b1b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                            <span>
+                              <strong>Warning:</strong> Barber {actionModal.apt.barberName} is scheduled on leave on {humanDate(actionModal.apt.date)}.
+                            </span>
+                          </div>
+                        ) : onRest ? (
+                          <div
+                            style={{
+                              padding: '9px 12px',
+                              background: '#fffbeb',
+                              border: '1px solid #fef3c7',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#92400e',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                            <span>
+                              <strong>Rest Day:</strong> {humanDate(actionModal.apt.date)} is a scheduled rest day for {actionModal.apt.barberName}.
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: '8px 12px',
+                              background: '#f0fdf4',
+                              border: '1px solid #bbf7d0',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#166534',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <Check size={15} style={{ flexShrink: 0 }} />
+                            <span>Barber {actionModal.apt.barberName} is available and active on schedule.</span>
+                          </div>
+                        )}
+
+                        {existingConflict ? (
+                          <div
+                            style={{
+                              padding: '9px 12px',
+                              background: '#fef2f2',
+                              border: '1px solid #fecaca',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#991b1b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                            <span>
+                              <strong>Slot Conflict:</strong> Another active booking ({existingConflict.customerName}) is already set for {actionModal.apt.time}.
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: '8px 12px',
+                              background: '#f0fdf4',
+                              border: '1px solid #bbf7d0',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#166534',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <Check size={15} style={{ flexShrink: 0 }} />
+                            <span>Schedule slot ({actionModal.apt.time}) is clear and ready to confirm.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() => setActionModal(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-dark button-small"
+                    onClick={() => {
+                      const targetId = actionModal.apt.id;
+                      setActionModal(null);
+                      act(targetId, 'confirm');
+                    }}
+                  >
+                    Confirm Appointment
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="modal-heading">
+                  <div className="modal-mark">
+                    <Check size={22} />
+                  </div>
+                  <h2>Mark Customer Arrived</h2>
+                  <p>Check in customer and place into live barber queue.</p>
+                </div>
+
+                <div
+                  style={{
+                    background: 'var(--paper)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    marginBottom: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span className="eyebrow gold">Customer</span>
+                      <strong style={{ fontSize: '15px' }}>{actionModal.apt.customerName}</strong>
+                    </div>
+                    <span className="status-badge confirmed">
+                      <i></i>Confirmed
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '10px',
+                      borderTop: '1px solid var(--line)',
+                      paddingTop: '10px'
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                        Service
+                      </span>
+                      <strong style={{ fontSize: '12px' }}>{actionModal.apt.serviceName}</strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                        Barber Chair
+                      </span>
+                      <strong style={{ fontSize: '12px' }}>{actionModal.apt.barberName}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Queue & Schedule Validation */}
+                {(() => {
+                  const isToday = actionModal.apt.date === today;
+                  const waitingCount = (demo.queue || []).filter(
+                    (q) =>
+                      (q.barberId === actionModal.apt.barberId || q.barberName === actionModal.apt.barberName) &&
+                      !['Completed', 'Removed', 'Skipped'].includes(q.status)
+                  ).length;
+
+                  return (
+                    <div style={{ marginBottom: '20px' }}>
+                      <span className="eyebrow" style={{ marginBottom: '8px' }}>
+                        Queue Validation
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div
+                          style={{
+                            padding: '8px 12px',
+                            background: '#f0fdf4',
+                            border: '1px solid #bbf7d0',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            color: '#166534',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <Check size={15} style={{ flexShrink: 0 }} />
+                          <span>Booking is confirmed and validated for check-in.</span>
+                        </div>
+
+                        {!isToday ? (
+                          <div
+                            style={{
+                              padding: '9px 12px',
+                              background: '#fffbeb',
+                              border: '1px solid #fef3c7',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#92400e',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                            <span>
+                              <strong>Note:</strong> Booked for {humanDate(actionModal.apt.date)}, not today. Check-in will queue them today.
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: '8px 12px',
+                              background: '#f0fdf4',
+                              border: '1px solid #bbf7d0',
+                              borderRadius: '6px',
+                              fontSize: '11.5px',
+                              color: '#166534',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <Check size={15} style={{ flexShrink: 0 }} />
+                            <span>Scheduled for today ({actionModal.apt.time}).</span>
+                          </div>
+                        )}
+
+                        <div
+                          style={{
+                            padding: '8px 12px',
+                            background: 'var(--paper)',
+                            border: '1px solid var(--line)',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            color: 'var(--ink)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <ListOrdered size={15} style={{ color: 'var(--gold)', flexShrink: 0 }} />
+                          <span>
+                            {waitingCount === 0
+                              ? `${actionModal.apt.barberName}'s chair is currently open (next in chair)!`
+                              : `${waitingCount} client(s) currently ahead in ${actionModal.apt.barberName}'s queue.`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() => setActionModal(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-dark button-small"
+                    onClick={() => {
+                      const targetId = actionModal.apt.id;
+                      setActionModal(null);
+                      act(targetId, 'arrived');
+                    }}
+                  >
+                    Mark Arrived & Add to Queue
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {cancelModalApt && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => e.target === e.currentTarget && !isSubmittingCancel && setCancelModalApt(null)}
+        >
+          <div className="modal-card" style={{ maxWidth: '520px' }}>
+            <button
+              className="modal-close"
+              disabled={isSubmittingCancel}
+              onClick={() => setCancelModalApt(null)}
+              aria-label="Close dialog"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="modal-heading">
+              <div className="modal-mark" style={{ background: '#fee2e2', color: '#dc2626' }}>
+                <X size={22} />
+              </div>
+              <h2>Cancel Appointment</h2>
+              <p>Send a message and cancellation notice to the customer via email.</p>
+            </div>
+
+            {/* Summary Box */}
+            <div
+              style={{
+                background: 'var(--paper)',
+                border: '1px solid var(--line)',
+                borderRadius: '8px',
+                padding: '14px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span className="eyebrow gold">Customer</span>
+                  <strong style={{ fontSize: '14px' }}>{cancelModalApt.customerName}</strong>
+                </div>
+                <span className="status-badge pending">
+                  <i></i>{cancelModalApt.status}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  borderTop: '1px solid var(--line)',
+                  paddingTop: '8px',
+                  fontSize: '12px'
+                }}
+              >
+                <div>
+                  <span style={{ color: 'var(--muted)', fontSize: '10px', textTransform: 'uppercase', display: 'block', fontFamily: 'var(--mono)' }}>
+                    Service & Barber
+                  </span>
+                  <strong>{cancelModalApt.serviceName}</strong> · <span>{cancelModalApt.barberName}</span>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--muted)', fontSize: '10px', textTransform: 'uppercase', display: 'block', fontFamily: 'var(--mono)' }}>
+                    Scheduled Time
+                  </span>
+                  <strong>{humanDate(cancelModalApt.date)}</strong> · <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{cancelModalApt.time}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Reason & Message Controls */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
+                  Cancellation Reason
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {[
+                    'Barber unavailable',
+                    'Emergency leave',
+                    'Schedule conflict',
+                    'Customer requested',
+                    'Shop maintenance'
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setCancelReason(preset);
+                        setCancelMessage(`Dear ${cancelModalApt.customerName},\n\nWe regret to inform you that your appointment for ${cancelModalApt.serviceName} with ${cancelModalApt.barberName} on ${humanDate(cancelModalApt.date)} at ${cancelModalApt.time} has been cancelled due to ${preset.toLowerCase()}. Please feel free to reschedule your visit on our website. We apologize for any inconvenience.`);
+                      }}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        border: cancelReason === preset ? '1.5px solid var(--gold, #d4af37)' : '1px solid var(--line)',
+                        background: cancelReason === preset ? 'var(--gold-soft)' : 'var(--white)',
+                        color: cancelReason === preset ? '#704d20' : 'var(--ink)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
+                  Message to Customer (Included in Email)
+                </label>
+                <textarea
+                  className="input textarea"
+                  rows={4}
+                  value={cancelMessage}
+                  onChange={(e) => setCancelMessage(e.target.value)}
+                  placeholder="Write a message explaining the cancellation to the customer..."
+                  style={{ fontSize: '12.5px', lineHeight: '1.5', minHeight: '90px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
+                  Recipient Email
+                </label>
+                <input
+                  className="input"
+                  type="email"
+                  value={cancelEmail}
+                  onChange={(e) => setCancelEmail(e.target.value)}
+                  placeholder="customer@email.com"
+                  style={{ fontSize: '12.5px' }}
+                />
+                {!cancelEmail && (
+                  <small style={{ color: '#b91c1c', fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                    ⚠️ Enter the customer's email address to deliver this cancellation message.
+                  </small>
+                )}
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={sendEmailNotice}
+                  onChange={(e) => setSendEmailNotice(e.target.checked)}
+                />
+                <span>Send email notification with this message to the customer</span>
+              </label>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
+              <button
+                type="button"
+                className="button button-ghost button-small"
+                disabled={isSubmittingCancel}
+                onClick={() => setCancelModalApt(null)}
+              >
+                Keep Appointment
+              </button>
+              <button
+                type="button"
+                className="button button-danger button-small"
+                disabled={isSubmittingCancel || (sendEmailNotice && !cancelEmail)}
+                onClick={handleConfirmCancel}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                {isSubmittingCancel ? 'Cancelling & Sending...' : sendEmailNotice ? 'Cancel & Send Email' : 'Cancel Appointment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -411,7 +1121,7 @@ export function QueueManagement() {
   const act = (id, type) => {
     if (type === 'remove' && !window.confirm('Remove this queue entry?')) return;
     const targetItem = demo.queue.find((q) => q.id === id);
-    const api = type === 'start' ? demoApi.startService : type === 'skip' ? demoApi.skipQueue : demoApi.removeQueue;
+    const api = type === 'call' ? demoApi.callNext : type === 'start' ? demoApi.startService : type === 'skip' ? demoApi.skipQueue : demoApi.removeQueue;
     commit((state) => {
       const next = api(state, id);
       const queueItem = next.queue.find((q) => q.id === id);
@@ -424,8 +1134,8 @@ export function QueueManagement() {
       }
       return next;
     });
-    notify(type === 'start' ? 'Customer called into service.' : `Queue entry ${type}ped.`);
-    if (type === 'start' && targetItem) {
+    notify(type === 'call' ? `Called ${targetItem?.customerName || 'customer'} to chair. Waiting for barber to start.` : type === 'start' ? 'Customer started service.' : `Queue entry ${type}ped.`);
+    if ((type === 'call' || type === 'start') && targetItem) {
       notifyCustomerTurn(targetItem, demo, notify);
     }
   };
@@ -454,12 +1164,17 @@ export function QueueManagement() {
               <span>{item.serviceName} · {item.barberName}</span>
             </div>
             <StatusBadge status={item.status} />
-            <span className="queue-wait">{item.status === 'In Service' ? 'In chair' : `~${item.estimatedMinutes} min`}</span>
+            <span className="queue-wait">{item.status === 'In Service' ? 'In chair' : item.status === 'Called' ? 'Called · waiting for barber' : `~${item.estimatedMinutes} min`}</span>
             <div className="row-actions">
               {item.status === 'Waiting' && (
-                <button className="button button-soft button-small" onClick={() => act(item.id, 'start')}>
+                <button className="button button-soft button-small" onClick={() => act(item.id, 'call')}>
                   Call next
                 </button>
+              )}
+              {item.status === 'Called' && (
+                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', padding: '0 6px' }}>
+                  Waiting for barber
+                </span>
               )}
               {item.status === 'Waiting' && (
                 <button className="icon-button" title="Skip" onClick={() => act(item.id, 'skip')}>
@@ -497,6 +1212,7 @@ export function CustomerManagement() {
   const [selected, setSelected] = useState(demo.customers[0]);
   const [isAdding, setIsAdding] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', preferences: '', notes: '' });
+  const [showPassword, setShowPassword] = useState(false);
 
   const filtered = demo.customers.filter((item) =>
     `${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(query.toLowerCase())
@@ -690,15 +1406,24 @@ export function CustomerManagement() {
                 />
               </label>
               <label className="field-label">Login password
-                <input
-                  className="input"
-                  type="password"
-                  required
-                  minLength={8}
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="*********"
-                />
+                <div className="password-input">
+                  <input
+                    className="input"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={8}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder="*********"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </label>
               <label className="field-label">Hair preferences (optional)
                 <input
@@ -1793,13 +2518,23 @@ export function ReceptionistProfile() {
 
                 <label className="field-label">
                   Confirm New Password
-                  <input
-                    className="input"
-                    type={showPwd ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repeat new password"
-                  />
+                  <div className="password-input">
+                    <input
+                      className="input"
+                      type={showPwd ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwd(!showPwd)}
+                      tabIndex={-1}
+                      title={showPwd ? 'Hide' : 'Show'}
+                    >
+                      {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 </label>
 
                 <div className="password-req-box">

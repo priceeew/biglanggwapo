@@ -2,11 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
-  ListOrdered, Mail, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
+  ListOrdered, Mail, Scissors, Star, TrendingUp, UserRound, Users, WalletCards,
+  Eye, EyeOff, KeyRound, BadgeCheck, Camera, Upload, Trash2, Pencil, Plus, LockKeyhole
 } from 'lucide-react';
 import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAppointmentToAtlas, saveQueueItemToAtlas, notifyCustomerTurn } from '../../services/api';
+import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
+import { STANDARD_SCHEDULES } from '../../utils/scheduling';
+import {
+  saveAppointmentToAtlas, saveQueueItemToAtlas, notifyCustomerTurn,
+  saveBarberToAtlas, uploadImageFile
+} from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState,
   getCustomerPhoto
@@ -61,7 +67,7 @@ export function BarberDashboard() {
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const current = myQueue.find((item) => item.status === 'In Service');
-  const next = myQueue.find((item) => item.status === 'Waiting');
+  const next = myQueue.find((item) => item.status === 'Called') || myQueue.find((item) => item.status === 'Waiting');
 
   const callNextClient = (item) => {
     commit((state) => {
@@ -73,6 +79,19 @@ export function BarberDashboard() {
       return nextState;
     });
     notify(`Called ${item.customerName} to the chair!`);
+    notifyCustomerTurn(item, demo, notify);
+  };
+
+  const startClient = (item) => {
+    commit((state) => {
+      const nextState = demoApi.startService(state, item.id);
+      const updatedQueue = nextState.queue.find((q) => q.id === item.id);
+      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      const apt = nextState.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) saveAppointmentToAtlas(apt);
+      return nextState;
+    });
+    notify(`Service session started for ${item.customerName}!`);
     notifyCustomerTurn(item, demo, notify);
   };
 
@@ -125,6 +144,13 @@ export function BarberDashboard() {
                   <h2>{current.customerName}</h2>
                   <p>{current.serviceName} · {current.estimatedMinutes || 30} min</p>
                 </div>
+                <Link
+                  to="/barber/service-session"
+                  className="button button-dark button-small"
+                  style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap' }}
+                >
+                  In service
+                </Link>
               </>
             ) : next ? (
               <>
@@ -140,16 +166,16 @@ export function BarberDashboard() {
                   </span>
                 )}
                 <div className="chair-focus-info">
-                  <span className="eyebrow gold">Next in line · {next.number}</span>
-                  <h2>{next.customerName} is waiting</h2>
-                  <p>{next.serviceName} · Ready to call to chair</p>
+                  <span className="eyebrow gold">{next.status === 'Called' ? `Called to chair · ${next.number}` : `Next in line · ${next.number}`}</span>
+                  <h2>{next.customerName} {next.status === 'Called' ? 'called' : 'is waiting'}</h2>
+                  <p>{next.serviceName} · {next.status === 'Called' ? 'Ready to begin service' : 'Ready to call to chair'}</p>
                 </div>
                 <button
                   className="button button-dark button-small"
                   style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap' }}
-                  onClick={() => callNextClient(next)}
+                  onClick={() => (next.status === 'Called' ? startClient(next) : callNextClient(next))}
                 >
-                  Call to chair
+                  {next.status === 'Called' ? 'Start service' : 'Call to chair'}
                 </button>
               </>
             ) : (
@@ -214,17 +240,7 @@ export function BarberAppointments() {
   const list = (demo.appointments || []).filter(matchesBarber);
   const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
 
-  const markArrived = (appointmentId) => {
-    commit((state) => {
-      const next = demoApi.markArrived(state, appointmentId);
-      const updatedApt = next.appointments.find((a) => a.id === appointmentId || a._id === appointmentId);
-      if (updatedApt) saveAppointmentToAtlas(updatedApt);
-      const queueEntry = next.queue.find((q) => q.appointmentId === appointmentId || q.appointmentId === updatedApt?.id || q.appointmentId === updatedApt?._id);
-      if (queueEntry) saveQueueItemToAtlas(queueEntry);
-      return next;
-    });
-    notify('Customer marked arrived and added to your queue!');
-  };
+
 
   return (
     <>
@@ -274,12 +290,7 @@ export function BarberAppointments() {
                   ) : item.status === 'In Service' ? (
                     <Link className="button button-dark button-small" to="/barber/service-session">In service</Link>
                   ) : (
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {['Pending', 'Confirmed'].includes(item.status) && (
-                        <button className="button button-dark button-small" onClick={() => markArrived(item.id)}>Mark arrived</button>
-                      )}
-                      <Link className="button button-soft button-small" to="/barber/customer-details">Details</Link>
-                    </div>
+                    <Link className="button button-soft button-small" to="/barber/customer-details">Details</Link>
                   )}
                 </td>
               </tr>
@@ -351,7 +362,7 @@ export function BarberQueue() {
               <button className="button button-dark button-small" onClick={() => start(item)}>Start service</button>
             )}
             {item.status === 'In Service' && (
-              <Link to="/barber/service-session" className="button button-soft button-small">Open chair</Link>
+              <Link to="/barber/service-session" className="button button-dark button-small">In service</Link>
             )}
             <button
               className="icon-button"
@@ -769,7 +780,7 @@ export function BarberProfile() {
 
   const getInitialPhoto = () => {
     const acc = session?.email ? getAccounts()[session.email.toLowerCase()] : null;
-    return session?.photoUrl || session?.image || barber?.photoUrl || barber?.image || acc?.photoUrl || acc?.image || '';
+    return barber?.image || barber?.photoUrl || acc?.image || acc?.photoUrl || session?.photoUrl || session?.image || '';
   };
 
   const [editing, setEditing] = useState(false);
@@ -820,7 +831,7 @@ export function BarberProfile() {
       if (barber?.schedule || session?.schedule) setSchedule(barber?.schedule || session?.schedule || STANDARD_SCHEDULES[0]);
       if (barber?.leaveStatus) setLeaveStatus(barber.leaveStatus);
       if (barber?.leaveNotes) setLeaveNotes(barber.leaveNotes);
-      const latestPhoto = getInitialPhoto();
+      const latestPhoto = barber?.image || barber?.photoUrl || getInitialPhoto();
       setPhotoUrl(latestPhoto);
     }
   }, [barber, session]);
@@ -1393,13 +1404,23 @@ export function BarberProfile() {
 
                 <label className="field-label">
                   Confirm New Password
-                  <input
-                    className="input"
-                    type={showPwd ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repeat new password"
-                  />
+                  <div className="password-input">
+                    <input
+                      className="input"
+                      type={showPwd ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwd(!showPwd)}
+                      tabIndex={-1}
+                      title={showPwd ? 'Hide' : 'Show'}
+                    >
+                      {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 </label>
 
                 <div className="password-req-box">

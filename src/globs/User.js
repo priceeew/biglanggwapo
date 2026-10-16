@@ -9,10 +9,13 @@ const defaultAdminAccount = {
   }
 };
 
-const STORAGE_KEY = 'biglanggwapo-accounts-v2';
+const STORAGE_KEY = 'biglanggwapo-accounts-v3';
 
 function loadStoredAccounts() {
   try {
+    if (typeof window !== 'undefined') {
+      try { window.localStorage.removeItem('biglanggwapo-accounts-v2'); } catch {}
+    }
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null;
     if (raw) {
       const parsed = JSON.parse(raw);

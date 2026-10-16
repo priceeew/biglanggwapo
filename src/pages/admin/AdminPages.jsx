@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, CalendarDays, Check, Download, Image as ImageIcon, Layers,
   Package, Pencil, Plus, RefreshCcw, Scissors, ShoppingBag, Star, Tag,
-  Trash2, TrendingUp, Upload, Users, X
+  Trash2, TrendingUp, Upload, Users, X, Eye, EyeOff
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
 import { demoApi, syncAccountsIntoDemoState } from '../../mockService';
@@ -199,6 +199,7 @@ export function AdminManagementPage({ collection }) {
     description: '',
     image: ''
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   const config = {
     receptionists: {
@@ -455,6 +456,7 @@ export function AdminManagementPage({ collection }) {
           name: savedBarber.name,
           phone: savedBarber.phone,
           image: savedBarber.image || '',
+          photoUrl: savedBarber.image || '',
           role: 'barber',
           barberId: editingBarber.id,
           status: computedStatus
@@ -1064,15 +1066,24 @@ export function AdminManagementPage({ collection }) {
                     />
                   </label>
                   <label className="field-label">Password
-                    <input
-                      className="input"
-                      type="password"
-                      required
-                      minLength={8}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="*********"
-                    />
+                    <div className="password-input">
+                      <input
+                        className="input"
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="*********"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </label>
 
                   {['barbers', 'receptionists'].includes(collection) && (
