@@ -719,6 +719,29 @@ export function CustomerQueue() {
               </div>
             </div>
 
+            {(active?.status === 'Called' || active?.status === 'In Service') && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(184,138,68,0.18), rgba(28,28,28,0.05))',
+                border: '1.5px solid var(--gold)',
+                borderRadius: '8px',
+                padding: '16px 20px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px'
+              }}>
+                <span style={{ fontSize: '24px' }}>💈</span>
+                <div>
+                  <strong style={{ color: 'var(--gold)', display: 'block', fontSize: '15px' }}>
+                    Kayo na po ang gugupitan!
+                  </strong>
+                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                    Handa na po ang barber chair ni <strong>{active.barberName}</strong> para sa inyong service. Nagpadala rin po kami ng email notification sa inyong inbox!
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="notice-bar">
               <Clock3 size={17} />
               <span>All wait times are dynamic estimates and update as barbers finish clients.</span>

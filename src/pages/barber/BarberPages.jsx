@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, CalendarClock, CalendarDays, Check, CheckCircle2, Clock3,
-  ListOrdered, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
+  ListOrdered, Mail, Scissors, Star, TrendingUp, UserRound, Users, WalletCards
 } from 'lucide-react';
 import { useStore, currency, humanDate, today, stars } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
-import { saveAppointmentToAtlas, saveQueueItemToAtlas } from '../../services/api';
+import { saveAppointmentToAtlas, saveQueueItemToAtlas, notifyCustomerTurn } from '../../services/api';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState
 } from '../../components/common/UIComponents';
@@ -268,6 +268,7 @@ export function BarberQueue() {
       return next;
     });
     notify(`Called ${item.customerName} to the chair!`);
+    notifyCustomerTurn(item, demo, notify);
   };
 
   const start = (item) => {
@@ -280,6 +281,7 @@ export function BarberQueue() {
       return next;
     });
     notify(`Service started for ${item.customerName}!`);
+    notifyCustomerTurn(item, demo, notify);
   };
 
   return (
@@ -312,6 +314,13 @@ export function BarberQueue() {
             {item.status === 'In Service' && (
               <Link to="/barber/service-session" className="button button-soft button-small">Open chair</Link>
             )}
+            <button
+              className="icon-button"
+              title="Send email alert: Kayo na po ang gugupitan!"
+              onClick={() => notifyCustomerTurn(item, demo, notify)}
+            >
+              <Mail size={16} />
+            </button>
           </div>
         ))}
         {!list.length && <EmptyState title="The queue is clear" copy="When reception marks a customer as arrived or registers a walk-in, they appear here live." />}
@@ -410,6 +419,7 @@ export function ServiceSession() {
         return next;
       });
       notify(`Called ${current.customerName} to the chair!`);
+      notifyCustomerTurn(current, demo, notify);
     } else if (current.status === 'Called') {
       commit((state) => {
         const next = demoApi.startService(state, current.id);
@@ -420,6 +430,7 @@ export function ServiceSession() {
         return next;
       });
       notify(`Service session started for ${current.customerName}!`);
+      notifyCustomerTurn(current, demo, notify);
     } else if (current.status === 'In Service') {
       commit((state) => {
         const next = demoApi.completeService(state, current.id, notes);

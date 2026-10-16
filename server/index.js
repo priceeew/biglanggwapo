@@ -15,7 +15,7 @@ import { Inventory } from './models/Inventory.js';
 import { Queue } from './models/Queue.js';
 import { Discount } from './models/Discount.js';
 import { Transaction } from './models/Transaction.js';
-import { sendInvitationEmail } from './services/emailService.js';
+import { sendInvitationEmail, sendTurnNotificationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
 try {
@@ -537,12 +537,37 @@ app.delete('/api/transactions', async (req, res) => {
   }
 });
 
-// Email Invitation endpoint
-app.post('/api/send-invite', async (req, res) => {
+// Email Notification endpoints (Invitation & Turn Alerts)
+const handleEmailSend = async (req, res) => {
   try {
-    const { to, name, role, password, portalUrl } = req.body;
+    const { type, to, name, role, password, portalUrl, barberName, serviceName, queueNumber } = req.body;
     if (!to || !name) {
       return res.status(400).json({ success: false, message: 'Missing recipient email or name.' });
+    }
+
+    if (type === 'turn-notification' || type === 'chair-call') {
+      const result = await sendTurnNotificationEmail({
+        to,
+        customerName: name,
+        barberName: barberName || 'Your Barber',
+        serviceName: serviceName || 'Haircut & Styling',
+        queueNumber: queueNumber || '',
+        portalUrl: portalUrl || 'https://biglanggwapo.vercel.app'
+      });
+
+      if (result.success) {
+        return res.json({
+          success: true,
+          message: 'Turn notification email sent successfully!',
+          previewUrl: result.previewUrl
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send turn notification email.',
+        error: result.error
+      });
     }
 
     const result = await sendInvitationEmail({
@@ -569,7 +594,10 @@ app.post('/api/send-invite', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+
+app.post('/api/send-invite', handleEmailSend);
+app.post('/api/notify-turn', handleEmailSend);
 
 // Image Upload Endpoint (ImgBB Cloud with local static storage fallback)
 app.post('/api/upload', async (req, res) => {

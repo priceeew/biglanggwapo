@@ -1,4 +1,4 @@
-import { sendInvitationEmail } from '../server/services/emailService.js';
+import { sendInvitationEmail, sendTurnNotificationEmail } from '../server/services/emailService.js';
 
 export default async function handler(req, res) {
   // CORS configuration
@@ -19,9 +19,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { to, name, role, password, portalUrl } = req.body || {};
+    const { type, to, name, role, password, portalUrl, barberName, serviceName, queueNumber } = req.body || {};
     if (!to || !name) {
       return res.status(400).json({ success: false, message: 'Missing recipient email or name.' });
+    }
+
+    if (type === 'turn-notification' || type === 'chair-call') {
+      const result = await sendTurnNotificationEmail({
+        to,
+        customerName: name,
+        barberName: barberName || 'Your Barber',
+        serviceName: serviceName || 'Haircut & Styling',
+        queueNumber: queueNumber || '',
+        portalUrl: portalUrl || 'https://biglanggwapo.vercel.app'
+      });
+
+      if (result.success) {
+        return res.status(200).json({
+          success: true,
+          message: 'Turn notification email sent successfully!',
+          previewUrl: result.previewUrl
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send turn notification email.',
+        error: result.error
+      });
     }
 
     const result = await sendInvitationEmail({

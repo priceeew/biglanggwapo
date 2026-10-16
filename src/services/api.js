@@ -19,6 +19,126 @@ export async function sendInviteNotification({ to, name, role, password }) {
   }
 }
 
+export async function sendTurnNotification({ to, customerName, barberName, serviceName, queueNumber }) {
+  try {
+    const res = await fetch('/api/send-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'turn-notification',
+        to,
+        name: customerName,
+        barberName,
+        serviceName,
+        queueNumber,
+        portalUrl: window.location.origin
+      })
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.warn('Backend turn email notification API unreachable:', err.message);
+    return { success: false, error: 'Email service unreachable: ' + err.message };
+  }
+}
+
+// In-memory set to prevent duplicate email alerts within a session for the same queue item
+const notifiedTurns = new Set();
+
+export async function notifyCustomerTurn(queueItem, state, notify) {
+  if (!queueItem) return false;
+
+  const dedupeKey = `${queueItem.id || queueItem.appointmentId || queueItem.customerName}-${queueItem.number || ''}`;
+  if (notifiedTurns.has(dedupeKey)) {
+    console.log('[Turn Notification] Already notified for', dedupeKey);
+    return false;
+  }
+
+  // 1. Check direct queueItem customerEmail
+  let email = queueItem.customerEmail;
+
+  // 2. Check linked appointment
+  if (!email || !email.includes('@') || email.includes('example.com')) {
+    const apt = state?.appointments?.find(
+      (a) => a.id === queueItem.appointmentId || a.id === queueItem.id
+    );
+    if (apt?.customerEmail && apt.customerEmail.includes('@') && !apt.customerEmail.includes('example.com')) {
+      email = apt.customerEmail;
+    }
+  }
+
+  // 3. Check customers list in state
+  if (!email || !email.includes('@') || email.includes('example.com')) {
+    const cust = state?.customers?.find(
+      (c) =>
+        (queueItem.customerId && c.id === queueItem.customerId) ||
+        (queueItem.customerName && c.name && c.name.trim().toLowerCase() === queueItem.customerName.trim().toLowerCase())
+    );
+    if (cust?.email && cust.email.includes('@') && !cust.email.includes('example.com')) {
+      email = cust.email;
+    }
+  }
+
+  // 4. Check accounts stored in localStorage
+  if (!email || !email.includes('@') || email.includes('example.com')) {
+    try {
+      const rawAccounts = window.localStorage.getItem('biglanggwapo-accounts-v2');
+      if (rawAccounts) {
+        const accountsList = Object.values(JSON.parse(rawAccounts));
+        const matched = accountsList.find(
+          (acc) =>
+            acc &&
+            acc.email &&
+            acc.email.includes('@') &&
+            !acc.email.includes('example.com') &&
+            acc.name &&
+            queueItem.customerName &&
+            acc.name.trim().toLowerCase() === queueItem.customerName.trim().toLowerCase()
+        );
+        if (matched?.email) {
+          email = matched.email;
+        }
+      }
+    } catch {}
+  }
+
+  if (!email || !email.includes('@') || email.includes('example.com')) {
+    console.log('[Turn Notification] No valid customer email found for', queueItem.customerName);
+    return false;
+  }
+
+  notifiedTurns.add(dedupeKey);
+
+  const customerName = queueItem.customerName || 'Valued Customer';
+  const barberName = queueItem.barberName || 'Your Barber';
+  const serviceName = queueItem.serviceName || 'Haircut & Styling';
+  const queueNumber = queueItem.number || '';
+
+  try {
+    const res = await sendTurnNotification({
+      to: email,
+      customerName,
+      barberName,
+      serviceName,
+      queueNumber
+    });
+
+    if (res && res.success) {
+      if (notify) {
+        notify(`📧 Email sent to ${customerName} (${email}): Kayo na po ang gugupitan!`);
+      }
+      return true;
+    } else {
+      console.warn('[Turn Notification] Email dispatch failed:', res?.error);
+      return false;
+    }
+  } catch (err) {
+    console.error('[Turn Notification] Error calling email API:', err);
+    return false;
+  }
+}
+
+
 export async function fetchAccountsFromAtlas() {
   try {
     const res = await fetch('/api/accounts');

@@ -38,6 +38,10 @@
       "destination": "/api/transactions?id=:id"
     },
     {
+      "source": "/api/notify-turn",
+      "destination": "/api/send-invite"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },
