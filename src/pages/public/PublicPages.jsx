@@ -8,6 +8,7 @@ import { useStore, currency, today, humanDate, stars } from '../../context/Store
 import { promotions, staffUsers } from '../../data';
 import { demoApi } from '../../mockService';
 import { saveAppointmentToAtlas } from '../../services/api';
+import { addSystemNotification } from '../../services/notificationService';
 import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
   PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard, ReviewPhotoModal
@@ -526,6 +527,17 @@ export function BookingPage() {
       };
       commit((state) => demoApi.createBooking(state, newApt));
       saveAppointmentToAtlas(newApt);
+
+      // Notify the receptionist of the new booking request
+      addSystemNotification({
+        title: `New Booking Request: ${session.name || 'Customer'}`,
+        message: `${session.name || 'Customer'} booked ${combinedServiceName} with ${barber.name} on ${humanDate(selection.date)} at ${selection.time}. Awaiting confirmation.`,
+        type: 'pending-confirm',
+        recipientRole: 'receptionist',
+        actionUrl: '/receptionist/appointments',
+        actionLabel: 'Review Booking',
+        urgent: true
+      });
       setConfirmed({
         ...selection,
         serviceName: combinedServiceName,

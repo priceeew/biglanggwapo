@@ -19,7 +19,7 @@ import {
   StatusBadge, EmptyState, StatCard, ServiceValidationModal
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
-import { isBarberOnLeave, isRestDay, sortAppointmentsStably } from '../../utils/scheduling';
+import { isRestDay, sortAppointmentsStably } from '../../utils/scheduling';
 import { addSystemNotification } from '../../services/notificationService';
 
 export function ReceptionistPage({ path }) {
@@ -190,6 +190,39 @@ export function ReceptionistAppointments() {
 
     if (aptToSave) {
       saveAppointmentToAtlas(aptToSave);
+      if (action === 'confirm') {
+        const targetBarber = (demo.barbers || []).find((b) => 
+          (aptToSave.barberId && b.id === aptToSave.barberId) ||
+          (b.name && aptToSave.barberName && b.name.trim().toLowerCase() === aptToSave.barberName.trim().toLowerCase())
+        );
+        // 1. Notify the barber of the confirmed booking
+        addSystemNotification({
+          title: `New Appointment Confirmed: ${aptToSave.customerName}`,
+          message: `Front desk confirmed ${aptToSave.customerName} for ${aptToSave.serviceName} on ${humanDate(aptToSave.date)} at ${aptToSave.time}.`,
+          type: 'confirmed',
+          recipientRole: 'barber',
+          recipientId: aptToSave.barberId || targetBarber?.id || '',
+          recipientEmail: targetBarber?.email || '',
+          recipientName: aptToSave.barberName,
+          actionUrl: '/barber/appointments',
+          actionLabel: 'Schedule',
+          urgent: true
+        });
+
+        // 2. Notify the customer that front desk confirmed their booking
+        addSystemNotification({
+          title: 'Appointment Confirmed!',
+          message: `Your booking for ${aptToSave.serviceName} with ${aptToSave.barberName} on ${humanDate(aptToSave.date)} at ${aptToSave.time} is officially confirmed.`,
+          type: 'confirmed',
+          recipientRole: 'customer',
+          recipientId: aptToSave.customerId,
+          recipientEmail: aptToSave.customerEmail,
+          recipientName: aptToSave.customerName,
+          actionUrl: '/my-appointments',
+          actionLabel: 'My Bookings',
+          urgent: false
+        });
+      }
     }
     if (queueToSave) {
       saveQueueItemToAtlas(queueToSave);
@@ -482,7 +515,6 @@ export function ReceptionistAppointments() {
                     (b) => b.id === actionModal.apt.barberId || b.name === actionModal.apt.barberName
                   );
                   const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
-                  const onLeave = barber ? isBarberOnLeave(barber, actionModal.apt.date) : false;
                   const onRest = barber ? isRestDay(barber, actionModal.apt.date) : false;
 
                   const existingConflict = (demo.appointments || []).find(
@@ -517,25 +549,6 @@ export function ReceptionistAppointments() {
                             <AlertTriangle size={15} style={{ flexShrink: 0 }} />
                             <span>
                               <strong>Warning:</strong> Barber {actionModal.apt.barberName} is currently marked unavailable.
-                            </span>
-                          </div>
-                        ) : onLeave ? (
-                          <div
-                            style={{
-                              padding: '9px 12px',
-                              background: '#fef2f2',
-                              border: '1px solid #fecaca',
-                              borderRadius: '6px',
-                              fontSize: '11.5px',
-                              color: '#991b1b',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px'
-                            }}
-                          >
-                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
-                            <span>
-                              <strong>Warning:</strong> Barber {actionModal.apt.barberName} is scheduled on leave on {humanDate(actionModal.apt.date)}.
                             </span>
                           </div>
                         ) : onRest ? (
@@ -1179,7 +1192,15 @@ export function QueueManagement() {
     if (type === 'remove' && !window.confirm('Remove this queue entry?')) return;
     const targetItem = demo.queue.find((q) => q.id === id);
     const api = type === 'call'
-      ? demoApi.callNext
+      ? (state, qId) => {
+          const entry = state.queue.find((item) => item.id === qId);
+          if (!entry) return state;
+          return {
+            ...state,
+            queue: state.queue.map((item) => item.id === qId ? { ...item, status: 'Pending', calledAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) } : item),
+            appointments: state.appointments.map((item) => item.id === entry.appointmentId ? { ...item, status: 'Called' } : item)
+          };
+        }
       : type === 'start'
       ? demoApi.startService
       : type === 'complete'
@@ -1209,15 +1230,27 @@ export function QueueManagement() {
     }
     notify(
       type === 'call'
-        ? `Called ${targetItem?.customerName || 'customer'} to chair. Waiting for barber to start.`
+        ? `Called ${targetItem?.customerName || 'customer'} to chair. Status is now pending for barber to start.`
         : type === 'start'
         ? `Service session started for ${targetItem?.customerName || 'customer'}!`
         : type === 'complete'
         ? `Service completed for ${targetItem?.customerName || 'customer'}! Sent to front desk for checkout.`
         : `Queue entry ${type}ped.`
     );
-    if ((type === 'call' || type === 'start') && targetItem) {
+    if (type === 'call' && targetItem) {
       notifyCustomerTurn(targetItem, demo, notify);
+      // Notify the barber that a customer has been called and is pending at their chair
+      addSystemNotification({
+        title: `Customer Pending at Chair: ${targetItem.customerName}`,
+        message: `${targetItem.customerName} (Ticket #${targetItem.number}) has been called to your chair for ${targetItem.serviceName}. Ready for you to start service.`,
+        type: 'queue-next',
+        recipientRole: 'barber',
+        recipientId: targetItem.barberId || '',
+        recipientName: targetItem.barberName || '',
+        actionUrl: '/barber/queue',
+        actionLabel: 'Start Service',
+        urgent: true
+      });
     }
   };
 
@@ -1245,28 +1278,24 @@ export function QueueManagement() {
               <span>{item.serviceName} · {item.barberName}</span>
             </div>
             <StatusBadge status={item.status} />
-            <span className="queue-wait">{item.status === 'In Service' ? 'In chair' : item.status === 'Called' ? 'Called · ready to start' : `~${item.estimatedMinutes} min`}</span>
+            <span className="queue-wait">
+              {item.status === 'In Service' ? 'In chair · with barber' : (item.status === 'Called' || item.status === 'Pending') ? 'Pending · barber starting' : `~${item.estimatedMinutes} min`}
+            </span>
             <div className="row-actions">
               {item.status === 'Waiting' && (
                 <button className="button button-soft button-small" onClick={() => act(item.id, 'call')}>
                   Call next
                 </button>
               )}
-              {item.status === 'Called' && (
-                <button
-                  className="button button-dark button-small"
-                  onClick={() => setValidationModal({ type: 'start', item })}
-                >
-                  Start service
-                </button>
+              {(item.status === 'Called' || item.status === 'Pending') && (
+                <span className="status-badge pending" style={{ padding: '5px 9px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <i />Pending barber
+                </span>
               )}
               {item.status === 'In Service' && (
-                <button
-                  className="button button-soft button-small"
-                  onClick={() => setValidationModal({ type: 'complete', item })}
-                >
-                  Complete service
-                </button>
+                <span className="status-badge in-service" style={{ padding: '5px 9px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <i />In Service
+                </span>
               )}
               {item.status === 'Waiting' && (
                 <button className="icon-button" title="Skip" onClick={() => act(item.id, 'skip')}>

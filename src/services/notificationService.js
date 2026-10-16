@@ -117,9 +117,11 @@ export function getNotificationsForSession(session, demo) {
       return !n.recipientId && !n.recipientEmail && !n.recipientName;
     }
     if (role === 'barber') {
-      if (n.recipientId && session.barberId && n.recipientId === session.barberId) return true;
+      const barberId = session.barberId;
+      if (n.recipientId && barberId && String(n.recipientId) === String(barberId)) return true;
       if (n.recipientEmail && cleanEmail && n.recipientEmail === cleanEmail) return true;
-      return true;
+      if (n.recipientName && userName && n.recipientName.trim().toLowerCase() === userName) return true;
+      return !n.recipientId && !n.recipientEmail && !n.recipientName;
     }
     return true; // receptionist & admin see role-wide notifications
   });
@@ -155,7 +157,7 @@ export function getNotificationsForSession(session, demo) {
           actionLabel: 'Queue Status',
           urgent: false
         });
-      } else if (activeQueue.status === 'Called') {
+      } else if (activeQueue.status === 'Called' || activeQueue.status === 'Pending') {
         live.push({
           id: `live-queue-called-${activeQueue.id}`,
           title: 'You are Next! Chair is Ready!',
@@ -256,7 +258,24 @@ export function getNotificationsForSession(session, demo) {
       });
     });
 
-    // Cancelled appointments for this barber
+    // Customers called and pending at the chair for this barber
+    const pendingAtChair = (demo?.queue || []).filter(
+      (q) => (q.barberId === bId || q.barberName === bName) && (q.status === 'Called' || q.status === 'Pending')
+    );
+    pendingAtChair.forEach((q) => {
+      live.push({
+        id: `live-barber-chair-pending-${q.id}`,
+        title: `Customer Pending at Chair: ${q.customerName}`,
+        message: `${q.customerName} (Ticket #${q.number}) is pending at your chair for ${q.serviceName}. Ready for you to start service.`,
+        type: 'queue-next',
+        time: 'Ready for cut',
+        actionUrl: '/barber/queue',
+        actionLabel: 'Start Service',
+        urgent: true
+      });
+    });
+
+    // Cancelled and Confirmed appointments for this barber
     const barberApts = (demo?.appointments || []).filter(
       (a) => a.barberId === bId || a.barberName === bName
     );
@@ -268,6 +287,17 @@ export function getNotificationsForSession(session, demo) {
           message: `Appointment for ${apt.customerName} (${apt.serviceName}) on ${humanDate(apt.date)} at ${apt.time} was cancelled.${apt.cancellationReason ? ` (${apt.cancellationReason})` : ''}`,
           type: 'cancelled',
           time: humanDate(apt.date),
+          actionUrl: '/barber/appointments',
+          actionLabel: 'Schedule',
+          urgent: false
+        });
+      } else if (apt.status === 'Confirmed') {
+        live.push({
+          id: `live-barber-confirm-${apt.id}`,
+          title: `Booking Confirmed: ${apt.customerName}`,
+          message: `${apt.customerName} has a confirmed appointment for ${apt.serviceName} on ${humanDate(apt.date)} at ${apt.time}.`,
+          type: 'confirmed',
+          time: `${humanDate(apt.date)} · ${apt.time}`,
           actionUrl: '/barber/appointments',
           actionLabel: 'Schedule',
           urgent: false

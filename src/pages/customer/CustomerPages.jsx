@@ -723,7 +723,7 @@ export function CustomerQueue() {
               </div>
             </div>
 
-            {(active?.status === 'Called' || active?.status === 'In Service') && (
+            {(active?.status === 'Called' || active?.status === 'Pending' || active?.status === 'In Service') && (
               <div style={{
                 background: 'linear-gradient(135deg, rgba(184,138,68,0.18), rgba(28,28,28,0.05))',
                 border: '1.5px solid var(--gold)',
@@ -737,7 +737,7 @@ export function CustomerQueue() {
                 <span style={{ fontSize: '24px' }}>💈</span>
                 <div>
                   <strong style={{ color: 'var(--gold)', display: 'block', fontSize: '15px' }}>
-                    Kayo na po ang gugupitan!
+                    {active.status === 'In Service' ? 'Kasalukuyang ginugupitan na po kayo!' : 'Kayo na po ang susunod na gugupitan!'}
                   </strong>
                   <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                     Handa na po ang barber chair ni <strong>{active.barberName}</strong> para sa inyong service. Nagpadala rin po kami ng email notification sa inyong inbox!

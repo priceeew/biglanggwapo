@@ -67,7 +67,7 @@ export function BarberDashboard() {
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const current = myQueue.find((item) => item.status === 'In Service');
-  const next = myQueue.find((item) => item.status === 'Called') || myQueue.find((item) => item.status === 'Waiting');
+  const next = myQueue.find((item) => item.status === 'Called' || item.status === 'Pending') || myQueue.find((item) => item.status === 'Waiting');
 
   const [validationModal, setValidationModal] = useState(null);
 
@@ -182,16 +182,16 @@ export function BarberDashboard() {
                   </span>
                 )}
                 <div className="chair-focus-info">
-                  <span className="eyebrow gold">{next.status === 'Called' ? `Called to chair · ${next.number}` : `Next in line · ${next.number}`}</span>
-                  <h2>{next.customerName} {next.status === 'Called' ? 'called' : 'is waiting'}</h2>
-                  <p>{next.serviceName} · {next.status === 'Called' ? 'Ready to begin service' : 'Ready to call to chair'}</p>
+                  <span className="eyebrow gold">{(next.status === 'Called' || next.status === 'Pending') ? `Called to chair · ${next.number}` : `Next in line · ${next.number}`}</span>
+                  <h2>{next.customerName} {(next.status === 'Called' || next.status === 'Pending') ? 'pending at chair' : 'is waiting'}</h2>
+                  <p>{next.serviceName} · {(next.status === 'Called' || next.status === 'Pending') ? 'Ready to begin service' : 'Ready to call to chair'}</p>
                 </div>
                 <button
                   className="button button-dark button-small"
                   style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap' }}
-                  onClick={() => (next.status === 'Called' ? setValidationModal({ type: 'start', item: next }) : callNextClient(next))}
+                  onClick={() => ((next.status === 'Called' || next.status === 'Pending') ? setValidationModal({ type: 'start', item: next }) : callNextClient(next))}
                 >
-                  {next.status === 'Called' ? 'Start service' : 'Call to chair'}
+                  {(next.status === 'Called' || next.status === 'Pending') ? 'Start service' : 'Call to chair'}
                 </button>
               </>
             ) : (
@@ -316,6 +316,8 @@ export function BarberAppointments() {
                 <td>
                   {item.status === 'Arrived' ? (
                     <Link className="button button-dark button-small" to="/barber/queue">Call chair</Link>
+                  ) : (item.status === 'Called' || item.status === 'Pending') ? (
+                    <Link className="button button-dark button-small" to="/barber/service-session">Start service</Link>
                   ) : item.status === 'In Service' ? (
                     <Link className="button button-dark button-small" to="/barber/service-session">In service</Link>
                   ) : (
@@ -394,7 +396,7 @@ export function BarberQueue() {
             <span className="queue-number-small">{item.number}</span>
             <span className="avatar avatar-md">{(item.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
             <div>
-              <span className="eyebrow">{item.status === 'In Service' ? 'Current in chair' : item.status === 'Called' ? 'Called to chair' : index === 0 ? 'Now / next' : `In line · position ${index + 1}`}</span>
+              <span className="eyebrow">{item.status === 'In Service' ? 'Current in chair' : (item.status === 'Called' || item.status === 'Pending') ? 'Pending at chair' : index === 0 ? 'Now / next' : `In line · position ${index + 1}`}</span>
               <h3>{item.customerName}</h3>
               <p>{item.serviceName} · Joined {item.joinedAt || 'recently'}</p>
             </div>
@@ -402,11 +404,11 @@ export function BarberQueue() {
             {item.status === 'Waiting' && (
               <button className="button button-soft button-small" onClick={() => callNextClient(item)}>Call next</button>
             )}
-            {item.status === 'Called' && (
+            {(item.status === 'Called' || item.status === 'Pending') && (
               <button className="button button-dark button-small" onClick={() => setValidationModal({ type: 'start', item })}>Start service</button>
             )}
             {item.status === 'In Service' && (
-              <Link to="/barber/service-session" className="button button-dark button-small">In service</Link>
+              <Link to="/barber/service-session" className="button button-dark button-small">Complete service →</Link>
             )}
             <button
               className="icon-button"
@@ -512,7 +514,7 @@ export function ServiceSession() {
   const [validationModal, setValidationModal] = useState(null);
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
-  const current = myQueue.find((item) => item.status === 'In Service') || myQueue[0];
+  const current = myQueue.find((item) => item.status === 'In Service') || myQueue.find((item) => item.status === 'Called' || item.status === 'Pending') || myQueue[0];
   const [notes, setNotes] = useState(current?.notes || '');
 
   const startCurrent = (item, newNotes = '') => {
@@ -573,7 +575,7 @@ export function ServiceSession() {
       if (aptToSave) saveAppointmentToAtlas(aptToSave);
       notify(`Called ${current.customerName} to the chair!`);
       notifyCustomerTurn(current, demo, notify);
-    } else if (current.status === 'Called') {
+    } else if (current.status === 'Called' || current.status === 'Pending') {
       setValidationModal({ type: 'start', item: current });
     } else if (current.status === 'In Service') {
       setValidationModal({ type: 'complete', item: current });
@@ -602,7 +604,7 @@ export function ServiceSession() {
               <span>
                 {current.status === 'In Service'
                   ? 'Service is in progress'
-                  : current.status === 'Called'
+                  : (current.status === 'Called' || current.status === 'Pending')
                   ? 'Customer called to chair — ready to begin haircut'
                   : 'Customer arrived — please call next before starting service'}
               </span>
@@ -616,7 +618,7 @@ export function ServiceSession() {
               />
             </label>
             <button className="button button-dark button-large button-full" onClick={act}>
-              {current.status === 'Waiting' ? 'Call next' : current.status === 'Called' ? 'Start service' : 'Complete service'} <CheckCircle2 size={18} />
+              {current.status === 'Waiting' ? 'Call next' : (current.status === 'Called' || current.status === 'Pending') ? 'Start service' : 'Complete service'} <CheckCircle2 size={18} />
             </button>
           </>
         ) : (
@@ -636,7 +638,7 @@ export function ServiceSession() {
             <small>Checked in at front desk.</small>
           </div>
         </div>
-        <div className={`checklist-row ${current?.status === 'Called' || current?.status === 'In Service' || current?.status === 'Completed' ? 'done' : ''}`}>
+        <div className={`checklist-row ${current?.status === 'Called' || current?.status === 'Pending' || current?.status === 'In Service' || current?.status === 'Completed' ? 'done' : ''}`}>
           <span><Clock3 size={14} /></span>
           <div>
             <strong>Customer called</strong>
