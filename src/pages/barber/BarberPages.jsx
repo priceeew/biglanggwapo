@@ -54,12 +54,25 @@ export function BarberPage({ path }) {
 }
 
 export function BarberDashboard() {
-  const { demo } = useStore();
+  const { demo, commit, notify } = useStore();
   const { barberName, matchesBarber, barber } = useCurrentBarber();
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const current = myQueue.find((item) => item.status === 'In Service');
   const next = myQueue.find((item) => item.status === 'Waiting');
+
+  const callNextClient = (item) => {
+    commit((state) => {
+      const nextState = demoApi.callNext(state, item.id);
+      const updatedQueue = nextState.queue.find((q) => q.id === item.id);
+      if (updatedQueue) saveQueueItemToAtlas(updatedQueue);
+      const apt = nextState.appointments.find((a) => a.id === item.appointmentId);
+      if (apt) saveAppointmentToAtlas(apt);
+      return nextState;
+    });
+    notify(`Called ${item.customerName} to the chair!`);
+    notifyCustomerTurn(item, demo, notify);
+  };
 
   const myAppointments = (demo.appointments || []).filter(matchesBarber);
   const activeApts = myAppointments.filter((item) => !['Cancelled', 'No-show'].includes(item.status));
@@ -129,6 +142,13 @@ export function BarberDashboard() {
                   <h2>{next.customerName} is waiting</h2>
                   <p>{next.serviceName} · Ready to call to chair</p>
                 </div>
+                <button
+                  className="button button-dark button-small"
+                  style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap' }}
+                  onClick={() => callNextClient(next)}
+                >
+                  Call to chair
+                </button>
               </>
             ) : (
               <>
