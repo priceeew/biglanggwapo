@@ -32,6 +32,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const id = req.query.id;
+      if (id) {
+        await Transaction.deleteOne({ id });
+        return res.status(200).json({ success: true, message: 'Transaction deleted' });
+      }
       await Transaction.deleteMany({});
       return res.status(200).json({ success: true, message: 'All transactions cleared' });
     }

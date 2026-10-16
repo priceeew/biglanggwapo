@@ -14,6 +14,10 @@
       "destination": "/api/barbers?id=:id"
     },
     {
+      "source": "/api/discounts/:id",
+      "destination": "/api/discounts?id=:id"
+    },
+    {
       "source": "/api/inventory/:id",
       "destination": "/api/inventory?id=:id"
     },
@@ -28,6 +32,10 @@
     {
       "source": "/api/services/:id",
       "destination": "/api/services?id=:id"
+    },
+    {
+      "source": "/api/transactions/:id",
+      "destination": "/api/transactions?id=:id"
     },
     {
       "source": "/api/(.*)",
