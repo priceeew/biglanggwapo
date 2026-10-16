@@ -563,7 +563,18 @@ export function CustomerManagement() {
               className={`customer-list-row ${selected?.id === customer.id ? 'selected' : ''}`}
               onClick={() => setSelected(customer)}
             >
-              <span className="avatar avatar-sm">{customer.initials}</span>
+              {customer.image ? (
+                <img
+                  src={customer.image}
+                  alt={customer.name}
+                  style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line)', flexShrink: 0 }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                  }}
+                />
+              ) : null}
+              <span className="avatar avatar-sm" style={{ display: customer.image ? 'none' : 'inline-grid' }}>{customer.initials}</span>
               <span><strong>{customer.name}</strong><small>{customer.email}</small></span>
               <StatusBadge status={customer.status} />
             </button>
@@ -574,7 +585,18 @@ export function CustomerManagement() {
         {selected ? (
           <div className="customer-detail">
             <div className="customer-detail-head">
-              <span className="avatar avatar-lg">{selected.initials}</span>
+              {selected.image ? (
+                <img
+                  src={selected.image}
+                  alt={selected.name}
+                  style={{ width: 58, height: 58, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--gold)', flexShrink: 0 }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                  }}
+                />
+              ) : null}
+              <span className="avatar avatar-lg" style={{ display: selected.image ? 'none' : 'inline-grid' }}>{selected.initials}</span>
               <div>
                 <h2>{selected.name}</h2>
                 <p>{selected.email} · {selected.phone}</p>

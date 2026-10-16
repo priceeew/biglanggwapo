@@ -94,9 +94,17 @@ export function BarberDashboard() {
           <div className="chair-focus">
             {current ? (
               <>
-                <span className="avatar avatar-lg">
-                  {(current.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
-                </span>
+                {((demo.customers || []).find((c) => (current.customerId && c.id === current.customerId) || (current.customerName && c.name && c.name.toLowerCase() === current.customerName.toLowerCase()))?.image) ? (
+                  <img
+                    src={(demo.customers || []).find((c) => (current.customerId && c.id === current.customerId) || (current.customerName && c.name && c.name.toLowerCase() === current.customerName.toLowerCase())).image}
+                    alt={current.customerName}
+                    style={{ width: 58, height: 58, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--gold)', flexShrink: 0 }}
+                  />
+                ) : (
+                  <span className="avatar avatar-lg">
+                    {(current.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
+                  </span>
+                )}
                 <div className="chair-focus-info">
                   <span className="eyebrow gold">In service · {current.number}</span>
                   <h2>{current.customerName}</h2>
@@ -105,9 +113,17 @@ export function BarberDashboard() {
               </>
             ) : next ? (
               <>
-                <span className="avatar avatar-lg" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
-                  {(next.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
-                </span>
+                {((demo.customers || []).find((c) => (next.customerId && c.id === next.customerId) || (next.customerName && c.name && c.name.toLowerCase() === next.customerName.toLowerCase()))?.image) ? (
+                  <img
+                    src={(demo.customers || []).find((c) => (next.customerId && c.id === next.customerId) || (next.customerName && c.name && c.name.toLowerCase() === next.customerName.toLowerCase())).image}
+                    alt={next.customerName}
+                    style={{ width: 58, height: 58, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--gold)', flexShrink: 0 }}
+                  />
+                ) : (
+                  <span className="avatar avatar-lg" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
+                    {(next.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}
+                  </span>
+                )}
                 <div className="chair-focus-info">
                   <span className="eyebrow gold">Next in line · {next.number}</span>
                   <h2>{next.customerName} is waiting</h2>
@@ -321,7 +337,15 @@ export function BarberCustomerDetails() {
   return (
     <div className="detail-page">
       <div className="detail-hero">
-        <span className="avatar avatar-xl">{customer?.initials || (customer?.name || 'CU').slice(0, 2).toUpperCase()}</span>
+        {customer?.image ? (
+          <img
+            src={customer.image}
+            alt={customer?.name || 'Customer'}
+            style={{ width: 78, height: 78, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--gold)', flexShrink: 0 }}
+          />
+        ) : (
+          <span className="avatar avatar-xl">{customer?.initials || (customer?.name || 'CU').slice(0, 2).toUpperCase()}</span>
+        )}
         <div>
           <span className="eyebrow gold">Customer profile</span>
           <h2>{customer?.name || targetCustomerName || 'Guest Customer'}</h2>

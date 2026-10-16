@@ -91,7 +91,8 @@ export function syncAccountsIntoDemoState(state, accountsMap) {
       initials,
       email: cleanEmail,
       phone: acc.phone || existing?.phone || '',
-      image: acc.image || existing?.image || '',
+      image: acc.image || acc.photoUrl || existing?.image || existing?.photoUrl || '',
+      photoUrl: acc.photoUrl || acc.image || existing?.photoUrl || existing?.image || '',
       status: acc.status || existing?.status || (acc.active === false ? 'Inactive' : 'Active'),
       access: 'Receptionist',
       lastVisit: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : (existing?.lastVisit || 'Today')
@@ -119,7 +120,8 @@ export function syncAccountsIntoDemoState(state, accountsMap) {
       preferences: acc.preferences || existing?.preferences || '',
       notes: acc.notes || existing?.notes || '',
       status: acc.status || existing?.status || (acc.active === false ? 'Inactive' : 'Active'),
-      image: acc.image || existing?.image || '',
+      image: acc.image || acc.photoUrl || existing?.image || existing?.photoUrl || '',
+      photoUrl: acc.photoUrl || acc.image || existing?.photoUrl || existing?.image || '',
       lastVisit: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : (existing?.lastVisit || 'Today')
     };
   });
@@ -144,7 +146,8 @@ export function syncAccountsIntoDemoState(state, accountsMap) {
         name: acc.name || updatedBarbers[idx].name,
         email: cleanEmail,
         phone: acc.phone || updatedBarbers[idx].phone,
-        image: acc.image || updatedBarbers[idx].image,
+        image: acc.image || acc.photoUrl || updatedBarbers[idx].image || '',
+        photoUrl: acc.photoUrl || acc.image || updatedBarbers[idx].photoUrl || updatedBarbers[idx].image || '',
         status: acc.status || updatedBarbers[idx].status,
         working: acc.status ? acc.status !== 'Inactive' : updatedBarbers[idx].working
       };
@@ -155,7 +158,8 @@ export function syncAccountsIntoDemoState(state, accountsMap) {
         initials,
         email: cleanEmail,
         phone: acc.phone || '',
-        image: acc.image || '',
+        image: acc.image || acc.photoUrl || '',
+        photoUrl: acc.photoUrl || acc.image || '',
         specialty: acc.specialty || 'All-around cuts',
         rating: acc.rating || 5.0,
         schedule: acc.schedule || STANDARD_SCHEDULES[0],

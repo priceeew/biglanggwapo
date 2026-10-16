@@ -7,7 +7,7 @@ import {
   Settings2, Sparkles, Star, TrendingUp, UserCheck, UserPlus, UserRound, Users, WalletCards, X
 } from 'lucide-react';
 import { useStore, rolePath } from '../../context/StoreContext';
-import { navItems, routeManifest } from '../../data';
+import { navItems, routeManifest, getAccounts } from '../../data';
 
 const IconMap = {
   LayoutDashboard, CalendarDays, UserPlus, ListOrdered, Users, WalletCards,
@@ -22,8 +22,59 @@ const SCROLL_OFFSETS = {
   location: 200,
 };
 
+export function getUserPhoto(session, demo, currentRole) {
+  if (!session || session.role === 'admin') return '';
+
+  const accounts = typeof getAccounts === 'function' ? getAccounts() : {};
+  const cleanEmail = (session.email || '').toLowerCase().trim();
+  const acc = cleanEmail ? accounts[cleanEmail] : null;
+
+  // 1. Direct session or account image
+  if (session.photoUrl) return session.photoUrl;
+  if (session.image) return session.image;
+  if (acc?.photoUrl) return acc.photoUrl;
+  if (acc?.image) return acc.image;
+
+  const role = session.role || currentRole;
+
+  // 2. Barber photo
+  if (role === 'barber') {
+    const b = (demo?.barbers || []).find((barber) =>
+      (session.barberId && barber.id === session.barberId) ||
+      (cleanEmail && barber.email && barber.email.toLowerCase().trim() === cleanEmail) ||
+      (session.name && barber.name && barber.name.toLowerCase().trim() === session.name.toLowerCase().trim())
+    );
+    if (b?.image) return b.image;
+    if (b?.photoUrl) return b.photoUrl;
+  }
+
+  // 3. Customer photo
+  if (role === 'customer') {
+    const c = (demo?.customers || []).find((cust) =>
+      (session.customerId && cust.id === session.customerId) ||
+      (cleanEmail && cust.email && cust.email.toLowerCase().trim() === cleanEmail) ||
+      (session.name && cust.name && cust.name.toLowerCase().trim() === session.name.toLowerCase().trim())
+    );
+    if (c?.image) return c.image;
+    if (c?.photoUrl) return c.photoUrl;
+  }
+
+  // 4. Receptionist photo
+  if (role === 'receptionist') {
+    const r = (demo?.receptionists || []).find((rec) =>
+      (session.receptionistId && rec.id === session.receptionistId) ||
+      (cleanEmail && rec.email && rec.email.toLowerCase().trim() === cleanEmail) ||
+      (session.name && rec.name && rec.name.toLowerCase().trim() === session.name.toLowerCase().trim())
+    );
+    if (r?.image) return r.image;
+    if (r?.photoUrl) return r.photoUrl;
+  }
+
+  return '';
+}
+
 export function PublicLayout({ children }) {
-  const { session, logout, openModal, closeModal } = useStore();
+  const { session, logout, openModal, closeModal, demo } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeSection, setActiveSection] = useState('home');
@@ -161,10 +212,24 @@ export function PublicLayout({ children }) {
                 >
                   {session.role === 'admin' ? (
                     <img src="/logo.png" alt="Admin" className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
-                  ) : session.photoUrl ? (
-                    <img src={session.photoUrl} alt={session.name || 'User'} className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
+                  ) : getUserPhoto(session, demo) ? (
+                    <>
+                      <img
+                        src={getUserPhoto(session, demo)}
+                        alt={session.name || 'User'}
+                        className="brand-logo avatar-sm"
+                        style={{ width: 34, height: 34, objectFit: 'cover' }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                        }}
+                      />
+                      <span className="avatar avatar-sm" style={{ display: 'none' }}>
+                        {session?.initials || (session?.name ? session.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'BG')}
+                      </span>
+                    </>
                   ) : (
-                    <span className="avatar avatar-sm">{session?.initials || (session?.name ? session.name.slice(0, 2).toUpperCase() : 'BG')}</span>
+                    <span className="avatar avatar-sm">{session?.initials || (session?.name ? session.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'BG')}</span>
                   )}
                   <span className="hide-mobile">{session?.name || 'Account'}</span>
                 </button>
@@ -184,8 +249,26 @@ export function PublicLayout({ children }) {
                     {customerMenuOpen && (
                       <div className="customer-dropdown-menu">
                         <div className="dropdown-header">
-                          <strong>{session.name}</strong>
-                          <small>Customer Account</small>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                            {getUserPhoto(session, demo) ? (
+                              <img
+                                src={getUserPhoto(session, demo)}
+                                alt={session.name || 'Customer'}
+                                style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--gold)', flexShrink: 0 }}
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                                }}
+                              />
+                            ) : null}
+                            <span className="avatar avatar-xs" style={{ display: getUserPhoto(session, demo) ? 'none' : 'inline-grid' }}>
+                              {session?.initials || (session?.name ? session.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'CU')}
+                            </span>
+                            <div>
+                              <strong>{session.name}</strong>
+                              <small>Customer Account</small>
+                            </div>
+                          </div>
                         </div>
                         <div className="dropdown-divider" />
                         <Link
@@ -276,7 +359,7 @@ export function PublicLayout({ children }) {
 }
 
 export function StaffLayout({ role, children }) {
-  const { session, logout } = useStore();
+  const { session, logout, demo } = useStore();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = navItems[role] || [];
@@ -363,14 +446,28 @@ export function StaffLayout({ role, children }) {
             <div className="staff-user">
               {session?.role === 'admin' ? (
                 <img src="/logo.png" alt="Biglang Gwapo Logo" className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
-              ) : session?.photoUrl ? (
-                <img src={session.photoUrl} alt={session.name} className="brand-logo avatar-sm" style={{ width: 34, height: 34 }} />
+              ) : getUserPhoto(session, demo, role) ? (
+                <>
+                  <img
+                    src={getUserPhoto(session, demo, role)}
+                    alt={session?.name || 'User'}
+                    className="brand-logo avatar-sm"
+                    style={{ width: 34, height: 34, objectFit: 'cover' }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                    }}
+                  />
+                  <span className="avatar avatar-sm" style={{ display: 'none' }}>
+                    {session?.initials || (session?.name ? session.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'BG')}
+                  </span>
+                </>
               ) : (
-                <span className="avatar avatar-sm">{session?.initials || 'MS'}</span>
+                <span className="avatar avatar-sm">{session?.initials || (session?.name ? session.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() : 'BG')}</span>
               )}
               <span className="hide-mobile">
-                <strong>{session?.name || 'Customer'}</strong>
-                <small>{session?.role || 'Customer'}</small>
+                <strong>{session?.name || (role === 'barber' ? 'Barber' : role === 'receptionist' ? 'Receptionist' : role === 'admin' ? 'Admin Desk' : 'Customer')}</strong>
+                <small>{session?.role || role || 'User'}</small>
               </span>
             </div>
           </div>

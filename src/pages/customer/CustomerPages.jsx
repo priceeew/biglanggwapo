@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Camera, Check, ChevronLeft,
   ChevronRight, Clock3, Download, FileText, ListOrdered, Pencil, Plus,
-  ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, Upload, UserRound,
+  ReceiptText, Scissors, Send, ShieldCheck, Sparkles, Star, Trash2, Upload, UserRound,
   Users, WalletCards, X
 } from 'lucide-react';
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
+import { saveAccount, getAccounts } from '../../data';
 import { uploadImageFile, saveReviewToAtlas, saveAppointmentToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
 import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
 import {
@@ -1111,30 +1112,119 @@ export function CustomerReviews() {
 }
 
 export function CustomerProfile() {
-  const { session, updateSession, notify, reset } = useStore();
+  const { session, updateSession, notify, reset, commit } = useStore();
   const [editing, setEditing] = useState(false);
   const currentInitials = session?.initials || (session?.name ? session.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'CU');
   const [name, setName] = useState(session?.name || 'Customer');
   const [phone, setPhone] = useState(session?.phone || '+63 917 555 0142');
-  const [photoUrl, setPhotoUrl] = useState(session?.photoUrl || '');
 
-  const handlePhotoUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        return notify('Image size must be under 2MB', 'error');
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target.result;
-        setPhotoUrl(result);
-        if (updateSession) {
-          updateSession({ photoUrl: result });
-        }
-        notify('Profile picture updated successfully!');
-      };
-      reader.readAsDataURL(file);
+  const getInitialPhoto = () => {
+    const acc = session?.email ? getAccounts()[session.email.toLowerCase()] : null;
+    return session?.photoUrl || session?.image || acc?.photoUrl || acc?.image || '';
+  };
+
+  const [photoUrl, setPhotoUrl] = useState(getInitialPhoto);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  useEffect(() => {
+    if (session) {
+      if (session.name) setName(session.name);
+      if (session.phone) setPhone(session.phone);
+      const acc = session.email ? getAccounts()[session.email.toLowerCase()] : null;
+      const latestPhoto = session.photoUrl || session.image || acc?.photoUrl || acc?.image || '';
+      setPhotoUrl(latestPhoto);
     }
+  }, [session]);
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png'];
+    const validExt = /\.(jpe?g|png)$/i;
+    if (!validTypes.includes(file.type) && !validExt.test(file.name)) {
+      e.target.value = '';
+      return notify('Only JPEG, JPG, and PNG files are allowed.', 'error');
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      e.target.value = '';
+      return notify('Image must be under 10MB', 'error');
+    }
+
+    setIsUploadingPhoto(true);
+    notify('Uploading profile picture to cloud...');
+
+    try {
+      const res = await uploadImageFile(file);
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+
+      if (res && res.success && res.url) {
+        const newPhoto = res.url;
+        setPhotoUrl(newPhoto);
+
+        if (updateSession) {
+          updateSession({ photoUrl: newPhoto, image: newPhoto });
+        }
+
+        if (session?.email) {
+          saveAccount({
+            email: session.email,
+            photoUrl: newPhoto,
+            image: newPhoto,
+            name: name.trim(),
+            phone: phone.trim()
+          });
+        }
+
+        commit((state) => {
+          const cleanEmail = (session?.email || '').toLowerCase().trim();
+          const updatedCusts = (state.customers || []).map((c) => {
+            if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId)) {
+              return { ...c, image: newPhoto, photoUrl: newPhoto };
+            }
+            return c;
+          });
+          return { ...state, customers: updatedCusts };
+        });
+
+        notify('Profile picture updated successfully!', 'success');
+      } else {
+        notify(res?.error || 'Failed to upload profile picture.', 'error');
+      }
+    } catch (err) {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+      notify(`Upload failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handlePhotoRemove = () => {
+    setPhotoUrl('');
+    if (updateSession) {
+      updateSession({ photoUrl: '', image: '' });
+    }
+    if (session?.email) {
+      saveAccount({
+        email: session.email,
+        photoUrl: '',
+        image: '',
+        name: name.trim(),
+        phone: phone.trim()
+      });
+    }
+    commit((state) => {
+      const cleanEmail = (session?.email || '').toLowerCase().trim();
+      const updatedCusts = (state.customers || []).map((c) => {
+        if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId)) {
+          return { ...c, image: '', photoUrl: '' };
+        }
+        return c;
+      });
+      return { ...state, customers: updatedCusts };
+    });
+    notify('Profile picture removed.', 'success');
   };
 
   return (
@@ -1156,11 +1246,79 @@ export function CustomerProfile() {
       <div className="profile-layout">
         <div className="profile-card">
           <div className="profile-header">
-            <span className="avatar avatar-xl">{session?.initials || 'MS'}</span>
-            <div>
+            <div className="profile-avatar-wrapper">
+              {photoUrl ? (
+                <img
+                  src={photoUrl}
+                  alt={name}
+                  className="profile-avatar-img"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    if (e.currentTarget.nextElementSibling) {
+                      e.currentTarget.nextElementSibling.style.display = 'inline-grid';
+                    }
+                  }}
+                />
+              ) : null}
+              <span
+                className="avatar avatar-xl"
+                style={{
+                  display: photoUrl ? 'none' : 'inline-grid',
+                  width: 78,
+                  height: 78,
+                  fontSize: '20px'
+                }}
+              >
+                {currentInitials}
+              </span>
+
+              <label
+                className="profile-avatar-camera-btn"
+                title={photoUrl ? 'Change profile picture' : 'Upload profile picture'}
+                style={{ opacity: isUploadingPhoto ? 0.7 : 1, cursor: isUploadingPhoto ? 'wait' : 'pointer' }}
+              >
+                <Camera size={14} />
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  disabled={isUploadingPhoto}
+                  style={{ display: 'none' }}
+                  onChange={handlePhotoUpload}
+                />
+              </label>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
               <h2>{name}</h2>
               <p>{session?.email || 'customer@biglanggwapo.com'} · Member since 2026</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                <label
+                  className="button button-soft button-small"
+                  style={{ cursor: isUploadingPhoto ? 'wait' : 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Upload size={13} />
+                  {isUploadingPhoto ? 'Uploading photo...' : photoUrl ? 'Change photo' : 'Upload photo'}
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                    disabled={isUploadingPhoto}
+                    style={{ display: 'none' }}
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
+                {photoUrl && (
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={handlePhotoRemove}
+                    style={{ color: 'var(--red)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={13} /> Remove
+                  </button>
+                )}
+              </div>
             </div>
+
             <button className="button button-ghost button-small" onClick={() => setEditing(!editing)}>
               <Pencil size={15} /> {editing ? 'Cancel' : 'Edit profile'}
             </button>
@@ -1204,10 +1362,32 @@ export function CustomerProfile() {
               className="button button-dark"
               onClick={() => {
                 setEditing(false);
+                const updatedCustomerData = {
+                  name: name.trim() || session?.name || 'Customer',
+                  phone: phone.trim() || session?.phone || '',
+                  photoUrl,
+                  image: photoUrl
+                };
                 if (updateSession) {
-                  updateSession({ name, phone, photoUrl });
+                  updateSession(updatedCustomerData);
                 }
-                notify('Profile details updated for this session.');
+                if (session?.email) {
+                  saveAccount({
+                    email: session.email,
+                    ...updatedCustomerData
+                  });
+                }
+                commit((state) => {
+                  const cleanEmail = (session?.email || '').toLowerCase().trim();
+                  const updatedCusts = (state.customers || []).map((c) => {
+                    if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId)) {
+                      return { ...c, name: updatedCustomerData.name, phone: updatedCustomerData.phone, image: photoUrl, photoUrl };
+                    }
+                    return c;
+                  });
+                  return { ...state, customers: updatedCusts };
+                });
+                notify('Profile details updated successfully!');
               }}
             >
               Save changes <Check size={16} />

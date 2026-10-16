@@ -27,7 +27,12 @@ export function StoreProvider({ children }) {
   const [session, setSession] = useState(() => {
     try {
       window.localStorage.removeItem('biglanggwapo-session');
-      return JSON.parse(window.sessionStorage.getItem('biglanggwapo-session') || 'null');
+      const raw = JSON.parse(window.sessionStorage.getItem('biglanggwapo-session') || 'null');
+      if (raw) {
+        if (raw.photoUrl && !raw.image) raw.image = raw.photoUrl;
+        if (raw.image && !raw.photoUrl) raw.photoUrl = raw.image;
+      }
+      return raw;
     } catch {
       return null;
     }
@@ -298,6 +303,9 @@ export function StoreProvider({ children }) {
         notify('Your barber account has been deactivated. You have been signed out.', 'error');
         return;
       }
+      if (barber.image && (!session.image || !session.photoUrl)) {
+        updateSession({ image: barber.image, photoUrl: barber.image, barberId: barber.id });
+      }
     }
 
     // 4. Customer checks
@@ -312,6 +320,9 @@ export function StoreProvider({ children }) {
         notify('Your customer account has been deactivated. You have been signed out.', 'error');
         return;
       }
+      if (customer && customer.image && (!session.image || !session.photoUrl)) {
+        updateSession({ image: customer.image, photoUrl: customer.image, customerId: customer.id });
+      }
     }
 
     // 5. Receptionist checks
@@ -325,6 +336,9 @@ export function StoreProvider({ children }) {
         logout();
         notify('Your receptionist account has been deactivated or removed. You have been signed out.', 'error');
         return;
+      }
+      if (rec.image && (!session.image || !session.photoUrl)) {
+        updateSession({ image: rec.image, photoUrl: rec.image, receptionistId: rec.id });
       }
     }
   }, [session, demo.barbers, demo.customers, demo.receptionists]);
@@ -341,10 +355,13 @@ export function StoreProvider({ children }) {
   });
 
   const login = (nextSession) => {
-    setSession(nextSession);
-    try { window.sessionStorage.setItem('biglanggwapo-session', JSON.stringify(nextSession)); } catch {}
+    const s = { ...nextSession };
+    if (s.photoUrl && !s.image) s.image = s.photoUrl;
+    if (s.image && !s.photoUrl) s.photoUrl = s.image;
+    setSession(s);
+    try { window.sessionStorage.setItem('biglanggwapo-session', JSON.stringify(s)); } catch {}
     setModal(null);
-    notify(`Signed in as ${nextSession.name}.`);
+    notify(`Signed in as ${s.name}.`);
   };
 
   const logout = () => {
@@ -358,7 +375,10 @@ export function StoreProvider({ children }) {
 
   const updateSession = (updater) => {
     setSession((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+      const partial = typeof updater === 'function' ? updater(prev) : updater;
+      const next = { ...prev, ...partial };
+      if (next.photoUrl && !next.image) next.image = next.photoUrl;
+      if (next.image && !next.photoUrl) next.photoUrl = next.image;
       try { window.sessionStorage.setItem('biglanggwapo-session', JSON.stringify(next)); } catch {}
       return next;
     });
