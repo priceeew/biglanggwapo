@@ -2,17 +2,11 @@ import React, { useRef } from 'react';
 import { Download, Printer, FileText, Check, X, Scissors, ShieldCheck } from 'lucide-react';
 import { currency, humanDate } from '../../context/StoreContext';
 
-/**
- * Normalizes any transaction, appointment, or checkout preview object
- * into a standardized receipt data structure.
- */
 export function normalizeReceiptData(source, settings = {}, demoTransactions = []) {
   if (!source) return null;
 
-  // Check if source is already a transaction
   const isTransaction = Boolean(source.receipt && (source.amount !== undefined || source.type));
 
-  // If source is an appointment, look for matching transaction in database
   let matchedTxn = null;
   if (!isTransaction && Array.isArray(demoTransactions) && demoTransactions.length > 0) {
     matchedTxn = demoTransactions.find(
@@ -24,7 +18,6 @@ export function normalizeReceiptData(source, settings = {}, demoTransactions = [
 
   const merged = matchedTxn ? { ...source, ...matchedTxn } : source;
 
-  // Generate a clean receipt number if not present
   const dateStr = merged.date ? String(merged.date).replaceAll('-', '') : new Date().toISOString().slice(0, 10).replaceAll('-', '');
   const idSuffix = merged.id ? String(merged.id).replace(/\D/g, '').slice(-4) || '101' : '101';
   const receiptNo = merged.receipt || (merged.type === 'Retail' ? `BG-RET-${dateStr}-${idSuffix}` : `BG-${dateStr}-${idSuffix}`);
@@ -38,7 +31,6 @@ export function normalizeReceiptData(source, settings = {}, demoTransactions = [
   const method = merged.method || merged.paymentMethod || 'Cash';
   const type = merged.type || 'Service';
 
-  // Itemized line items
   let items = [];
   if (Array.isArray(merged.items) && merged.items.length > 0) {
     items = merged.items.map((i) => ({
@@ -56,7 +48,6 @@ export function normalizeReceiptData(source, settings = {}, demoTransactions = [
     ];
   }
 
-  // Payment details
   const cashReceived = merged.cashReceived !== undefined ? Number(merged.cashReceived) : (method === 'Cash' ? amount : undefined);
   const change = merged.change !== undefined ? Number(merged.change) : (method === 'Cash' ? Math.max(0, (cashReceived || amount) - amount) : undefined);
 
@@ -67,7 +58,6 @@ export function normalizeReceiptData(source, settings = {}, demoTransactions = [
   const authCode = merged.authCode || 'AUTH-892114';
   const paymentDetails = merged.paymentDetails || '';
 
-  // Shop details from settings or defaults
   const shopName = settings?.shopName || 'Biglang Gwapo Barbershop';
   const shopPhone = settings?.phone || '+63 917 555 0100';
   const shopAddress = settings?.address || '180 Cutcot National Highway, Pulilan, Bulacan';
@@ -101,28 +91,22 @@ export function normalizeReceiptData(source, settings = {}, demoTransactions = [
   };
 }
 
-/**
- * Downloads a high-resolution, crisp PNG image of the thermal receipt
- * drawn using an off-screen HTML5 Canvas.
- */
 export function downloadReceiptPNG(receiptData, onDone) {
   if (!receiptData) return;
 
   const width = 500;
-  // Estimate height based on items and method
   const baseHeight = 720;
   const itemsHeight = (receiptData.items?.length || 1) * 32;
   const methodHeight = receiptData.method === 'Cash' ? 60 : 70;
   const height = baseHeight + itemsHeight + methodHeight;
 
-  const scale = 2; // High-DPI 2x Retina rendering
+  const scale = 2;
   const canvas = document.createElement('canvas');
   canvas.width = width * scale;
   canvas.height = height * scale;
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
 
-  // Background - Crisp thermal paper with subtle border
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
@@ -130,13 +114,11 @@ export function downloadReceiptPNG(receiptData, onDone) {
   ctx.lineWidth = 1;
   ctx.strokeRect(8, 8, width - 16, height - 16);
 
-  // Header Gold Bar
   ctx.fillStyle = '#c5a059';
   ctx.fillRect(8, 8, width - 16, 6);
 
   let y = 42;
 
-  // Header Logo & Shop Name
   ctx.fillStyle = '#18181b';
   ctx.font = 'bold 20px "Playfair Display", Georgia, "Times New Roman", serif';
   ctx.textAlign = 'center';
@@ -156,7 +138,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 15;
   ctx.fillText(`Tel: ${receiptData.shopPhone} · Email: ${receiptData.shopEmail}`, width / 2, y);
 
-  // Dashed separator
   const drawDashedLine = (lineY) => {
     ctx.save();
     ctx.strokeStyle = '#cbd5e1';
@@ -172,13 +153,11 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 16;
   drawDashedLine(y);
 
-  // Official Receipt Title
   y += 24;
   ctx.fillStyle = '#0f172a';
   ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
   ctx.fillText("OFFICIAL ELECTRONIC RECEIPT", width / 2, y);
 
-  // Metadata Grid
   const drawRow = (label, val, rowY, valBold = false, valColor = '#0f172a', mono = false) => {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#64748b';
@@ -209,7 +188,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 16;
   drawDashedLine(y);
 
-  // Table Headers
   y += 18;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#94a3b8';
@@ -225,7 +203,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 10;
   drawDashedLine(y);
 
-  // Items
   receiptData.items.forEach((item) => {
     y += 22;
     ctx.textAlign = 'left';
@@ -248,7 +225,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 14;
   drawDashedLine(y);
 
-  // Subtotal & VAT Breakdown
   const subtotal = receiptData.amount;
   const vatRate = 0.12;
   const vatAmount = subtotal * (vatRate / (1 + vatRate));
@@ -263,7 +239,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 14;
   drawDashedLine(y);
 
-  // Big Highlighted Total Box
   y += 14;
   ctx.fillStyle = '#f8fafc';
   ctx.fillRect(24, y, width - 48, 48);
@@ -284,7 +259,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 62;
   drawDashedLine(y);
 
-  // Payment Details
   y += 20;
   drawRow('Payment Method:', receiptData.method.toUpperCase(), y, true, '#0f172a');
 
@@ -313,7 +287,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   y += 18;
   drawDashedLine(y);
 
-  // Barcode Graphic Simulation
   y += 20;
   ctx.fillStyle = '#1e293b';
   const barPattern = [2, 1, 3, 1, 2, 4, 1, 3, 2, 1, 4, 2, 1, 3, 1, 2, 4, 1, 2, 3, 1, 4, 2, 1, 3, 2, 1, 4, 1, 2, 3, 2, 1, 4, 2, 1, 3, 1, 2, 4];
@@ -330,7 +303,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   ctx.letterSpacing = '2px';
   ctx.fillText(receiptData.receiptNo, width / 2, y);
 
-  // Footer Message
   y += 22;
   ctx.fillStyle = '#0f172a';
   ctx.font = 'italic 11px Georgia, serif';
@@ -341,11 +313,9 @@ export function downloadReceiptPNG(receiptData, onDone) {
   ctx.font = '9px system-ui, -apple-system, sans-serif';
   ctx.fillText('This serves as your official digital receipt for tax and warranty purposes.', width / 2, y);
 
-  // Bottom Gold Bar
   ctx.fillStyle = '#c5a059';
   ctx.fillRect(8, height - 14, width - 16, 6);
 
-  // Download Trigger
   canvas.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -360,9 +330,6 @@ export function downloadReceiptPNG(receiptData, onDone) {
   }, 'image/png');
 }
 
-/**
- * Downloads an ASCII thermal-text receipt slip file.
- */
 export function downloadReceiptTXT(receiptData, onDone) {
   if (!receiptData) return;
 
@@ -419,16 +386,10 @@ export function downloadReceiptTXT(receiptData, onDone) {
   if (onDone) onDone();
 }
 
-/**
- * Triggers browser native print dialog with print-formatted styling.
- */
 export function printReceipt() {
   window.print();
 }
 
-/**
- * Full-featured interactive Receipt Modal component.
- */
 export function ReceiptModal({
   item,
   onClose,
@@ -483,7 +444,6 @@ export function ReceiptModal({
           overflow: 'visible'
         }}
       >
-        {/* Printable Receipt Paper Container */}
         <div
           ref={printableRef}
           className="receipt-printable-area"
@@ -496,10 +456,8 @@ export function ReceiptModal({
             position: 'relative'
           }}
         >
-          {/* Top Gold Bar */}
           <div style={{ height: '6px', background: 'var(--gold, #c5a059)', width: '100%' }} />
 
-          {/* Close button (hidden in print) */}
           <button
             type="button"
             className="receipt-no-print"
@@ -524,7 +482,6 @@ export function ReceiptModal({
           </button>
 
           <div style={{ padding: '24px 26px' }}>
-            {/* Header / Brand */}
             <div style={{ textAlign: 'center', marginBottom: '16px' }}>
               <div
                 style={{
@@ -571,10 +528,8 @@ export function ReceiptModal({
               </p>
             </div>
 
-            {/* Dashed Separator */}
             <div style={{ borderTop: '1px dashed #cbd5e1', margin: '14px 0' }} />
 
-            {/* Official Receipt Badge */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <span
                 style={{
@@ -594,7 +549,6 @@ export function ReceiptModal({
               </strong>
             </div>
 
-            {/* Metadata Fields */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px', marginBottom: '14px' }}>
               <div>
                 <span style={{ color: '#64748b', display: 'block', fontSize: '10px' }}>Date & Time</span>
@@ -616,7 +570,6 @@ export function ReceiptModal({
               </div>
             </div>
 
-            {/* Itemized Table */}
             <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '10px', marginBottom: '10px' }}>
               <div
                 style={{
@@ -658,7 +611,6 @@ export function ReceiptModal({
               ))}
             </div>
 
-            {/* Subtotal & VAT Breakdown */}
             <div style={{ fontSize: '11px', color: '#64748b', margin: '8px 0', display: 'flex', flexDirection: 'column', gap: '3px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Subtotal (Net of VAT)</span>
@@ -670,7 +622,6 @@ export function ReceiptModal({
               </div>
             </div>
 
-            {/* Total Due Callout Box */}
             <div
               style={{
                 display: 'flex',
@@ -694,7 +645,6 @@ export function ReceiptModal({
               </strong>
             </div>
 
-            {/* Payment Details Box */}
             <div
               style={{
                 background: '#f8fafc',
@@ -752,7 +702,6 @@ export function ReceiptModal({
               )}
             </div>
 
-            {/* Simulated Barcode */}
             <div style={{ textAlign: 'center', marginTop: '16px' }}>
               <div
                 style={{
@@ -788,7 +737,6 @@ export function ReceiptModal({
               </div>
             </div>
 
-            {/* Footer Tagline */}
             <div style={{ textAlign: 'center', marginTop: '12px' }}>
               <p style={{ margin: '0 0 2px', fontSize: '11px', fontStyle: 'italic', color: '#475569' }}>
                 “Salamat sa pagtitiwala! Haircut is a lifestyle.”
@@ -799,7 +747,6 @@ export function ReceiptModal({
             </div>
           </div>
 
-          {/* Action Buttons Toolbar (Hidden when printed) */}
           <div
             className="receipt-no-print"
             style={{
