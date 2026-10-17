@@ -19,6 +19,7 @@ import {
   StatusBadge, EmptyState, StatCard, ServiceValidationModal
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
+import { ReceiptModal } from '../../components/common/ReceiptModal';
 import { isRestDay, sortAppointmentsStably } from '../../utils/scheduling';
 import { addSystemNotification } from '../../services/notificationService';
 
@@ -380,7 +381,8 @@ export function ReceptionistAppointments() {
                     {item.status === 'Pending' && (
                       <button
                         className="button button-soft button-small"
-                        onClick={() => setActionModal({ type: 'confirm', apt: item })}
+                        onClick={() => act(item.id || item._id, 'confirm')}
+                        title="Confirm appointment directly"
                       >
                         Confirm
                       </button>
@@ -514,8 +516,9 @@ export function ReceptionistAppointments() {
                   const barber = (demo.barbers || []).find(
                     (b) => b.id === actionModal.apt.barberId || b.name === actionModal.apt.barberName
                   );
-                  const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable'));
-                  const onRest = barber ? isRestDay(barber, actionModal.apt.date) : false;
+                  const isUnavail = Boolean(barber && (barber.isUnavailable || barber.status === 'Unavailable' || barber.working === false));
+                  const restCheck = barber ? isRestDay(barber, actionModal.apt.date) : { isRest: false, dayName: '', restDayNames: [] };
+                  const onRest = Boolean(restCheck.isRest);
 
                   const existingConflict = (demo.appointments || []).find(
                     (a) =>
@@ -567,7 +570,7 @@ export function ReceptionistAppointments() {
                           >
                             <AlertTriangle size={15} style={{ flexShrink: 0 }} />
                             <span>
-                              <strong>Rest Day:</strong> {humanDate(actionModal.apt.date)} is a scheduled rest day for {actionModal.apt.barberName}.
+                              <strong>Rest Day:</strong> {humanDate(actionModal.apt.date)} is a scheduled weekly rest day for {actionModal.apt.barberName} ({restCheck.dayName}).
                             </span>
                           </div>
                         ) : (
@@ -643,7 +646,7 @@ export function ReceptionistAppointments() {
                     type="button"
                     className="button button-dark button-small"
                     onClick={() => {
-                      const targetId = actionModal.apt.id;
+                      const targetId = actionModal.apt.id || actionModal.apt._id;
                       setActionModal(null);
                       act(targetId, 'confirm');
                     }}
@@ -823,7 +826,7 @@ export function ReceptionistAppointments() {
                         className="button button-dark button-small"
                         onClick={() => {
                           if (isAlreadyInQueue) return;
-                          const targetId = actionModal.apt.id;
+                          const targetId = actionModal.apt.id || actionModal.apt._id;
                           setActionModal(null);
                           act(targetId, 'arrived');
                         }}
@@ -1598,6 +1601,8 @@ export function PaymentPage() {
   const [selected, setSelected] = useState('');
   const [method, setMethod] = useState('Cash');
   const [cash, setCash] = useState('');
+  const [viewingReceipt, setViewingReceipt] = useState(null);
+  const [isReceiptPreview, setIsReceiptPreview] = useState(false);
 
   // GCash realistic payment fields
   const [gcashPhone, setGcashPhone] = useState('0917');
@@ -1693,15 +1698,23 @@ export function PaymentPage() {
     }
 
     try {
+      let createdTxn = null;
       commit((state) => {
         const next = demoApi.recordPayment(state, item.id, method, paymentMeta);
         const apt = next.appointments.find((a) => a.id === item.id);
         if (apt) saveAppointmentToAtlas(apt);
         const newTxn = next.transactions?.[0];
-        if (newTxn) saveTransactionToAtlas(newTxn);
+        if (newTxn) {
+          saveTransactionToAtlas(newTxn);
+          createdTxn = newTxn;
+        }
         return next;
       });
       notify(`Payment of ${currency(item.price)} via ${method} recorded and transaction saved!`, 'success');
+      if (createdTxn) {
+        setViewingReceipt(createdTxn);
+        setIsReceiptPreview(false);
+      }
       setSelected('');
       setCash('');
       setCardNumber('');
@@ -2008,7 +2021,23 @@ export function PaymentPage() {
             <button
               className="button button-ghost button-full"
               style={{ marginTop: '8px' }}
-              onClick={() => notify(`Receipt preview generated for ${item.customerName} (${item.serviceName} - ${currency(item.price)}).`)}
+              onClick={() => {
+                const previewReceipt = {
+                  ...item,
+                  method,
+                  amount: item.price,
+                  receipt: `BG-PREVIEW-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${String(item.id).slice(-4) || '101'}`,
+                  cashReceived: method === 'Cash' ? Number(cash || item.price) : undefined,
+                  change: method === 'Cash' ? change : undefined,
+                  gcashNumber: method === 'GCash' ? gcashPhone : undefined,
+                  gcashReference: method === 'GCash' ? gcashRef : undefined,
+                  cardBrand: method === 'Card only' ? cardBrand : undefined,
+                  cardLast4: method === 'Card only' ? (cardNumber.replace(/\s+/g, '').slice(-4) || '4242') : undefined,
+                  authCode: method === 'Card only' ? (authCode || 'AUTH-PREVIEW') : undefined
+                };
+                setViewingReceipt(previewReceipt);
+                setIsReceiptPreview(true);
+              }}
             >
               Preview Printable Receipt <FileText size={16} />
             </button>
@@ -2017,6 +2046,17 @@ export function PaymentPage() {
           <EmptyState title="Select a service" copy="Choose a completed service from the left to checkout." />
         )}
       </SectionCard>
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          isPreview={isReceiptPreview}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }
@@ -2025,6 +2065,7 @@ export function ReceptionistProductsPage() {
   const { demo, commit, notify } = useStore();
   const [query, setQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [viewingReceipt, setViewingReceipt] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [customerName, setCustomerName] = useState('Walk-in Customer');
   const [method, setMethod] = useState('Cash');
@@ -2159,6 +2200,7 @@ export function ReceptionistProductsPage() {
     ]);
 
     notify(`Sold ${qty}x ${selectedProduct.name}! Stock updated to ${newStock} and transaction logged to database.`);
+    setViewingReceipt(newTxn);
     setSelectedProduct(null);
   };
 
@@ -2544,6 +2586,16 @@ export function ReceptionistProductsPage() {
           </div>
         </div>
       )}
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
+      )}
     </>
   );
 }
@@ -2555,6 +2607,7 @@ export function ReceptionistReviewsPage() {
 export function TransactionsPage() {
   const { demo, commit, notify } = useStore();
   const [query, setQuery] = useState('');
+  const [viewingReceipt, setViewingReceipt] = useState(null);
 
   const filtered = (demo.transactions || []).filter((item) =>
     `${item.customerName || ''} ${item.serviceName || ''} ${item.receipt || ''} ${item.type || ''}`.toLowerCase().includes(query.toLowerCase())
@@ -2606,7 +2659,25 @@ export function TransactionsPage() {
           <tbody>
             {filtered.map((item) => (
               <tr key={item.id}>
-                <td><strong>{item.receipt}</strong></td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => setViewingReceipt(item)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'var(--gold)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--mono)',
+                      fontWeight: 700,
+                      textAlign: 'left'
+                    }}
+                    title="Click to view & download official receipt"
+                  >
+                    {item.receipt}
+                  </button>
+                </td>
                 <td>{item.customerName}</td>
                 <td>{item.serviceName}</td>
                 <td>
@@ -2625,14 +2696,25 @@ export function TransactionsPage() {
                 <td><strong>{currency(item.amount)}</strong></td>
                 <td>{humanDate(item.date)}<small className="table-sub">{item.time}</small></td>
                 <td>
-                  <button
-                    type="button"
-                    style={{ background: 'none', border: 'none', color: '#d92d20', cursor: 'pointer', padding: '4px' }}
-                    onClick={() => handleDelete(item.id, item.receipt)}
-                    title="Delete transaction"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      className="button button-ghost button-small"
+                      style={{ padding: '2px 8px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => setViewingReceipt(item)}
+                      title="View & Download Receipt"
+                    >
+                      <FileText size={13} /> Receipt
+                    </button>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: '#d92d20', cursor: 'pointer', padding: '4px' }}
+                      onClick={() => handleDelete(item.id, item.receipt)}
+                      title="Delete transaction"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -2646,6 +2728,16 @@ export function TransactionsPage() {
           />
         )}
       </SectionCard>
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
+      )}
     </>
   );
 }

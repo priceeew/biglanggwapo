@@ -15,6 +15,7 @@ import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
   StatusBadge, QueueMini, ReviewCard, ReviewPhotoModal
 } from '../../components/common/UIComponents';
+import { ReceiptModal } from '../../components/common/ReceiptModal';
 import { BookingPage } from '../public/PublicPages';
 
 export function CustomerPage({ path }) {
@@ -442,6 +443,7 @@ function RescheduleModal({ appointment, onClose }) {
 export function CustomerDashboard() {
   const { demo, commit, notify, session } = useStore();
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [viewingReceipt, setViewingReceipt] = useState(null);
   const currentCustomerId = session?.customerId || 'cust-demo';
   const currentCustomerName = session?.name || '';
   const appointments = sortAppointmentsStably(demo.appointments || []).filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
@@ -540,7 +542,18 @@ export function CustomerDashboard() {
                     <strong>{item.serviceName}</strong>
                     <small>with {item.barberName} · {currency(item.price)}</small>
                   </div>
-                  <StatusBadge status={item.status} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <StatusBadge status={item.status} />
+                    <button
+                      type="button"
+                      className="button button-ghost button-small"
+                      style={{ padding: '3px 8px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => setViewingReceipt(item)}
+                      title="View & Download Receipt"
+                    >
+                      <FileText size={12} /> Receipt
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -564,6 +577,16 @@ export function CustomerDashboard() {
           onClose={() => setRescheduleTarget(null)}
         />
       )}
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
+      )}
     </>
   );
 }
@@ -572,6 +595,7 @@ export function CustomerAppointments() {
   const { demo, commit, notify, session } = useStore();
   const [tab, setTab] = useState('Upcoming');
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [viewingReceipt, setViewingReceipt] = useState(null);
   const currentCustomerId = session?.customerId || 'cust-demo';
   const currentCustomerName = session?.name || '';
   const mine = sortAppointmentsStably(demo.appointments || []).filter((item) => item.customerId === currentCustomerId || (currentCustomerName && item.customerName === currentCustomerName));
@@ -649,6 +673,7 @@ export function CustomerAppointments() {
                 appointment={item}
                 onCancel={cancel}
                 onReschedule={() => setRescheduleTarget(item)}
+                onViewReceipt={setViewingReceipt}
               />
             ))}
           </div>
@@ -672,6 +697,16 @@ export function CustomerAppointments() {
         <RescheduleModal
           appointment={rescheduleTarget}
           onClose={() => setRescheduleTarget(null)}
+        />
+      )}
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
         />
       )}
     </>
@@ -803,6 +838,7 @@ export function CustomerHistory() {
   const { demo, notify, session } = useStore();
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('All');
+  const [viewingReceipt, setViewingReceipt] = useState(null);
   const currentCustomerId = session?.customerId || 'cust-demo';
   const currentCustomerName = session?.name || '';
   const userAppointments = sortAppointmentsStably(demo.appointments || []).filter(
@@ -817,6 +853,30 @@ export function CustomerHistory() {
     `${item.serviceName} ${item.barberName} ${item.cancellationReason || ''} ${item.cancellationMessage || ''} ${item.notes || ''}`.toLowerCase().includes(query.toLowerCase())
   );
   const totalSpent = completedList.reduce((sum, item) => sum + (item.price || 0), 0);
+
+  const handleExportReceiptsCSV = () => {
+    if (!completedList.length) {
+      return notify('No completed visit receipts to export.', 'error');
+    }
+    const headers = 'Receipt,Customer,Service,Barber,Amount,Status,Date,Time\n';
+    const rows = completedList.map((item) => {
+      const matchedTxn = (demo.transactions || []).find(
+        (t) => t.appointmentId === item.id || (t.customerName === item.customerName && t.date === item.date)
+      );
+      const receiptNo = matchedTxn?.receipt || item.receipt || `BG-${String(item.date).replaceAll('-', '')}-${String(item.id).slice(-4)}`;
+      return `"${receiptNo}","${item.customerName || currentCustomerName}","${item.serviceName}","${item.barberName}",${item.price},"Paid","${item.date}","${item.time || ''}"`;
+    }).join('\n');
+    const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `service-history-receipts-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    notify('Service history receipts exported successfully!', 'success');
+  };
 
   return (
     <>
@@ -836,8 +896,8 @@ export function CustomerHistory() {
         query={query}
         setQuery={setQuery}
         action={
-          <button className="button button-ghost button-small" onClick={() => notify('Receipt export downloaded.')}>
-            <Download size={15} /> Export
+          <button className="button button-ghost button-small" onClick={handleExportReceiptsCSV}>
+            <Download size={15} /> Export Receipts CSV
           </button>
         }
       />
@@ -910,7 +970,8 @@ export function CustomerHistory() {
                         </span>
                         <button
                           className="button button-ghost button-small"
-                          onClick={() => notify(`Receipt for ${item.serviceName} (${currency(item.price)}) downloaded.`)}
+                          onClick={() => setViewingReceipt(item)}
+                          title="View & Download Official Receipt"
                         >
                           <FileText size={15} /> Receipt
                         </button>
@@ -928,6 +989,16 @@ export function CustomerHistory() {
           />
         )}
       </SectionCard>
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
+      )}
     </>
   );
 }

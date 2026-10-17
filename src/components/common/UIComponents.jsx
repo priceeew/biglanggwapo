@@ -408,7 +408,7 @@ export function ReviewCard({ review, onImageClick, children }) {
   );
 }
 
-export function AppointmentCard({ appointment, onCancel, onReschedule }) {
+export function AppointmentCard({ appointment, onCancel, onReschedule, onViewReceipt }) {
   const { demo } = useStore();
   const matchedBarber = demo?.barbers?.find((b) => b.id === appointment.barberId || b.name === appointment.barberName);
   const barberPhoto = appointment.barberImage || matchedBarber?.image;
@@ -472,6 +472,25 @@ export function AppointmentCard({ appointment, onCancel, onReschedule }) {
               <Scissors size={13} /> Rebook Chair
             </Link>
           </div>
+        </div>
+      ) : appointment.status === 'Completed' ? (
+        <div className="appointment-actions">
+          {onViewReceipt && (
+            <button
+              className="button button-ghost button-small"
+              onClick={() => onViewReceipt(appointment)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+            >
+              <FileText size={13} /> View Receipt
+            </button>
+          )}
+          <Link
+            to={`/booking?service=${appointment.serviceId || ''}&barber=${appointment.barberId || ''}`}
+            className="button button-dark button-small"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+          >
+            <Scissors size={13} /> Book Again
+          </Link>
         </div>
       ) : !['Completed', 'Cancelled'].includes(appointment.status) && (
         <div className="appointment-actions">

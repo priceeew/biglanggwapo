@@ -242,14 +242,35 @@ export function validateShiftWithinShopHours(scheduleStr, shopHoursStr) {
  * Checks whether a given date is a weekly rest day for the barber
  */
 export function isRestDay(barber, dateStr) {
-  if (!barber || !dateStr) return { isRest: false, dayName: '' };
+  if (!barber || !dateStr) return { isRest: false, dayName: '', restDayNames: [] };
   const shift = parseSchedule(barber.schedule);
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dateObj = new Date(y, m - 1, d);
-  const dayOfWeek = dateObj.getDay(); // 0 = Sun, 1 = Mon...
-  const dayName = DAY_NAMES[dayOfWeek];
-  const isRest = shift.restDays.includes(dayOfWeek);
-  return { isRest, dayName, restDayNames: shift.restDayNames };
+
+  let dayOfWeek = -1;
+  if (typeof dateStr === 'string') {
+    const clean = dateStr.split('T')[0].trim();
+    if (clean.includes('-')) {
+      const parts = clean.split('-').map(Number);
+      if (parts.length >= 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+        const dObj = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (!isNaN(dObj.getTime())) {
+          dayOfWeek = dObj.getDay();
+        }
+      }
+    }
+  }
+  if (dayOfWeek === -1) {
+    const fallbackDate = new Date(dateStr);
+    if (!isNaN(fallbackDate.getTime())) {
+      dayOfWeek = fallbackDate.getDay();
+    }
+  }
+  if (dayOfWeek === -1) {
+    return { isRest: false, dayName: '', restDayNames: shift.restDayNames || [] };
+  }
+
+  const dayName = DAY_NAMES[dayOfWeek] || '';
+  const isRest = Array.isArray(shift.restDays) && shift.restDays.includes(dayOfWeek);
+  return { isRest, dayName, restDayNames: shift.restDayNames || [] };
 }
 
 /**

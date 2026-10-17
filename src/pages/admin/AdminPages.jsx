@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowRight, CalendarDays, Check, Download, Image as ImageIcon, Layers,
+  AlertTriangle, ArrowRight, CalendarDays, Check, Download, FileText, Image as ImageIcon, Layers,
   Package, Pencil, Plus, RefreshCcw, Scissors, ShoppingBag, Star, Tag,
   Trash2, TrendingUp, Upload, Users, X, Eye, EyeOff
 } from 'lucide-react';
@@ -19,6 +19,7 @@ import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
 } from '../../components/common/UIComponents';
 import { ReviewsManagement } from '../../components/common/ReviewsManagement';
+import { ReceiptModal } from '../../components/common/ReceiptModal';
 
 export function AdminPage({ path }) {
   if (path === '/admin') return <AdminDashboard />;
@@ -33,6 +34,7 @@ export function AdminPage({ path }) {
 
 export function AdminDashboard() {
   const { demo } = useStore();
+  const [viewingReceipt, setViewingReceipt] = useState(null);
   const cleanTransactions = deduplicateTransactions(demo.transactions || []);
   const revenue = cleanTransactions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const totalAppointments = (demo.appointments || []).length;
@@ -92,7 +94,7 @@ export function AdminDashboard() {
       </div>
       <div className="dashboard-grid two-thirds">
         <SectionCard title="Recent transactions">
-          <DataTable columns={['Customer', 'Service', 'Amount', 'Status']}>
+          <DataTable columns={['Customer', 'Service', 'Amount', 'Status', 'Receipt']}>
             <tbody>
               {cleanTransactions && cleanTransactions.length > 0 ? (
                 cleanTransactions.slice(0, 4).map((item) => {
@@ -103,12 +105,23 @@ export function AdminDashboard() {
                       <td>{item.serviceName}</td>
                       <td><strong>{currency(item.amount)}</strong></td>
                       <td><StatusBadge status={item.status} /></td>
+                      <td>
+                        <button
+                          type="button"
+                          className="button button-ghost button-small"
+                          style={{ padding: '2px 8px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => setViewingReceipt(item)}
+                          title="View & Download Receipt"
+                        >
+                          <FileText size={12} /> Receipt
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--muted)', fontSize: '13px' }}>
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--muted)', fontSize: '13px' }}>
                     No transactions recorded yet. Transactions will appear here as bookings are checked out.
                   </td>
                 </tr>
@@ -134,6 +147,16 @@ export function AdminDashboard() {
           </div>
         </SectionCard>
       </div>
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
+      )}
     </>
   );
 }
@@ -148,6 +171,7 @@ const LEAVE_STATUS_OPTIONS = [
 
 export function AdminManagementPage({ collection }) {
   const { demo, commit, notify } = useStore();
+  const [viewingReceipt, setViewingReceipt] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editingBarber, setEditingBarber] = useState(null);
   const [editingService, setEditingService] = useState(null);
@@ -840,7 +864,22 @@ export function AdminManagementPage({ collection }) {
                 <td>
                   {collection === 'transactions' ? (
                     <div>
-                      <strong style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--gold)' }}>{item.receipt || item.id}</strong>
+                      <button
+                        type="button"
+                        onClick={() => setViewingReceipt(item)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                        title="Click to view & download official receipt"
+                      >
+                        <strong style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--gold)' }}>
+                          {item.receipt || item.id}
+                        </strong>
+                      </button>
                       <small style={{ color: 'var(--muted)', display: 'block', fontSize: '10px' }}>{item.serviceName || item.type || 'Service'}</small>
                     </div>
                   ) : (
@@ -983,25 +1022,36 @@ export function AdminManagementPage({ collection }) {
                 ) : item.lastVisit || 'Today'}</td>
                 <td>
                   <div className="row-actions">
-                    <button
-                      className="icon-button"
-                      title={collection === 'schedules' ? 'Edit Barber Schedule' : 'Edit'}
-                      onClick={() => {
-                        if (collection === 'barbers' || collection === 'schedules') {
-                          handleOpenEditBarber(item);
-                        } else if (collection === 'services') {
-                          handleOpenEditService(item);
-                        } else if (collection === 'customers') {
-                          handleOpenEditCustomer(item);
-                        } else if (collection === 'receptionists') {
-                          handleOpenEditReceptionist(item);
-                        } else {
-                          notify('Edit is not available for this record type.');
-                        }
-                      }}
-                    >
-                      <Pencil size={16} />
-                    </button>
+                    {collection === 'transactions' ? (
+                      <button
+                        className="button button-ghost button-small"
+                        style={{ padding: '2px 8px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        title="View & Download Official Receipt"
+                        onClick={() => setViewingReceipt(item)}
+                      >
+                        <FileText size={13} /> Receipt
+                      </button>
+                    ) : (
+                      <button
+                        className="icon-button"
+                        title={collection === 'schedules' ? 'Edit Barber Schedule' : 'Edit'}
+                        onClick={() => {
+                          if (collection === 'barbers' || collection === 'schedules') {
+                            handleOpenEditBarber(item);
+                          } else if (collection === 'services') {
+                            handleOpenEditService(item);
+                          } else if (collection === 'customers') {
+                            handleOpenEditCustomer(item);
+                          } else if (collection === 'receptionists') {
+                            handleOpenEditReceptionist(item);
+                          } else {
+                            notify('Edit is not available for this record type.');
+                          }
+                        }}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
                     {['barbers', 'schedules'].includes(collection) && (
                       <button
                         className="button button-small"
@@ -1885,6 +1935,16 @@ export function AdminManagementPage({ collection }) {
             </form>
           </div>
         </div>
+      )}
+
+      {viewingReceipt && (
+        <ReceiptModal
+          item={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          settings={demo.settings}
+          transactions={demo.transactions}
+          notify={notify}
+        />
       )}
     </>
   );

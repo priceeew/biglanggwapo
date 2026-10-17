@@ -376,7 +376,14 @@ export const demoApi = {
     return { ...state, appointments: [appointment, ...state.appointments] };
   },
   confirmAppointment(state, appointmentId) {
-    return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, status: 'Confirmed' } : item) };
+    return {
+      ...state,
+      appointments: state.appointments.map((item) =>
+        (item.id === appointmentId || item._id === appointmentId || String(item.id) === String(appointmentId) || String(item._id) === String(appointmentId))
+          ? { ...item, status: 'Confirmed' }
+          : item
+      )
+    };
   },
   markArrived(state, appointmentId) {
     const appointment = state.appointments.find((item) => item.id === appointmentId || item._id === appointmentId);
@@ -425,7 +432,7 @@ export const demoApi = {
     return {
       ...state,
       appointments: state.appointments.map((item) =>
-        item.id === appointmentId
+        (item.id === appointmentId || item._id === appointmentId || String(item.id) === String(appointmentId) || String(item._id) === String(appointmentId))
           ? {
               ...item,
               status: 'Cancelled',
@@ -435,7 +442,7 @@ export const demoApi = {
             }
           : item
       ),
-      queue: state.queue.filter((item) => item.appointmentId !== appointmentId)
+      queue: state.queue.filter((item) => item.appointmentId !== appointmentId && item.appointmentId !== String(appointmentId))
     };
   },
   rescheduleAppointment(state, appointmentId, date, time) {
@@ -578,6 +585,7 @@ export const demoApi = {
       appointmentId,
       customerName: appointment.customerName,
       serviceName: appointment.serviceName,
+      barberName: appointment.barberName,
       amount: appointment.price,
       method,
       status: 'Paid',
@@ -590,7 +598,11 @@ export const demoApi = {
     };
     return {
       ...state,
-      appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, paymentStatus: 'Paid' } : item),
+      appointments: state.appointments.map((item) =>
+        item.id === appointmentId
+          ? { ...item, paymentStatus: 'Paid', receipt: transaction.receipt, paymentMethod: method }
+          : item
+      ),
       transactions: deduplicateTransactions([transaction, ...state.transactions])
     };
   },
