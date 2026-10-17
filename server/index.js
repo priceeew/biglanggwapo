@@ -17,6 +17,7 @@ import { Discount } from './models/Discount.js';
 import { Transaction } from './models/Transaction.js';
 import { Notification } from './models/Notification.js';
 import { Image } from './models/Image.js';
+import { Settings } from './models/Settings.js';
 import { sendInvitationEmail, sendTurnNotificationEmail, sendCancellationEmail } from './services/emailService.js';
 
 // Fix for Windows / ISP DNS SRV resolution issues (e.g. ECONNREFUSED _mongodb._tcp)
@@ -85,7 +86,8 @@ app.get('/api/init', async (req, res) => {
       inventory,
       discounts,
       transactions,
-      notifications
+      notifications,
+      dbSettings
     ] = await Promise.all([
       Account.find().lean(),
       Service.find().lean(),
@@ -96,7 +98,8 @@ app.get('/api/init', async (req, res) => {
       Inventory.find().lean(),
       Discount.find().lean(),
       Transaction.find().sort({ createdAt: -1 }).lean(),
-      Notification.find().sort({ createdAt: -1 }).limit(100).lean()
+      Notification.find().sort({ createdAt: -1 }).limit(100).lean(),
+      Settings.findOne().lean()
     ]);
 
     const accountsMap = {};
@@ -131,7 +134,8 @@ app.get('/api/init', async (req, res) => {
         inventory,
         promotions: discounts,
         transactions,
-        notifications
+        notifications,
+        settings: dbSettings || null
       }
     });
   } catch (err) {
@@ -722,6 +726,38 @@ app.delete('/api/transactions', async (req, res) => {
     await Transaction.deleteMany({});
     res.json({ success: true, message: 'All transactions cleared' });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Settings API (MongoDB Atlas)
+app.get('/api/settings', async (req, res) => {
+  try {
+    await connectDB();
+    const settings = await Settings.findOne().lean();
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    await connectDB();
+    const newSettings = req.body;
+    const { _id, ...cleanSettings } = newSettings || {};
+    cleanSettings.updatedAt = new Date();
+
+    const existing = await Settings.findOne();
+    let saved;
+    if (existing) {
+      saved = await Settings.findByIdAndUpdate(existing._id, { $set: cleanSettings }, { new: true }).lean();
+    } else {
+      saved = await Settings.create(cleanSettings);
+    }
+    res.json({ success: true, settings: saved });
+  } catch (err) {
+    console.error('Error saving settings to Atlas:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

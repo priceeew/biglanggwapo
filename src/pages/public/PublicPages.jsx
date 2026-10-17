@@ -2,14 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
-  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Tag, Zap, Flame, Users, TrendingUp
+  Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Tag, Zap, Flame, Users, TrendingUp,
+  UserPlus, UserCheck, X
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
 import { promotions, staffUsers } from '../../data';
 import { demoApi } from '../../mockService';
 import { saveAppointmentToAtlas } from '../../services/api';
 import { addSystemNotification } from '../../services/notificationService';
-import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr } from '../../utils/scheduling';
+import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr, minutesToTime } from '../../utils/scheduling';
 import {
   PageFrame, SectionIntro, ServiceCard, BarberCard, ReviewCard, ReviewPhotoModal
 } from '../../components/common/UIComponents';
@@ -149,9 +150,9 @@ export function HomePage() {
           <h2>Pulilan, when you need a reset.</h2>
           <p>Drop by for a walk-in or book ahead. We keep the chairs moving without making the visit feel rushed.</p>
           <div className="visit-details">
-            <span><strong>Address</strong>180 Cutcot National Highway, Pulilan, Bulacan</span>
-            <span><strong>Hours</strong>Mon–Sun · 9:00 AM–8:00 PM</span>
-            <span><strong>Contact</strong>+63 917 555 0100</span>
+            <span><strong>Address</strong>{demo.settings?.address || '180 Cutcot National Highway, Pulilan, Bulacan'}</span>
+            <span><strong>Hours</strong>{demo.settings?.hours || 'Mon–Sun · 9:00 AM–8:00 PM'}</span>
+            <span><strong>Contact</strong>{demo.settings?.phone || '+63 917 555 0100'}</span>
           </div>
         </div>
         <div className="map-frame-wrapper">
@@ -248,6 +249,10 @@ export function BookingPage() {
   const [discountCode, setDiscountCode] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState(null);
   const [discountError, setDiscountError] = useState('');
+  const [bookingFor, setBookingFor] = useState('self'); // 'self' | 'other'
+  const [companionSuffix, setCompanionSuffix] = useState(null); // e.g. 2, 3...
+  const [doubleBookingModalOpen, setDoubleBookingModalOpen] = useState(false);
+  const [doubleBookingBarber, setDoubleBookingBarber] = useState(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -256,7 +261,7 @@ export function BookingPage() {
   // Selected services lookup
   const haircutService = demo.services.find((item) => item.id === selection.haircutId);
   const shaveService = demo.services.find((item) => item.id === selection.shaveId);
-  const treatmentServices = demo.services.filter((item) => selection.treatmentIds.includes(item.id));
+  const treatmentServices = demo.services.filter((item) => (selection.treatmentIds || []).includes(item.id));
 
   const allSelectedServices = [
     ...(haircutService ? [haircutService] : []),
@@ -432,37 +437,122 @@ export function BookingPage() {
     });
     return statsMap;
   }, [demo.barbers, demo.reviews]);
-  const slots = [
-    '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
-    '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
-    '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM',
-    '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
-    '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM',
-    '7:00 PM'
-  ];
+  const slotInterval = Number(demo.settings?.slotInterval) || 30;
+  const slots = useMemo(() => {
+    const interval = slotInterval === 15 ? 15 : 30;
+    const list = [];
+    for (let m = 540; m <= 1140; m += interval) {
+      list.push(minutesToTime(m));
+    }
+    return list;
+  }, [slotInterval]);
 
-  // Safeguard: Customer can only have 1 active appointment at a time with a specific barber
-  const hasActiveBookingWithBarber = (targetBarberId) => {
-    if (!session || !targetBarberId) return false;
-    return demo.appointments.some((item) => {
-      if (item.barberId !== targetBarberId) return false;
+  // Safeguard & Validation: Check active bookings customer has with a specific barber
+  const getActiveBookingsWithBarber = (targetBarberId, targetBarberName) => {
+    if (!session) return [];
+    const baseName = (session.name || '').trim().toLowerCase();
+    const currentEmail = (session.email || '').trim().toLowerCase();
+    const currentCustId = session.customerId;
+    const cleanBarberName = (targetBarberName || barber?.name || '').trim().toLowerCase();
+
+    return (demo.appointments || []).filter((item) => {
+      const sameBarberId = targetBarberId && (item.barberId === targetBarberId || String(item.barberId) === String(targetBarberId));
+      const sameBarberName = cleanBarberName && item.barberName && item.barberName.trim().toLowerCase() === cleanBarberName;
+      if (!sameBarberId && !sameBarberName) return false;
+
       const isFinished = ['Completed', 'Cancelled', 'No-show'].includes(item.status);
       if (isFinished) return false;
 
-      const currentCustId = session.customerId;
-      const currentName = session.name ? session.name.trim().toLowerCase() : '';
-      const currentEmail = session.email ? session.email.trim().toLowerCase() : '';
-
       const aptCustId = item.customerId;
-      const aptCustName = item.customerName ? item.customerName.trim().toLowerCase() : '';
       const aptCustEmail = item.customerEmail ? item.customerEmail.trim().toLowerCase() : '';
+      const aptCustName = item.customerName ? item.customerName.trim().toLowerCase() : '';
 
-      return (
-        (currentCustId && aptCustId && currentCustId === aptCustId) ||
-        (currentName && aptCustName && currentName === aptCustName) ||
-        (currentEmail && aptCustEmail && currentEmail === aptCustEmail)
+      const isDirectMatch = (
+        (currentCustId && aptCustId && String(currentCustId) === String(aptCustId)) ||
+        (currentEmail && aptCustEmail && currentEmail === aptCustEmail) ||
+        (baseName && aptCustName === baseName)
       );
+      if (isDirectMatch) return true;
+
+      // Companion booking pattern e.g. "Juan Dela Cruz (2)"
+      if (baseName && aptCustName.startsWith(baseName) && /\(\d+\)$/.test(aptCustName)) {
+        return true;
+      }
+
+      return false;
     });
+  };
+
+  const hasActiveBookingWithBarber = (targetBarberId, targetBarberName) => {
+    return getActiveBookingsWithBarber(targetBarberId, targetBarberName).length > 0;
+  };
+
+  // Determine next companion suffix: (2), (3), etc.
+  const getNextCompanionSuffix = (targetBarberId, targetBarberName) => {
+    const activeBookings = getActiveBookingsWithBarber(targetBarberId, targetBarberName);
+    if (activeBookings.length === 0) return 2;
+
+    let maxSuffix = 1;
+    const baseName = (session?.name || '').trim();
+    const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapedBase}\\s*\\((\\d+)\\)$`, 'i');
+
+    activeBookings.forEach((b) => {
+      const name = (b.customerName || '').trim();
+      const match = name.match(regex);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxSuffix) maxSuffix = num;
+      } else {
+        if (maxSuffix < 1) maxSuffix = 1;
+      }
+    });
+
+    return maxSuffix + 1;
+  };
+
+  const handleSelectBarber = (item) => {
+    if (item.isUnavailable || item.status === 'Unavailable' || item.leaveStatus === 'Unavailable') {
+      return notify(`${item.name} is currently marked as Unavailable. Please select another barber.`, 'error');
+    }
+
+    const hasActive = hasActiveBookingWithBarber(item.id, item.name);
+    if (hasActive) {
+      if (selection.barberId === item.id && bookingFor === 'other') {
+        // Already assigned for companion with this barber
+        setDoubleBookingBarber(item);
+        setDoubleBookingModalOpen(true);
+        return;
+      }
+      // Trigger double booking validation prompt
+      setDoubleBookingBarber(item);
+      setDoubleBookingModalOpen(true);
+      return;
+    }
+
+    // Normal single booking for self
+    setBookingFor('self');
+    setCompanionSuffix(null);
+    setSelection({ ...selection, barberId: item.id });
+  };
+
+  const handleBookAnother = () => {
+    setConfirmed(null);
+    setStep(1);
+    setSelection({
+      haircutId: '',
+      shaveId: '',
+      treatmentIds: [],
+      barberId: '',
+      date: defaultBookingDate,
+      time: '',
+      notes: ''
+    });
+    setBookingFor('self');
+    setCompanionSuffix(null);
+    setAppliedDiscount(null);
+    setDiscountCode('');
+    setDiscountError('');
   };
 
   const nextStep = () => {
@@ -471,8 +561,10 @@ export function BookingPage() {
     }
     if (step === 2) {
       if (!barber) return notify('Choose a barber to continue.', 'error');
-      if (hasActiveBookingWithBarber(barber.id)) {
-        return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
+      if (hasActiveBookingWithBarber(barber.id, barber.name) && bookingFor !== 'other') {
+        setDoubleBookingBarber(barber);
+        setDoubleBookingModalOpen(true);
+        return;
       }
     }
     if (step === 3) {
@@ -491,8 +583,10 @@ export function BookingPage() {
   const confirm = () => {
     if (!session || session.role !== 'customer') return openModal('login', { targetPath: '/booking' });
 
-    if (hasActiveBookingWithBarber(barber.id)) {
-      return notify(`You already have an active appointment with ${barber.name}. You cannot book multiple times at once with the same barber.`, 'error');
+    if (hasActiveBookingWithBarber(barber?.id, barber?.name) && bookingFor !== 'other') {
+      setDoubleBookingBarber(barber);
+      setDoubleBookingModalOpen(true);
+      return;
     }
 
     const slotCheck = getSlotAvailability(selection.time, totalDuration, barber, selection.date, demo.appointments);
@@ -505,13 +599,19 @@ export function BookingPage() {
 
     try {
       const primaryServiceId = selection.haircutId || selection.shaveId || selection.treatmentIds[0] || 'svc-fade';
+      const effectiveCustomerName = (bookingFor === 'other' && companionSuffix)
+        ? `${session.name} (${companionSuffix})`
+        : session.name;
+
       const newApt = {
         id: 'apt-' + Date.now(),
         ...selection,
         serviceId: primaryServiceId,
         customerId: session.customerId || 'cust-demo',
-        customerName: session.name,
+        customerName: effectiveCustomerName,
         customerEmail: session.email || '',
+        bookingFor,
+        companionSuffix: companionSuffix || null,
         serviceName: combinedServiceName,
         barberName: barber.name,
         barberImage: barber.image || '',
@@ -525,13 +625,16 @@ export function BookingPage() {
         source: 'Online',
         notes: selection.notes || ''
       };
-      commit((state) => demoApi.createBooking(state, newApt));
+
+      // Safely validate and generate state synchronously inside try/catch so any error displays gracefully
+      const nextState = demoApi.createBooking(demo, newApt);
+      commit(() => nextState);
       saveAppointmentToAtlas(newApt);
 
       // Notify the receptionist of the new booking request
       addSystemNotification({
-        title: `New Booking Request: ${session.name || 'Customer'}`,
-        message: `${session.name || 'Customer'} booked ${combinedServiceName} with ${barber.name} on ${humanDate(selection.date)} at ${selection.time}. Awaiting confirmation.`,
+        title: `New Booking Request: ${effectiveCustomerName}`,
+        message: `${effectiveCustomerName} booked ${combinedServiceName} with ${barber.name} on ${humanDate(selection.date)} at ${selection.time}. Awaiting confirmation.`,
         type: 'pending-confirm',
         recipientRole: 'receptionist',
         actionUrl: '/receptionist/appointments',
@@ -540,6 +643,7 @@ export function BookingPage() {
       });
       setConfirmed({
         ...selection,
+        customerName: effectiveCustomerName,
         serviceName: combinedServiceName,
         barberName: barber.name,
         barberImage: barber.image || '',
@@ -548,7 +652,9 @@ export function BookingPage() {
         discountCode: appliedDiscount ? (appliedDiscount.code || appliedDiscount.title) : '',
         discountAmount,
         duration: totalDuration,
-        selectedServicesList: allSelectedServices
+        selectedServicesList: allSelectedServices,
+        bookingFor,
+        companionSuffix
       });
       notify('Your booking is ready for reception to confirm.');
     } catch (error) {
@@ -568,6 +674,12 @@ export function BookingPage() {
           <div>
             <span className="eyebrow gold">Booking reference · BG-DEMO</span>
             <h2>{confirmed.serviceName}</h2>
+            {confirmed.customerName && confirmed.customerName !== session?.name && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--gold-soft)', color: '#6d4e21', padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, margin: '6px 0 2px' }}>
+                <Users size={12} />
+                <span>Companion: {confirmed.customerName}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
               {confirmed.barberImage ? (
                 <img
@@ -587,11 +699,7 @@ export function BookingPage() {
             <Link to="/my-appointments" className="button button-dark">View appointment <ArrowRight size={16} /></Link>
             <button
               className="button button-ghost"
-              onClick={() => {
-                setConfirmed(null);
-                setStep(1);
-                setSelection({ serviceId: '', barberId: '', date: today, time: '', notes: '' });
-              }}
+              onClick={handleBookAnother}
             >
               Book another
             </button>
@@ -658,7 +766,7 @@ export function BookingPage() {
               </div>
               <button
                 type="button"
-                className={`subtle-cat-btn ${selection.treatmentIds.length > 0 ? 'has-pick' : ''}`}
+                className={`subtle-cat-btn ${(selection.treatmentIds || []).length > 0 ? 'has-pick' : ''}`}
                 onClick={() => {
                   const container = document.querySelector('.services-categorized-container');
                   const target = document.getElementById('sec-treatments');
@@ -667,9 +775,9 @@ export function BookingPage() {
                   }
                 }}
               >
-                {selection.treatmentIds.length > 0 ? <Check size={14} className="cat-btn-icon" /> : <Zap size={14} className="cat-btn-icon" />}
+                {(selection.treatmentIds || []).length > 0 ? <Check size={14} className="cat-btn-icon" /> : <Zap size={14} className="cat-btn-icon" />}
                 <span>Treatment</span>
-                {selection.treatmentIds.length > 0 && <span className="cat-btn-badge">{selection.treatmentIds.length}</span>}
+                {(selection.treatmentIds || []).length > 0 && <span className="cat-btn-badge">{(selection.treatmentIds || []).length}</span>}
               </button>
             </div>
           )}
@@ -779,7 +887,7 @@ export function BookingPage() {
                     <h3>3. Treatments & Add-ons <span className="category-pill multi">Select Multiple</span></h3>
                     <p>Scalp massage, clarifying face detox, hair toning & resets</p>
                   </div>
-                  {selection.treatmentIds.length > 0 && (
+                  {(selection.treatmentIds || []).length > 0 && (
                     <button
                       type="button"
                       className="text-button"
@@ -791,16 +899,17 @@ export function BookingPage() {
                 </div>
                 <div className="choice-grid">
                   {demo.services.filter((item) => item.active && (item.category === 'Treatment' || (!['Haircut', 'Cuts', 'Shave', 'Grooming', 'Combos'].includes(item.category)))).map((item, index) => {
-                    const isSelected = selection.treatmentIds.includes(item.id);
+                    const isSelected = (selection.treatmentIds || []).includes(item.id);
                     return (
                       <button
                         type="button"
                         className={`choice-card service-booking-card ${isSelected ? 'selected' : ''}`}
                         key={item.id}
                         onClick={() => {
+                          const currentTreatments = selection.treatmentIds || [];
                           const updated = isSelected
-                            ? selection.treatmentIds.filter((id) => id !== item.id)
-                            : [...selection.treatmentIds, item.id];
+                            ? currentTreatments.filter((id) => id !== item.id)
+                            : [...currentTreatments, item.id];
                           setSelection({ ...selection, treatmentIds: updated });
                         }}
                       >
@@ -828,27 +937,18 @@ export function BookingPage() {
             demo.barbers.filter((item) => item.working).length > 0 ? (
               <div className="choice-grid">
                 {demo.barbers.filter((item) => item.working).map((item) => {
-                  const isBlocked = hasActiveBookingWithBarber(item.id);
+                  const isBlocked = hasActiveBookingWithBarber(item.id, item.name);
                   const isUnavail = Boolean(item.isUnavailable || item.status === 'Unavailable' || item.leaveStatus === 'Unavailable');
                   const stats = barberPickStats[item.id] || { count: 0, percentage: 0, isTop: false, badge: null, badgeClass: '' };
                   const ratingStat = barberRatingStats[item.id] || { rating: 0, display: 'No reviews', count: 0, hasReviews: false };
                   const isSelected = selection.barberId === item.id;
+                  const isCompanionPick = isSelected && bookingFor === 'other';
                   return (
                     <button
                       type="button"
-                      className={`choice-card barber-choice ${isSelected ? 'selected' : ''} ${isBlocked || isUnavail ? 'disabled-choice' : ''}`}
+                      className={`choice-card barber-choice ${isSelected ? 'selected' : ''} ${isUnavail ? 'disabled-choice' : ''}`}
                       key={item.id}
-                      onClick={() => {
-                        if (isUnavail) {
-                          notify(`${item.name} is currently marked as Unavailable. Please select another barber.`, 'error');
-                          return;
-                        }
-                        if (isBlocked) {
-                          notify(`You already have an active appointment with ${item.name}. Please select another barber or complete your current booking first.`, 'error');
-                          return;
-                        }
-                        setSelection({ ...selection, barberId: item.id });
-                      }}
+                      onClick={() => handleSelectBarber(item)}
                     >
                       <div className="barber-choice-top-row">
                         <div className="barber-choice-avatar-wrap">
@@ -905,9 +1005,13 @@ export function BookingPage() {
                           <span className="active-booking-badge" style={{ color: '#b91c1c', background: '#fee2e2', borderColor: '#fca5a5' }}>
                             ● Unavailable
                           </span>
+                        ) : isCompanionPick ? (
+                          <span className="active-booking-badge" style={{ color: '#166534', background: '#f0fdf4', borderColor: '#bbf7d0', fontWeight: 700 }}>
+                            ✓ Companion ({companionSuffix})
+                          </span>
                         ) : isBlocked ? (
-                          <span className="active-booking-badge">
-                            ● Active booking exists
+                          <span className="active-booking-badge" style={{ color: '#854d0e', background: '#fef9c3', borderColor: '#fde047', cursor: 'pointer' }}>
+                            ● Active booking (Tap to validate)
                           </span>
                         ) : ratingStat.hasReviews ? (
                           <span className="rating-line">
@@ -1063,6 +1167,17 @@ export function BookingPage() {
           {step === 4 && (
             <div className="review-booking">
               <div className="review-summary">
+                {bookingFor === 'other' && companionSuffix && (
+                  <span style={{ gridColumn: '1 / -1', background: '#fffdf5', borderBottom: '1px solid var(--line)' }}>
+                    <small>Booking Recipient</small>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                      <strong style={{ color: 'var(--gold)', fontSize: '14px' }}>{session?.name} ({companionSuffix})</strong>
+                      <span style={{ fontSize: '10px', background: 'var(--gold-soft)', color: '#6d4e21', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                        Companion Booking ({companionSuffix})
+                      </span>
+                    </div>
+                  </span>
+                )}
                 <span><small>Services Selected</small><strong>{combinedServiceName}</strong></span>
                 <span>
                   <small>Barber</small>
@@ -1261,6 +1376,15 @@ export function BookingPage() {
             </div>
           )}
 
+          {bookingFor === 'other' && companionSuffix && (
+            <div style={{ marginTop: '12px', padding: '10px 12px', background: '#252525', border: '1px solid #444', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--gold)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, display: 'block', marginBottom: '2px' }}>
+                Companion Booking
+              </span>
+              <strong style={{ color: '#fff', fontSize: '12px' }}>{session?.name} ({companionSuffix})</strong>
+            </div>
+          )}
+
           {selection.date && selection.time && (
             <div className="aside-time-summary">
               <small>Scheduled slot</small>
@@ -1273,6 +1397,175 @@ export function BookingPage() {
           </div>
         </aside>
       </div>
+
+      {doubleBookingModalOpen && doubleBookingBarber && (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setDoubleBookingModalOpen(false)}>
+          <div className="modal-card" style={{ maxWidth: '480px' }}>
+            <button className="modal-close" onClick={() => setDoubleBookingModalOpen(false)} aria-label="Close dialog">
+              <X size={18} />
+            </button>
+
+            <div className="modal-heading">
+              <div className="modal-mark" style={{ background: 'var(--gold-soft)', color: 'var(--gold)' }}>
+                <Users size={22} />
+              </div>
+              <span className="eyebrow gold">Double Booking Verification</span>
+              <h2>Booking With {doubleBookingBarber.name}</h2>
+              <p>
+                You already have an active appointment scheduled with <strong>{doubleBookingBarber.name}</strong>.
+              </p>
+            </div>
+
+            <div style={{
+              background: '#fffbf0',
+              border: '1px solid #f2e3b6',
+              borderRadius: '8px',
+              padding: '12px 14px',
+              marginBottom: '18px',
+              fontSize: '12px',
+              color: '#7c5e10',
+              lineHeight: 1.5
+            }}>
+              <strong>Are you double booking for yourself or are you booking for another person?</strong>
+              <div style={{ marginTop: '4px', fontSize: '11px', opacity: 0.9 }}>
+                To ensure fair chair availability, the same client cannot hold multiple simultaneous bookings with the same barber. You can, however, book chairs for companions!
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Option 1: Myself */}
+              <div style={{
+                border: '1px solid var(--line)',
+                borderRadius: '8px',
+                padding: '14px',
+                background: 'var(--white)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <span style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '50%',
+                    background: '#fee2e2',
+                    color: '#dc2626',
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0
+                  }}>
+                    <AlertTriangle size={14} />
+                  </span>
+                  <div>
+                    <strong style={{ fontSize: '13px', color: 'var(--ink)' }}>Booking for myself</strong>
+                    <small style={{ display: 'block', color: 'var(--muted)', fontSize: '10px' }}>
+                      Double booking not permitted for the same client
+                    </small>
+                  </div>
+                </div>
+                <p style={{ fontSize: '11px', color: 'var(--muted)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                  You already have an active chair reserved with {doubleBookingBarber.name}. You cannot create a duplicate booking for yourself with this barber.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() => {
+                      setDoubleBookingModalOpen(false);
+                      navigate('/my-appointments');
+                    }}
+                  >
+                    View My Appointment
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() => {
+                      setDoubleBookingModalOpen(false);
+                      setSelection({ ...selection, barberId: '' });
+                      setBookingFor('self');
+                      setCompanionSuffix(null);
+                    }}
+                  >
+                    Choose Another Barber
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 2: Another Person */}
+              {(() => {
+                const nextNum = getNextCompanionSuffix(doubleBookingBarber.id, doubleBookingBarber.name);
+                const companionName = `${session?.name || 'Customer'} (${nextNum})`;
+                return (
+                  <div style={{
+                    border: '2px solid var(--gold)',
+                    borderRadius: '8px',
+                    padding: '14px',
+                    background: '#fffdf9'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                      <span style={{
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '50%',
+                        background: 'var(--gold-soft)',
+                        color: 'var(--gold)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0
+                      }}>
+                        <UserPlus size={14} />
+                      </span>
+                      <div>
+                        <strong style={{ fontSize: '13px', color: 'var(--ink)' }}>Booking for another person</strong>
+                        <span style={{
+                          display: 'inline-block',
+                          marginLeft: '6px',
+                          background: 'var(--gold)',
+                          color: '#fff',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '4px'
+                        }}>
+                          Allowed
+                        </span>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--muted)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                      Reserve an additional chair for a friend, family member, or companion. This booking will be assigned to:
+                    </p>
+                    <div style={{
+                      background: 'var(--white)',
+                      border: '1px dashed var(--gold)',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Registered Name:</span>
+                      <strong style={{ fontSize: '12px', color: 'var(--ink)' }}>{companionName}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="button button-dark button-full"
+                      onClick={() => {
+                        setBookingFor('other');
+                        setCompanionSuffix(nextNum);
+                        setSelection({ ...selection, barberId: doubleBookingBarber.id });
+                        setDoubleBookingModalOpen(false);
+                        notify(`Booking set for ${companionName} with ${doubleBookingBarber.name}`);
+                        if (step === 2) setStep(3);
+                      }}
+                    >
+                      Continue as {companionName} <ArrowRight size={14} />
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </PageFrame>
   );
 }

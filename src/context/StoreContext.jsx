@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState, deduplicateQueue } from '../mockService';
+import { loadDemoState, persistDemoState, resetDemoState, syncAccountsIntoDemoState, deduplicateQueue, deduplicateTransactions } from '../mockService';
 import {
   fetchBarbersFromAtlas, fetchAppointmentsFromAtlas, fetchServicesFromAtlas,
   fetchReviewsFromAtlas, fetchInventoryFromAtlas, fetchQueueFromAtlas,
   fetchDiscountsFromAtlas, fetchTransactionsFromAtlas, fetchShopInitFromAtlas,
-  fetchNotificationsFromAtlas
+  fetchNotificationsFromAtlas, fetchSettingsFromAtlas, saveSettingsToAtlas
 } from '../services/api';
 import { getLocalDateStr, getTomorrowDateStr, sortAppointmentsStably } from '../utils/scheduling';
 import { getAccounts, syncAccountsFromAtlas, applyAccounts } from '../data';
@@ -74,8 +74,11 @@ export function StoreProvider({ children }) {
         if (Array.isArray(data.reviews)) updated.reviews = data.reviews;
         if (Array.isArray(data.inventory)) updated.inventory = data.inventory;
         if (Array.isArray(data.promotions)) updated.promotions = data.promotions;
-        if (Array.isArray(data.transactions)) updated.transactions = data.transactions;
+        if (Array.isArray(data.transactions)) updated.transactions = deduplicateTransactions(data.transactions);
         if (Array.isArray(data.notifications)) updated.notifications = data.notifications;
+        if (data.settings && typeof data.settings === 'object') {
+          updated.settings = { ...updated.settings, ...data.settings };
+        }
         if (data.accounts && typeof data.accounts === 'object') {
           updated = syncAccountsIntoDemoState(updated, data.accounts);
         }
@@ -123,7 +126,8 @@ export function StoreProvider({ children }) {
       fetchQueueFromAtlas().then((q) => q && Array.isArray(q) && setDemo(p => ({ ...p, queue: deduplicateQueue(q) })));
       fetchInventoryFromAtlas().then((i) => i && Array.isArray(i) && setDemo(p => ({ ...p, inventory: i })));
       fetchDiscountsFromAtlas().then((d) => d && Array.isArray(d) && setDemo(p => ({ ...p, promotions: d })));
-      fetchTransactionsFromAtlas().then((t) => t && Array.isArray(t) && setDemo(p => ({ ...p, transactions: t })));
+      fetchTransactionsFromAtlas().then((t) => t && Array.isArray(t) && setDemo(p => ({ ...p, transactions: deduplicateTransactions(t) })));
+      fetchSettingsFromAtlas().then((s) => s && setDemo(p => ({ ...p, settings: { ...p.settings, ...s } })));
       syncAccountsFromAtlas().then((acc) => {
         if (acc) setDemo(p => syncAccountsIntoDemoState(p, acc));
       });

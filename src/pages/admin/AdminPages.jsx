@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, CalendarDays, Check, Download, Image as ImageIcon, Layers,
@@ -6,15 +6,15 @@ import {
   Trash2, TrendingUp, Upload, Users, X, Eye, EyeOff
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
-import { demoApi, syncAccountsIntoDemoState } from '../../mockService';
+import { demoApi, syncAccountsIntoDemoState, deduplicateTransactions, cleanCustomerName } from '../../mockService';
 import { saveAccount, deleteAccount, validatePassword, validatePhone, revokeSession, syncAccountsFromAtlas } from '../../data';
 import {
   sendInviteNotification, saveBarberToAtlas, deleteBarberFromAtlas, clearAllBarbersFromAtlas,
   saveServiceToAtlas, deleteServiceFromAtlas, clearAllServicesFromAtlas, uploadImageFile,
   saveInventoryToAtlas, deleteInventoryFromAtlas, saveDiscountToAtlas, deleteDiscountFromAtlas,
-  deleteReviewFromAtlas, deleteTransactionFromAtlas
+  deleteReviewFromAtlas, deleteTransactionFromAtlas, saveSettingsToAtlas
 } from '../../services/api';
-import { STANDARD_SCHEDULES, validateShiftWithinShopHours, findShiftConflicts } from '../../utils/scheduling';
+import { STANDARD_SCHEDULES, validateShiftWithinShopHours, findShiftConflicts, parseSchedule } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, DataTable, StatusBadge, EmptyState, MiniChart
 } from '../../components/common/UIComponents';
@@ -33,7 +33,8 @@ export function AdminPage({ path }) {
 
 export function AdminDashboard() {
   const { demo } = useStore();
-  const revenue = (demo.transactions || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const cleanTransactions = deduplicateTransactions(demo.transactions || []);
+  const revenue = cleanTransactions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const totalAppointments = (demo.appointments || []).length;
   const completedAppointments = (demo.appointments || []).filter((item) => item.status === 'Completed').length;
   const activeBarbersCount = (demo.barbers || []).filter((item) => item.working).length;
@@ -65,7 +66,7 @@ export function AdminDashboard() {
     <>
       <BentoStats
         items={[
-          ["Revenue this month", currency(revenue), TrendingUp, (demo.transactions || []).length > 0 ? `${demo.transactions.length} transactions recorded` : 'No transactions yet'],
+          ["Revenue this month", currency(revenue), TrendingUp, cleanTransactions.length > 0 ? `${cleanTransactions.length} transactions recorded` : 'No transactions yet'],
           ['Appointments', totalAppointments, CalendarDays, totalAppointments > 0 ? `${completedAppointments} completed` : 'No appointments yet'],
           ['Active barbers', activeBarbersCount, Scissors, (demo.barbers || []).length > 0 ? `${demo.barbers.length} on roster` : 'No barbers added yet'],
           ['Customers', totalCustomers, Users, totalCustomers > 0 ? `${totalCustomers} registered` : 'No customers yet']
@@ -73,7 +74,7 @@ export function AdminDashboard() {
       />
       <div className="dashboard-grid two-thirds">
         <SectionCard title="Revenue trend" action={<Link to="/admin/reports" className="text-link">Full reports <ArrowRight size={14} /></Link>}>
-          <MiniChart transactions={demo.transactions} />
+          <MiniChart transactions={cleanTransactions} />
         </SectionCard>
         <SectionCard title="Queue overview">
           <div className="overview-ring">
@@ -93,15 +94,18 @@ export function AdminDashboard() {
         <SectionCard title="Recent transactions">
           <DataTable columns={['Customer', 'Service', 'Amount', 'Status']}>
             <tbody>
-              {demo.transactions && demo.transactions.length > 0 ? (
-                demo.transactions.slice(0, 4).map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.customerName}</td>
-                    <td>{item.serviceName}</td>
-                    <td><strong>{currency(item.amount)}</strong></td>
-                    <td><StatusBadge status={item.status} /></td>
-                  </tr>
-                ))
+              {cleanTransactions && cleanTransactions.length > 0 ? (
+                cleanTransactions.slice(0, 4).map((item) => {
+                  const displayName = cleanCustomerName(item.customerName || 'Walk-in Customer');
+                  return (
+                    <tr key={item.id}>
+                      <td><strong>{displayName}</strong></td>
+                      <td>{item.serviceName}</td>
+                      <td><strong>{currency(item.amount)}</strong></td>
+                      <td><StatusBadge status={item.status} /></td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan="4" style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--muted)', fontSize: '13px' }}>
@@ -390,10 +394,18 @@ export function AdminManagementPage({ collection }) {
   const handleSubmitEditBarber = async (e) => {
     e.preventDefault();
     if (!editBarberData.name.trim()) return notify('Barber name is required.', 'error');
-    if (!editBarberData.specialty.trim()) return notify('Specialty is required.', 'error');
-    if (!editBarberData.phone.trim()) return notify('Phone number is required.', 'error');
-    const phoneErr = validatePhone(editBarberData.phone);
-    if (phoneErr) return notify(phoneErr, 'error');
+    if (collection !== 'schedules') {
+      if (!editBarberData.specialty.trim()) return notify('Specialty is required.', 'error');
+      if (editBarberData.phone.trim()) {
+        const phoneErr = validatePhone(editBarberData.phone);
+        if (phoneErr) return notify(phoneErr, 'error');
+      }
+    } else {
+      if (editBarberData.phone.trim()) {
+        const phoneErr = validatePhone(editBarberData.phone);
+        if (phoneErr) return notify(phoneErr, 'error');
+      }
+    }
 
     const effectiveSchedule = editBarberData.schedule === 'Custom'
       ? (editBarberData.customSchedule.trim() || 'Custom Schedule')
@@ -440,23 +452,20 @@ export function AdminManagementPage({ collection }) {
     };
 
     setIsSavingEdit(true);
+    commit((state) => demoApi.updateBarber(state, editingBarber.id, updatedBarber));
     try {
       const res = await saveBarberToAtlas(updatedBarber);
-      if (res && res.success === false) {
-        notify(`Failed to update barber in database: ${res.error || 'Server error'}`, 'error');
-        setIsSavingEdit(false);
-        return;
+      if (res?.barber) {
+        commit((state) => demoApi.updateBarber(state, editingBarber.id, res.barber));
       }
-      const savedBarber = res?.barber || updatedBarber;
-      commit((state) => demoApi.updateBarber(state, editingBarber.id, savedBarber));
 
       if (editingBarber.email) {
         saveAccount({
           email: editingBarber.email,
-          name: savedBarber.name,
-          phone: savedBarber.phone,
-          image: savedBarber.image || '',
-          photoUrl: savedBarber.image || '',
+          name: updatedBarber.name,
+          phone: updatedBarber.phone,
+          image: updatedBarber.image || '',
+          photoUrl: updatedBarber.image || '',
           role: 'barber',
           barberId: editingBarber.id,
           status: computedStatus
@@ -464,13 +473,15 @@ export function AdminManagementPage({ collection }) {
       }
 
       if (computedStatus === 'Inactive' || !isWorking && computedStatus === 'Inactive') {
-        revokeSession({ email: editingBarber.email, id: editingBarber.id, name: savedBarber.name, reason: 'deactivated' });
+        revokeSession({ email: editingBarber.email, id: editingBarber.id, name: updatedBarber.name, reason: 'deactivated' });
       }
 
-      notify(`Barber "${savedBarber.name}" profile & shift schedule updated in database!`, 'success');
+      notify(`Barber "${updatedBarber.name}" profile & shift schedule updated!`, 'success');
       setEditingBarber(null);
     } catch (err) {
-      notify(`Error updating barber: ${err.message}`, 'error');
+      console.warn('Atlas barber sync failed, stored in local state:', err);
+      notify(`Barber "${updatedBarber.name}" schedule updated locally.`, 'success');
+      setEditingBarber(null);
     } finally {
       setIsSavingEdit(false);
     }
@@ -820,58 +831,79 @@ export function AdminManagementPage({ collection }) {
           collection === 'appointments' ? ['Customer', 'Service', 'Date & time', 'Barber', 'Status', ''] :
           collection === 'transactions' ? ['Receipt', 'Customer', 'Method', 'Amount', 'Date', ''] :
           collection === 'barbers' ? ['Name / record', 'Phone & Specialty', 'Permanent Schedule', 'Status / Leave', ''] :
+          collection === 'schedules' ? ['Barber / Staff', 'Permanent Schedule', 'Break & Rest Day', 'Duty Status', 'Actions'] :
           ['Name / record', 'Details', 'Status', 'Last updated', '']
         }>
           <tbody>
             {filtered.map((item) => (
               <tr key={item.id}>
                 <td>
-                  <div className="table-person">
-                    {item.image ? (
-                      <img
-                        src={item.image}
-                        alt={item.name || 'Thumbnail'}
+                  {collection === 'transactions' ? (
+                    <div>
+                      <strong style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--gold)' }}>{item.receipt || item.id}</strong>
+                      <small style={{ color: 'var(--muted)', display: 'block', fontSize: '10px' }}>{item.serviceName || item.type || 'Service'}</small>
+                    </div>
+                  ) : (
+                    <div className="table-person">
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={item.name || 'Thumbnail'}
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: collection === 'services' ? '8px' : '50%',
+                            objectFit: 'cover',
+                            border: '1px solid var(--line)',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                            flexShrink: 0,
+                            background: '#f5f2eb'
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling;
+                            if (fallback) fallback.style.display = 'inline-grid';
+                          }}
+                        />
+                      ) : null}
+                      <span
+                        className="avatar avatar-xs"
                         style={{
-                          width: '44px',
-                          height: '44px',
-                          borderRadius: collection === 'services' ? '8px' : '50%',
-                          objectFit: 'cover',
-                          border: '1px solid var(--line)',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                          flexShrink: 0,
-                          background: '#f5f2eb'
+                          display: item.image ? 'none' : 'inline-grid',
+                          width: collection === 'services' ? '44px' : undefined,
+                          height: collection === 'services' ? '44px' : undefined,
+                          borderRadius: collection === 'services' ? '8px' : undefined
                         }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          const fallback = e.currentTarget.nextElementSibling;
-                          if (fallback) fallback.style.display = 'inline-grid';
-                        }}
-                      />
-                    ) : null}
-                    <span
-                      className="avatar avatar-xs"
-                      style={{
-                        display: item.image ? 'none' : 'inline-grid',
-                        width: collection === 'services' ? '44px' : undefined,
-                        height: collection === 'services' ? '44px' : undefined,
-                        borderRadius: collection === 'services' ? '8px' : undefined
-                      }}
-                    >
-                      {(item.initials || item.name || item.customerName || item.receipt || 'BG').slice(0, 2).toUpperCase()}
-                    </span>
-                    <span><strong>{item.name || item.customerName || item.receipt}</strong><small>{item.email || item.description || item.serviceName || item.category || item.access || ''}</small></span>
-                  </div>
+                      >
+                        {(item.initials || item.name || item.customerName || item.receipt || 'BG').slice(0, 2).toUpperCase()}
+                      </span>
+                      <span><strong>{item.name || item.customerName || item.receipt}</strong><small>{item.email || item.description || item.serviceName || item.category || item.access || ''}</small></span>
+                    </div>
+                  )}
                 </td>
-                <td>{collection === 'services' ? item.category : collection === 'appointments' ? item.serviceName : collection === 'transactions' ? item.method : collection === 'schedules' ? item.schedule : collection === 'barbers' ? (
+                <td>{collection === 'services' ? item.category : collection === 'appointments' ? item.serviceName : collection === 'transactions' ? (
+                  <strong>{item.customerName || 'Walk-in Customer'}</strong>
+                ) : collection === 'schedules' ? (
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)' }}>{item.schedule || STANDARD_SCHEDULES[0]}</span>
+                ) : collection === 'barbers' ? (
                   <div>
                     <strong>{item.phone || 'No phone'}</strong>
                     <small>{item.specialty || 'General cuts'}</small>
                   </div>
                 ) : item.phone || item.specialty || item.email || '—'}</td>
-                <td>{collection === 'services' ? currency(item.price) : collection === 'appointments' ? `${humanDate(item.date)} · ${item.time}` : collection === 'transactions' ? currency(item.amount) : collection === 'barbers' ? (
+                <td>{collection === 'services' ? currency(item.price) : collection === 'appointments' ? `${humanDate(item.date)} · ${item.time}` : collection === 'transactions' ? (
+                  <span className="method-label">{item.method || 'Cash'}</span>
+                ) : collection === 'schedules' ? (
+                  <div style={{ fontSize: '11px' }}>
+                    <span style={{ color: 'var(--ink)' }}>{parseSchedule(item.schedule).breakText}</span>
+                    <small style={{ color: 'var(--muted)', display: 'block', fontSize: '10px' }}>
+                      Rest: {parseSchedule(item.schedule).restDayNames.join(', ') || 'None'}
+                    </small>
+                  </div>
+                ) : collection === 'barbers' ? (
                   <span style={{ fontSize: '11px', color: 'var(--ink)' }}>{item.schedule || STANDARD_SCHEDULES[0]}</span>
                 ) : <StatusBadge status={item.status || (item.active || item.working ? 'Active' : 'Inactive')} />}</td>
-                {collection === 'appointments' && (
+                {collection === 'appointments' ? (
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {(() => {
@@ -941,17 +973,21 @@ export function AdminManagementPage({ collection }) {
                       </div>
                     </div>
                   </td>
-                )}
-                <td>{collection === 'services' ? `${item.duration} min` : collection === 'appointments' ? <StatusBadge status={item.status} /> : collection === 'transactions' ? humanDate(item.date) : collection === 'barbers' ? (
+                ) : collection === 'transactions' ? (
+                  <td>
+                    <strong>{currency(item.amount)}</strong>
+                  </td>
+                ) : null}
+                <td>{collection === 'services' ? `${item.duration} min` : collection === 'appointments' ? <StatusBadge status={item.status} /> : collection === 'transactions' ? humanDate(item.date) : collection === 'barbers' || collection === 'schedules' ? (
                   <StatusBadge status={item.isUnavailable || item.status === 'Unavailable' ? 'Unavailable' : (item.leaveStatus || item.status || (item.working ? 'Active / On Duty' : 'Inactive'))} />
                 ) : item.lastVisit || 'Today'}</td>
                 <td>
                   <div className="row-actions">
                     <button
                       className="icon-button"
-                      title="Edit"
+                      title={collection === 'schedules' ? 'Edit Barber Schedule' : 'Edit'}
                       onClick={() => {
-                        if (collection === 'barbers') {
+                        if (collection === 'barbers' || collection === 'schedules') {
                           handleOpenEditBarber(item);
                         } else if (collection === 'services') {
                           handleOpenEditService(item);
@@ -966,7 +1002,7 @@ export function AdminManagementPage({ collection }) {
                     >
                       <Pencil size={16} />
                     </button>
-                    {collection === 'barbers' && (
+                    {['barbers', 'schedules'].includes(collection) && (
                       <button
                         className="button button-small"
                         style={
@@ -985,7 +1021,7 @@ export function AdminManagementPage({ collection }) {
                         {item.active === false || item.status === 'Inactive' || item.working === false ? 'Activate' : 'Deactivate'}
                       </button>
                     )}
-                    {['barbers', 'receptionists', 'customers', 'services'].includes(collection) && (
+                    {['barbers', 'receptionists', 'customers', 'services', 'transactions'].includes(collection) && (
                       <button
                         className="icon-button icon-button-danger"
                         title="Delete record"
@@ -1337,9 +1373,9 @@ export function AdminManagementPage({ collection }) {
               <X size={18} />
             </button>
             <div className="modal-heading">
-              <span className="eyebrow gold">EDIT BARBER PROFILE</span>
-              <h2>Edit {editingBarber.name}</h2>
-              <p>Update permanent work schedule, contact details, or set sick / vacation leave status.</p>
+              <span className="eyebrow gold">{collection === 'schedules' ? 'EDIT BARBER SCHEDULE & SHIFT' : 'EDIT BARBER PROFILE'}</span>
+              <h2>{collection === 'schedules' ? `Edit Schedule – ${editingBarber.name}` : `Edit ${editingBarber.name}`}</h2>
+              <p>{collection === 'schedules' ? 'Update permanent work schedule, daily shift hours, breaks, rest day, or duty/leave status.' : 'Update permanent work schedule, contact details, or set sick / vacation leave status.'}</p>
             </div>
 
             <form className="form-stack" onSubmit={handleSubmitEditBarber}>
@@ -2816,60 +2852,194 @@ export function AdminReviewsPage() {
 
 export function SettingsPage() {
   const { demo, commit, notify } = useStore();
-  const [form, setForm] = useState(demo.settings);
+  const [form, setForm] = useState(() => {
+    const raw = demo?.settings || {};
+    const rawMethods = Array.isArray(raw.paymentMethods) ? raw.paymentMethods : ['Cash', 'GCash', 'Card only'];
+    const cleanMethods = rawMethods.map((m) => m === 'Card (demo)' ? 'Card only' : m);
+    return {
+      shopName: raw.shopName || 'Biglang Gwapo Barber Shop',
+      phone: raw.phone || '+63 917 555 0100',
+      email: raw.email || 'hello@biglanggwapo.demo',
+      address: raw.address || '180 Cutcot National Highway, Pulilan, Bulacan',
+      hours: raw.hours || 'Mon–Sun · 9:00 AM–8:00 PM',
+      slotInterval: Number(raw.slotInterval) || 15,
+      cancellationPolicy: raw.cancellationPolicy || 'Please cancel at least 2 hours before your appointment.',
+      paymentMethods: cleanMethods,
+      commissionTracking: !!raw.commissionTracking
+    };
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [customMethodInput, setCustomMethodInput] = useState('');
 
-  const save = (e) => {
-    e.preventDefault();
-    commit((state) => demoApi.saveSettings(state, form));
-    notify('System settings saved.');
+  useEffect(() => {
+    if (demo?.settings) {
+      setForm((prev) => {
+        const raw = demo.settings;
+        const rawMethods = Array.isArray(raw.paymentMethods) ? raw.paymentMethods : prev.paymentMethods;
+        const cleanMethods = rawMethods.map((m) => m === 'Card (demo)' ? 'Card only' : m);
+        return {
+          ...prev,
+          ...raw,
+          paymentMethods: cleanMethods
+        };
+      });
+    }
+  }, [demo?.settings]);
+
+  const toggleMethod = (methodName) => {
+    const currentMethods = form.paymentMethods || [];
+    if (currentMethods.includes(methodName)) {
+      if (currentMethods.length === 1) {
+        return notify('At least one payment method must remain active.', 'error');
+      }
+      setForm({ ...form, paymentMethods: currentMethods.filter((m) => m !== methodName) });
+    } else {
+      setForm({ ...form, paymentMethods: [...currentMethods, methodName] });
+    }
   };
+
+  const addCustomMethod = (e) => {
+    e.preventDefault();
+    const trimmed = customMethodInput.trim();
+    if (!trimmed) return;
+    if ((form.paymentMethods || []).includes(trimmed)) {
+      return notify(`"${trimmed}" is already added.`, 'error');
+    }
+    setForm({ ...form, paymentMethods: [...(form.paymentMethods || []), trimmed] });
+    setCustomMethodInput('');
+    notify(`Added "${trimmed}" to payment methods.`);
+  };
+
+  const save = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      commit((state) => demoApi.saveSettings(state, form));
+      const res = await saveSettingsToAtlas(form);
+      setIsSaving(false);
+      if (res && res.success) {
+        notify('System settings saved and synchronized to database!', 'success');
+      } else {
+        notify('System settings saved to session.', 'success');
+      }
+    } catch (err) {
+      setIsSaving(false);
+      notify('Failed to save settings: ' + err.message, 'error');
+    }
+  };
+
+  const standardMethods = ['Cash', 'GCash', 'Card only'];
 
   return (
     <form className="settings-layout" onSubmit={save}>
-      <SectionCard title="Shop details" description="The public site uses these settings for contact and hours.">
+      <SectionCard title="Shop details" description="The public site and customer receipts use these settings for contact and operating hours.">
         <div className="form-grid">
           <label className="field-label">Shop name
-            <input className="input" value={form.shopName} onChange={(e) => setForm({ ...form, shopName: e.target.value })} />
+            <input className="input" value={form.shopName} onChange={(e) => setForm({ ...form, shopName: e.target.value })} required />
           </label>
           <label className="field-label">Phone
-            <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
           </label>
           <label className="field-label">Email
-            <input className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
           </label>
           <label className="field-label">Opening hours
-            <input className="input" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} />
+            <input className="input" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} placeholder="e.g. Mon–Sun · 9:00 AM–8:00 PM" required />
           </label>
         </div>
         <label className="field-label">Address
-          <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+          <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
         </label>
       </SectionCard>
-      <SectionCard title="Booking & checkout">
+
+      <SectionCard title="Booking & checkout" description="Configure online appointment slot intervals and supported checkout payment methods.">
         <div className="form-grid">
           <label className="field-label">Slot interval
             <select className="input" value={form.slotInterval} onChange={(e) => setForm({ ...form, slotInterval: Number(e.target.value) })}>
-              <option value="15">15 minutes</option>
+              <option value="15">15 minutes (Standard)</option>
               <option value="30">30 minutes</option>
             </select>
           </label>
-          <label className="field-label">Payment methods
-            <input className="input" value={form.paymentMethods.join(', ')} onChange={(e) => setForm({ ...form, paymentMethods: e.target.value.split(',').map((x) => x.trim()) })} />
-          </label>
+          <div className="field-label">
+            <span>Accepted Payment Methods</span>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+              {standardMethods.map((m) => {
+                const isActive = (form.paymentMethods || []).includes(m);
+                return (
+                  <button
+                    type="button"
+                    key={m}
+                    className={`button button-small ${isActive ? 'button-dark' : 'button-ghost'}`}
+                    style={isActive ? { background: 'var(--ink)', color: 'var(--white)' } : {}}
+                    onClick={() => toggleMethod(m)}
+                  >
+                    {isActive ? <Check size={13} /> : null} {m}
+                  </button>
+                );
+              })}
+              {(form.paymentMethods || [])
+                .filter((m) => !standardMethods.includes(m))
+                .map((m) => (
+                  <span
+                    key={m}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      background: 'var(--paper)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600
+                    }}
+                  >
+                    {m}
+                    <button
+                      type="button"
+                      style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)' }}
+                      onClick={() => toggleMethod(m)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+              <input
+                className="input"
+                style={{ height: '32px', padding: '4px 8px', fontSize: '11px' }}
+                placeholder="Add other payment method..."
+                value={customMethodInput}
+                onChange={(e) => setCustomMethodInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomMethod(e))}
+              />
+              <button type="button" className="button button-ghost button-small" onClick={addCustomMethod}>
+                Add
+              </button>
+            </div>
+          </div>
         </div>
+
         <label className="field-label">Cancellation policy
           <textarea className="input textarea" value={form.cancellationPolicy} onChange={(e) => setForm({ ...form, cancellationPolicy: e.target.value })} />
         </label>
+
         <div className="setting-row">
           <div>
-            <strong>Commission tracking</strong>
-            <small>Hide commission data when disabled.</small>
+            <strong>Barber Commission Tracking</strong>
+            <small>Enable performance commission calculations across barber dashboards.</small>
           </div>
           <button type="button" className={`toggle ${form.commissionTracking ? 'active' : ''}`} onClick={() => setForm({ ...form, commissionTracking: !form.commissionTracking })}>
             <span />
           </button>
         </div>
-        <button className="button button-dark" type="submit">Save settings <Check size={16} /></button>
+
+        <div style={{ marginTop: '14px' }}>
+          <button className="button button-dark" type="submit" disabled={isSaving}>
+            {isSaving ? 'Saving to Database...' : 'Save Settings'} <Check size={16} />
+          </button>
+        </div>
       </SectionCard>
     </form>
   );

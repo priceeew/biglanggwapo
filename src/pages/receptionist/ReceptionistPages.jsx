@@ -7,7 +7,7 @@ import {
   BadgeCheck, Camera, Upload, Pencil, Clock3, LockKeyhole, UserRound
 } from 'lucide-react';
 import { useStore, currency, today, humanDate, stars } from '../../context/StoreContext';
-import { demoApi } from '../../mockService';
+import { demoApi, cleanCustomerName } from '../../mockService';
 import { saveAccount, getAccounts, validatePassword, validatePhone } from '../../data';
 import {
   sendInviteNotification, notifyCustomerTurn, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas,
@@ -1599,25 +1599,114 @@ export function PaymentPage() {
   const [method, setMethod] = useState('Cash');
   const [cash, setCash] = useState('');
 
+  // GCash realistic payment fields
+  const [gcashPhone, setGcashPhone] = useState('0917');
+  const [gcashRef, setGcashRef] = useState(() => '90' + Math.floor(1000000000 + Math.random() * 9000000000));
+  const [isGcashVerified, setIsGcashVerified] = useState(false);
+
+  const rawMethods = Array.isArray(demo.settings?.paymentMethods) && demo.settings.paymentMethods.length > 0
+    ? demo.settings.paymentMethods
+    : ['Cash', 'GCash', 'Card only'];
+  const availableMethods = rawMethods.map((m) => m === 'Card (demo)' ? 'Card only' : m);
+
+  // Card only realistic payment fields
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [cardBrand, setCardBrand] = useState('Visa');
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [cardApproved, setCardApproved] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+
   const unpaid = demo.appointments.filter((item) => item.status === 'Completed' && item.paymentStatus === 'Unpaid');
   const item = demo.appointments.find((appointment) => appointment.id === selected);
   const change = method === 'Cash' ? Math.max(0, Number(cash || 0) - Number(item?.price || 0)) : 0;
 
+  // Sync customer name into cardholder when selecting an appointment
+  useEffect(() => {
+    if (item) {
+      setCardHolder(item.customerName || '');
+      setCash(String(item.price || ''));
+      setGcashRef('90' + Math.floor(1000000000 + Math.random() * 9000000000));
+      setIsGcashVerified(false);
+      setCardApproved(false);
+      setAuthCode('');
+    }
+  }, [selected]);
+
+  const handleAuthorizeCard = () => {
+    const cleanNum = cardNumber.replace(/\s+/g, '');
+    if (cleanNum.length < 15) {
+      return notify('Please enter a valid 16-digit card number.', 'error');
+    }
+    if (!cardExpiry.includes('/') || cardExpiry.length < 5) {
+      return notify('Please enter card expiry as MM/YY.', 'error');
+    }
+    if (cardCvv.length < 3) {
+      return notify('Please enter 3-digit CVV.', 'error');
+    }
+    setIsAuthorizing(true);
+    setTimeout(() => {
+      setIsAuthorizing(false);
+      const code = 'AUTH-' + Math.floor(100000 + Math.random() * 900000);
+      setAuthCode(code);
+      setCardApproved(true);
+      notify(`Card approved! Authorization code: ${code}`, 'success');
+    }, 700);
+  };
+
   const pay = () => {
     if (!item) return notify('Choose a completed service to check out.', 'error');
-    if (method === 'Cash' && Number(cash) < item.price) return notify('Cash received must cover the total.', 'error');
+    
+    let paymentMeta = {};
+    if (method === 'Cash') {
+      if (Number(cash) < item.price) return notify('Cash received must cover the total.', 'error');
+      paymentMeta = { cashReceived: Number(cash), change };
+    } else if (method === 'GCash') {
+      const cleanPhone = gcashPhone.replace(/\D/g, '');
+      if (cleanPhone.length !== 11 || !cleanPhone.startsWith('09')) {
+        return notify('Please enter a valid 11-digit Philippine GCash mobile number (e.g. 0917XXXXXXX).', 'error');
+      }
+      if (!gcashRef || gcashRef.trim().length < 8) {
+        return notify('Please enter or verify the GCash reference number.', 'error');
+      }
+      paymentMeta = {
+        gcashNumber: cleanPhone,
+        gcashReference: gcashRef.trim(),
+        paymentDetails: `GCash Ref: ${gcashRef.trim()} (${cleanPhone})`
+      };
+    } else if (method === 'Card only') {
+      const cleanNum = cardNumber.replace(/\s+/g, '');
+      if (!cardApproved && cleanNum.length < 15) {
+        return notify('Please fill in card details and authorize payment first.', 'error');
+      }
+      const last4 = cleanNum.slice(-4) || '4242';
+      const approvedAuth = authCode || ('AUTH-' + Math.floor(100000 + Math.random() * 900000));
+      paymentMeta = {
+        cardBrand,
+        cardLast4: last4,
+        cardHolder: cardHolder.trim() || item.customerName,
+        authCode: approvedAuth,
+        paymentDetails: `Card only (${cardBrand} •••• ${last4})`
+      };
+    }
+
     try {
       commit((state) => {
-        const next = demoApi.recordPayment(state, item.id, method, cash);
+        const next = demoApi.recordPayment(state, item.id, method, paymentMeta);
         const apt = next.appointments.find((a) => a.id === item.id);
         if (apt) saveAppointmentToAtlas(apt);
         const newTxn = next.transactions?.[0];
         if (newTxn) saveTransactionToAtlas(newTxn);
         return next;
       });
-      notify('Payment recorded and transaction saved to database.');
+      notify(`Payment of ${currency(item.price)} via ${method} recorded and transaction saved!`, 'success');
       setSelected('');
       setCash('');
+      setCardNumber('');
+      setCardApproved(false);
+      setIsGcashVerified(false);
     } catch (error) {
       notify(error.message, 'error');
     }
@@ -1641,31 +1730,291 @@ export function PaymentPage() {
           {!unpaid.length && <EmptyState title="Nothing to check out" copy="Completed unpaid services will appear here." />}
         </div>
       </SectionCard>
-      <SectionCard title="Checkout" description="GCash and Card are mock recording methods only.">
+      <SectionCard title="Checkout & Payment" description="Process payment via Cash, GCash QR/Express, or Card reader terminal.">
         {item ? (
           <div className="checkout-panel">
             <div className="checkout-total">
-              <span>Total due</span>
+              <div>
+                <span>Total amount due</span>
+                <small style={{ display: 'block', color: 'var(--muted)', fontSize: '11px', marginTop: '2px' }}>
+                  {item.customerName} · {item.serviceName}
+                </small>
+              </div>
               <strong>{currency(item.price)}</strong>
             </div>
+
             <div className="method-tabs">
-              {['Cash', 'GCash', 'Card (demo)'].map((itemMethod) => (
-                <button key={itemMethod} className={method === itemMethod ? 'active' : ''} onClick={() => setMethod(itemMethod)}>
+              {availableMethods.map((itemMethod) => (
+                <button
+                  key={itemMethod}
+                  type="button"
+                  className={method === itemMethod ? 'active' : ''}
+                  onClick={() => setMethod(itemMethod)}
+                >
                   {itemMethod}
                 </button>
               ))}
             </div>
+
+            {!['Cash', 'GCash', 'Card only'].includes(method) && (
+              <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+                <strong style={{ display: 'block', fontSize: '13px', marginBottom: '6px' }}>{method} Payment</strong>
+                <p style={{ fontSize: '11px', color: 'var(--muted)', margin: '0 0 10px' }}>
+                  Confirm payment of {currency(item.price)} received via {method}.
+                </p>
+                <label className="field-label">Reference / Note (Optional)
+                  <input
+                    className="input"
+                    placeholder={`e.g. ${method} Confirmation #`}
+                    value={gcashRef}
+                    onChange={(e) => setGcashRef(e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+
             {method === 'Cash' && (
               <label className="field-label">Cash received
-                <input className="input" type="number" min={item.price} value={cash} onChange={(e) => setCash(e.target.value)} placeholder={item.price} />
-                <small className="change-hint">Change: {currency(change)}</small>
+                <input
+                  className="input"
+                  type="number"
+                  min={item.price}
+                  value={cash}
+                  onChange={(e) => setCash(e.target.value)}
+                  placeholder={item.price}
+                />
+                <small className="change-hint">Change due: <strong>{currency(change)}</strong></small>
               </label>
             )}
-            <button className="button button-dark button-full" onClick={pay}>Record payment <Check size={16} /></button>
-            <button className="button button-ghost button-full" onClick={() => notify('Receipt preview is ready for printing in the demo.')}>Preview printable receipt <FileText size={16} /></button>
+
+            {method === 'GCash' && (
+              <div style={{ background: '#f0f7ff', border: '1.5px solid #007dfe', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ background: '#007dfe', color: '#fff', fontWeight: 800, padding: '4px 8px', borderRadius: '6px', fontSize: '11px', letterSpacing: '0.05em' }}>
+                      GCash
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#005bb5' }}>Merchant QR & Express Send</span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: '#007dfe', fontWeight: 600 }}>Real-time Gateway</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '14px', alignItems: 'center', background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cce5ff', marginBottom: '12px' }}>
+                  {/* Stylized QR Code preview */}
+                  <div style={{ width: '100px', height: '100px', background: '#fff', border: '2px solid #007dfe', borderRadius: '8px', padding: '6px', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                        <div style={{ width: '22px', height: '22px', border: '3px solid #000', borderRadius: '3px' }} />
+                        <div style={{ width: '22px', height: '22px', border: '3px solid #000', borderRadius: '3px' }} />
+                      </div>
+                      <span style={{ fontSize: '9px', fontWeight: 800, color: '#007dfe' }}>QR PH</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                        <div style={{ width: '22px', height: '22px', border: '3px solid #000', borderRadius: '3px' }} />
+                        <div style={{ width: '16px', height: '16px', background: '#007dfe', borderRadius: '2px' }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '11px' }}>
+                    <strong style={{ display: 'block', fontSize: '12px', color: '#0f172a' }}>Biglang Gwapo Barbershop</strong>
+                    <span style={{ color: '#64748b', display: 'block', margin: '2px 0 6px' }}>Merchant ID: BG-GCASH-0100</span>
+                    <span style={{ display: 'inline-block', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                      Amount: {currency(item.price)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="form-grid">
+                  <label className="field-label" style={{ color: '#005bb5' }}>
+                    Customer GCash Mobile No.
+                    <input
+                      className="input"
+                      type="tel"
+                      maxLength={11}
+                      value={gcashPhone}
+                      onChange={(e) => setGcashPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      placeholder="0917XXXXXXX"
+                      required
+                    />
+                  </label>
+
+                  <label className="field-label" style={{ color: '#005bb5' }}>
+                    GCash Reference No.
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        className="input"
+                        value={gcashRef}
+                        onChange={(e) => setGcashRef(e.target.value)}
+                        placeholder="e.g. 902144810293"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="button button-ghost button-small"
+                        onClick={() => {
+                          const generated = '90' + Math.floor(1000000000 + Math.random() * 9000000000);
+                          setGcashRef(generated);
+                          setIsGcashVerified(true);
+                          notify(`Generated GCash reference: ${generated}`, 'success');
+                        }}
+                        title="Generate fresh GCash transaction reference"
+                      >
+                        New
+                      </button>
+                    </div>
+                  </label>
+                </div>
+
+                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#005bb5' }}>
+                  <span>Status: <strong>{isGcashVerified ? '✓ Payment Received & Verified' : 'Awaiting confirmation'}</strong></span>
+                  {!isGcashVerified && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      style={{ color: '#007dfe', fontWeight: 700 }}
+                      onClick={() => {
+                        setIsGcashVerified(true);
+                        notify('GCash transaction verified with merchant gateway.', 'success');
+                      }}
+                    >
+                      Verify GCash SMS
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {method === 'Card only' && (
+              <div style={{ background: '#fafafa', border: '1.5px solid #222', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ background: '#111', color: '#fff', fontWeight: 700, padding: '4px 8px', borderRadius: '6px', fontSize: '11px' }}>
+                      POS TERMINAL
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ink)' }}>EMV Chip / Contactless Reader</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {['Visa', 'Mastercard', 'JCB'].map((b) => (
+                      <span
+                        key={b}
+                        onClick={() => setCardBrand(b)}
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: cardBrand === b ? 'var(--gold)' : 'var(--paper)',
+                          color: cardBrand === b ? '#fff' : 'var(--muted)'
+                        }}
+                      >
+                        {b}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', color: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--gold)' }}>{cardBrand.toUpperCase()} DEBIT / CREDIT</span>
+                    <div style={{ width: '28px', height: '20px', background: 'var(--gold)', borderRadius: '4px', opacity: 0.8 }} />
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '16px', letterSpacing: '0.14em', marginBottom: '14px' }}>
+                    {cardNumber ? cardNumber.replace(/(\d{4})/g, '$1 ').trim() : '•••• •••• •••• 4242'}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8' }}>
+                    <div>
+                      <span>Cardholder</span>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '12px' }}>{cardHolder || 'VALUED CUSTOMER'}</strong>
+                    </div>
+                    <div>
+                      <span>Expires</span>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '12px' }}>{cardExpiry || '12/28'}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-stack" style={{ gap: '10px' }}>
+                  <label className="field-label">Card Number
+                    <input
+                      className="input"
+                      type="text"
+                      maxLength={19}
+                      placeholder="4111 2222 3333 4444"
+                      value={cardNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 16);
+                        const formatted = val.replace(/(\d{4})(?=\d)/g, '$1 ');
+                        setCardNumber(formatted);
+                        if (val.startsWith('4')) setCardBrand('Visa');
+                        else if (val.startsWith('5')) setCardBrand('Mastercard');
+                        else if (val.startsWith('3')) setCardBrand('JCB');
+                      }}
+                    />
+                  </label>
+
+                  <div className="form-grid">
+                    <label className="field-label">Expiry (MM/YY)
+                      <input
+                        className="input"
+                        placeholder="MM/YY"
+                        maxLength={5}
+                        value={cardExpiry}
+                        onChange={(e) => {
+                          let val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                          if (val.length >= 3) val = val.slice(0, 2) + '/' + val.slice(2);
+                          setCardExpiry(val);
+                        }}
+                      />
+                    </label>
+                    <label className="field-label">CVV / CVC
+                      <input
+                        className="input"
+                        type="password"
+                        maxLength={4}
+                        placeholder="•••"
+                        value={cardCvv}
+                        onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      className="button button-ghost button-small"
+                      onClick={handleAuthorizeCard}
+                      disabled={isAuthorizing}
+                    >
+                      {isAuthorizing ? 'Authorizing with Bank...' : cardApproved ? '✓ Card Authorized' : 'Authorize Card'}
+                    </button>
+                    {cardApproved && (
+                      <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>
+                        Approved: {authCode}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              className="button button-dark button-full"
+              onClick={pay}
+              style={{ height: '44px', fontSize: '13px' }}
+            >
+              Confirm & Record {currency(item.price)} ({method}) <Check size={16} />
+            </button>
+            <button
+              className="button button-ghost button-full"
+              style={{ marginTop: '8px' }}
+              onClick={() => notify(`Receipt preview generated for ${item.customerName} (${item.serviceName} - ${currency(item.price)}).`)}
+            >
+              Preview Printable Receipt <FileText size={16} />
+            </button>
           </div>
         ) : (
-          <EmptyState title="Select a service" copy="Choose a completed service from the left." />
+          <EmptyState title="Select a service" copy="Choose a completed service from the left to checkout." />
         )}
       </SectionCard>
     </div>
@@ -1680,6 +2029,25 @@ export function ReceptionistProductsPage() {
   const [customerName, setCustomerName] = useState('Walk-in Customer');
   const [method, setMethod] = useState('Cash');
   const [cashReceived, setCashReceived] = useState('');
+
+  // Realistic GCash payment states for retail
+  const [gcashPhone, setGcashPhone] = useState('');
+  const [gcashRef, setGcashRef] = useState('');
+  const [isGcashVerified, setIsGcashVerified] = useState(false);
+
+  // Realistic Card only payment states for retail
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [cardHolder, setCardHolder] = useState('Walk-in Customer');
+  const [cardBrand, setCardBrand] = useState('Visa');
+  const [cardApproved, setCardApproved] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+
+  const rawRetailMethods = Array.isArray(demo.settings?.paymentMethods) && demo.settings.paymentMethods.length > 0
+    ? demo.settings.paymentMethods
+    : ['Cash', 'GCash', 'Card only'];
+  const availableRetailMethods = rawRetailMethods.map((m) => m === 'Card (demo)' ? 'Card only' : m);
 
   // Retail products for sale
   const products = (demo.inventory || []).filter((item) =>
@@ -1704,8 +2072,17 @@ export function ReceptionistProductsPage() {
     setSelectedProduct(prod);
     setQuantity(1);
     setCustomerName('Walk-in Customer');
-    setMethod('Cash');
+    setMethod(availableRetailMethods[0] || 'Cash');
     setCashReceived(String(prod.cost || ''));
+    setGcashPhone('');
+    setGcashRef('');
+    setIsGcashVerified(false);
+    setCardNumber('');
+    setCardExpiry('');
+    setCardCvv('');
+    setCardHolder('Walk-in Customer');
+    setCardApproved(false);
+    setAuthCode('');
   };
 
   const handleCompleteSale = async (e) => {
@@ -1719,16 +2096,46 @@ export function ReceptionistProductsPage() {
       return notify('Cash received must cover the purchase total.', 'error');
     }
 
+    let paymentDetails = method;
+    if (method === 'GCash') {
+      if (!gcashPhone || gcashPhone.length < 11) {
+        return notify('Please enter a valid 11-digit customer GCash number.', 'error');
+      }
+      if (!gcashRef) {
+        return notify('Please enter or generate a GCash transaction reference number.', 'error');
+      }
+      paymentDetails = `GCash (Ref: ${gcashRef}, Sender: ${gcashPhone})`;
+    } else if (method === 'Card only') {
+      const cleanDigits = cardNumber.replace(/\s/g, '');
+      if (cleanDigits.length < 15) {
+        return notify('Please enter a valid 16-digit debit/credit card number.', 'error');
+      }
+      if (!cardExpiry || cardExpiry.length < 5) {
+        return notify('Please enter card expiry in MM/YY format.', 'error');
+      }
+      if (!cardCvv || cardCvv.length < 3) {
+        return notify('Please enter a 3 or 4 digit card CVV/CVC code.', 'error');
+      }
+      if (!cardApproved) {
+        return notify('Please click "Swipe / Tap Card on Terminal" to authorize transaction.', 'error');
+      }
+      const last4 = cleanDigits.slice(-4);
+      paymentDetails = `Card only (${cardBrand} •••• ${last4})`;
+    }
+
     const newStock = Number(selectedProduct.stock) - qty;
     const updatedProduct = { ...selectedProduct, stock: newStock };
+
+    const cleanCustName = cleanCustomerName(customerName.trim() || 'Walk-in Customer');
 
     const newTxn = {
       id: 'txn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
       receipt: `BG-RET-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`,
-      customerName: customerName.trim() || 'Walk-in Customer',
+      customerName: cleanCustName,
       serviceName: `${selectedProduct.name} (x${qty})`,
       amount: totalCost,
       method,
+      paymentDetails,
       status: 'Paid',
       type: 'Retail',
       date: today,
@@ -1915,7 +2322,7 @@ export function ReceptionistProductsPage() {
 
               <div className="field-label">Payment Method
                 <div className="method-tabs" style={{ marginTop: '6px' }}>
-                  {['Cash', 'GCash', 'Card'].map((m) => (
+                  {availableRetailMethods.map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -1943,6 +2350,181 @@ export function ReceptionistProductsPage() {
                     Change due: {currency(change)}
                   </small>
                 </label>
+              )}
+
+              {method === 'GCash' && (
+                <div style={{ background: '#f0f7ff', border: '1.5px solid #007dfe', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ background: '#007dfe', color: '#fff', fontWeight: 800, padding: '3px 7px', borderRadius: '5px', fontSize: '11px' }}>
+                        GCash
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#005bb5' }}>QR Ph Express</span>
+                    </div>
+                    <span style={{ fontSize: '10px', color: '#007dfe', fontWeight: 600 }}>Total: {currency(totalCost)}</span>
+                  </div>
+
+                  <div className="form-grid" style={{ marginBottom: '8px' }}>
+                    <label className="field-label" style={{ color: '#005bb5', fontSize: '11px' }}>
+                      GCash Mobile No.
+                      <input
+                        className="input"
+                        type="tel"
+                        maxLength={11}
+                        value={gcashPhone}
+                        onChange={(e) => setGcashPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                        placeholder="0917XXXXXXX"
+                        required
+                      />
+                    </label>
+                    <label className="field-label" style={{ color: '#005bb5', fontSize: '11px' }}>
+                      Reference No.
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <input
+                          className="input"
+                          value={gcashRef}
+                          onChange={(e) => setGcashRef(e.target.value)}
+                          placeholder="e.g. 902144810293"
+                          required
+                        />
+                        <button
+                          type="button"
+                          className="button button-ghost button-small"
+                          onClick={() => {
+                            const generated = '90' + Math.floor(1000000000 + Math.random() * 9000000000);
+                            setGcashRef(generated);
+                            setIsGcashVerified(true);
+                            notify(`Generated GCash reference: ${generated}`, 'success');
+                          }}
+                        >
+                          New
+                        </button>
+                      </div>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#005bb5' }}>
+                    <span>Status: <strong>{isGcashVerified ? '✓ Verified' : 'Awaiting SMS'}</strong></span>
+                    {!isGcashVerified && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        style={{ color: '#007dfe', fontWeight: 700, fontSize: '10px' }}
+                        onClick={() => {
+                          setIsGcashVerified(true);
+                          notify('GCash verified.', 'success');
+                        }}
+                      >
+                        Verify
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {method === 'Card only' && (
+                <div style={{ background: '#fafafa', border: '1.5px solid #222', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ background: '#111', color: '#fff', fontWeight: 700, padding: '3px 7px', borderRadius: '5px', fontSize: '10px' }}>
+                        POS TERMINAL
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink)' }}>EMV Chip / Contactless</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '3px' }}>
+                      {['Visa', 'Mastercard', 'JCB'].map((b) => (
+                        <span
+                          key={b}
+                          onClick={() => setCardBrand(b)}
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            background: cardBrand === b ? 'var(--gold)' : 'var(--paper)',
+                            color: cardBrand === b ? '#fff' : 'var(--muted)'
+                          }}
+                        >
+                          {b}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="field-label" style={{ fontSize: '11px', marginBottom: '6px' }}>Card number
+                    <input
+                      className="input"
+                      maxLength={19}
+                      value={cardNumber}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '').slice(0, 16);
+                        const formatted = raw.match(/.{1,4}/g)?.join(' ') || raw;
+                        setCardNumber(formatted);
+                      }}
+                      placeholder="4000 1234 5678 9010"
+                      required
+                    />
+                  </label>
+
+                  <div className="form-grid" style={{ marginBottom: '8px' }}>
+                    <label className="field-label" style={{ fontSize: '11px' }}>Expiry
+                      <input
+                        className="input"
+                        maxLength={5}
+                        value={cardExpiry}
+                        onChange={(e) => {
+                          let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                          if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+                          setCardExpiry(v);
+                        }}
+                        placeholder="MM/YY"
+                        required
+                      />
+                    </label>
+                    <label className="field-label" style={{ fontSize: '11px' }}>CVV
+                      <input
+                        className="input"
+                        type="password"
+                        maxLength={4}
+                        value={cardCvv}
+                        onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        placeholder="•••"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className={`button button-small ${cardApproved ? 'button-dark' : 'button-ghost'}`}
+                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                      onClick={() => {
+                        const code = 'AUTH-' + Math.floor(100000 + Math.random() * 900000);
+                        setAuthCode(code);
+                        setCardApproved(true);
+                        notify(`Terminal authorized! Auth: ${code}`, 'success');
+                      }}
+                    >
+                      {cardApproved ? `✓ Authorized (${authCode})` : 'Swipe / Tap Card on Terminal'}
+                    </button>
+                    {cardApproved && <span style={{ fontSize: '10px', color: '#166534', fontWeight: 700 }}>Approved</span>}
+                  </div>
+                </div>
+              )}
+
+              {!['Cash', 'GCash', 'Card only'].includes(method) && (
+                <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                  <strong style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>{method} Payment</strong>
+                  <label className="field-label" style={{ fontSize: '11px' }}>Reference / Transaction Note
+                    <input
+                      className="input"
+                      placeholder={`e.g. ${method} Ref Number`}
+                      value={gcashRef}
+                      onChange={(e) => setGcashRef(e.target.value)}
+                    />
+                  </label>
+                </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'var(--charcoal)', color: '#fff', borderRadius: '8px', marginTop: '10px' }}>

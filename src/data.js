@@ -61,7 +61,7 @@ export const settings = {
   hours: 'Mon–Sun · 9:00 AM–8:00 PM',
   slotInterval: 15,
   cancellationPolicy: 'Please cancel at least 2 hours before your appointment.',
-  paymentMethods: ['Cash', 'GCash', 'Card (demo)'],
+  paymentMethods: ['Cash', 'GCash', 'Card only'],
   commissionTracking: false
 };
 

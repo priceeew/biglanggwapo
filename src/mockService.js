@@ -31,6 +31,66 @@ export function deduplicateQueue(list) {
   return result;
 }
 
+export function cleanCustomerName(name) {
+  if (!name) return 'Customer';
+  let str = String(name).trim();
+  // Strip repeated words or halved string (e.g., "Juan Dela Cruz Juan Dela Cruz" -> "Juan Dela Cruz", "Alex Alex" -> "Alex")
+  const words = str.split(/\s+/);
+  if (words.length >= 2 && words.length % 2 === 0) {
+    const half = words.length / 2;
+    const firstHalf = words.slice(0, half).join(' ');
+    const secondHalf = words.slice(half).join(' ');
+    if (firstHalf.toLowerCase() === secondHalf.toLowerCase()) {
+      return firstHalf;
+    }
+  }
+  // Check exact character halved repeat (e.g. "JoshuaJoshua" -> "Joshua")
+  const len = str.length;
+  if (len >= 4 && len % 2 === 0) {
+    const half = len / 2;
+    const firstHalf = str.slice(0, half);
+    const secondHalf = str.slice(half);
+    if (firstHalf.toLowerCase() === secondHalf.toLowerCase()) {
+      return firstHalf;
+    }
+  }
+  return str;
+}
+
+export function deduplicateTransactions(list) {
+  if (!Array.isArray(list)) return [];
+  const seenIds = new Set();
+  const seenAptIds = new Set();
+  const seenReceipts = new Set();
+  const seenSignatures = new Set();
+  const result = [];
+
+  for (const item of list) {
+    if (!item) continue;
+    const tid = String(item.id || item._id || '').trim();
+    const aptId = item.appointmentId ? String(item.appointmentId).trim() : null;
+    const receipt = item.receipt ? String(item.receipt).trim() : null;
+    const cleanName = cleanCustomerName(item.customerName || item.customer);
+    const signature = `${cleanName.toLowerCase()}|${(item.serviceName || '').toLowerCase().trim()}|${item.amount}|${item.date}|${item.time || ''}`;
+
+    if (tid && seenIds.has(tid)) continue;
+    if (receipt && seenReceipts.has(receipt)) continue;
+    if (aptId && seenAptIds.has(aptId)) continue;
+    if (item.time && seenSignatures.has(signature)) continue;
+
+    if (tid) seenIds.add(tid);
+    if (receipt) seenReceipts.add(receipt);
+    if (aptId) seenAptIds.add(aptId);
+    if (item.time) seenSignatures.add(signature);
+
+    result.push({
+      ...item,
+      customerName: cleanName
+    });
+  }
+  return result;
+}
+
 export function getInitialDemoState() {
   return clone({
     services,
@@ -69,7 +129,7 @@ export function loadDemoState() {
     let currentCustomers = Array.isArray(parsed.customers) ? parsed.customers : [];
     let currentAppointments = Array.isArray(parsed.appointments) ? parsed.appointments : [];
     let currentQueue = deduplicateQueue(Array.isArray(parsed.queue) ? parsed.queue : []);
-    let currentTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+    let currentTransactions = deduplicateTransactions(Array.isArray(parsed.transactions) ? parsed.transactions : []);
     let currentServices = Array.isArray(parsed.services) ? parsed.services : [];
 
     const baseState = {
@@ -125,8 +185,12 @@ export function syncAccountsIntoDemoState(state, accountsMap) {
       lastVisit: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : (existing?.lastVisit || 'Today')
     };
   });
+  const seenRecIds = new Set(updatedRecs.map((r) => r.id));
   existingRecs.forEach((r) => {
-    if (!r.email) updatedRecs.push(r);
+    if (!r.email && r.id && !seenRecIds.has(r.id)) {
+      seenRecIds.add(r.id);
+      updatedRecs.push(r);
+    }
   });
 
   // 2. Customers (from accounts with role: 'customer')
@@ -152,8 +216,12 @@ export function syncAccountsIntoDemoState(state, accountsMap) {
       lastVisit: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : (existing?.lastVisit || 'Today')
     };
   });
+  const seenCustIds = new Set(updatedCusts.map((c) => c.id));
   existingCusts.forEach((c) => {
-    if (!c.email) updatedCusts.push(c);
+    if (!c.email && c.id && !seenCustIds.has(c.id)) {
+      seenCustIds.add(c.id);
+      updatedCusts.push(c);
+    }
   });
 
   // 3. Barbers (from accounts with role: 'barber')
@@ -263,17 +331,45 @@ export const demoApi = {
     }
 
     // Prevent duplicate active booking with the same barber for this customer
-    const activeConflict = state.appointments.some((item) =>
-      item.barberId === payload.barberId &&
-      !['Completed', 'Cancelled', 'No-show'].includes(item.status) &&
-      (
-        (payload.customerId && item.customerId === payload.customerId) ||
-        (payload.customerName && item.customerName && item.customerName.trim().toLowerCase() === payload.customerName.trim().toLowerCase()) ||
-        (payload.customerEmail && item.customerEmail && item.customerEmail.trim().toLowerCase() === payload.customerEmail.trim().toLowerCase())
-      )
-    );
+    const isCompanion = payload.bookingFor === 'other' || /\(\d+\)$/.test((payload.customerName || '').trim());
+    
+    const activeConflict = (state.appointments || []).some((item) => {
+      // Check barber match (by ID or Name)
+      const sameBarber = (
+        (payload.barberId && (item.barberId === payload.barberId || String(item.barberId) === String(payload.barberId))) ||
+        (payload.barberName && item.barberName && item.barberName.trim().toLowerCase() === payload.barberName.trim().toLowerCase())
+      );
+      if (!sameBarber) return false;
+
+      const isFinished = ['Completed', 'Cancelled', 'No-show'].includes(item.status);
+      if (isFinished) return false;
+
+      const cleanPayloadName = (payload.customerName || '').trim().toLowerCase();
+      const cleanItemName = (item.customerName || '').trim().toLowerCase();
+
+      if (isCompanion) {
+        // If booking for another person (companion e.g. "Juan Dela Cruz (2)"),
+        // only conflict if there is already an active booking with this EXACT companion name
+        return cleanPayloadName === cleanItemName;
+      } else {
+        // Booking for self: don't conflict with companion bookings
+        const itemIsCompanion = item.bookingFor === 'other' || /\(\d+\)$/.test((item.customerName || '').trim());
+        if (itemIsCompanion) return false;
+
+        const sameCustId = payload.customerId && item.customerId && (payload.customerId === item.customerId || String(payload.customerId) === String(item.customerId));
+        const sameEmail = payload.customerEmail && item.customerEmail && payload.customerEmail.trim().toLowerCase() === item.customerEmail.trim().toLowerCase();
+        const sameName = cleanPayloadName && cleanItemName && cleanPayloadName === cleanItemName;
+
+        return sameCustId || sameEmail || sameName;
+      }
+    });
+
     if (activeConflict) {
-      throw new Error(`You already have an active appointment with ${payload.barberName || 'this barber'}. Customers can only book one appointment at a time per barber.`);
+      if (isCompanion) {
+        throw new Error(`An active booking under "${payload.customerName}" already exists with ${payload.barberName || 'this barber'}.`);
+      } else {
+        throw new Error(`You already have an active appointment with ${payload.barberName || 'this barber'}. Customers can only book one appointment at a time per barber.`);
+      }
     }
 
     const appointment = { id: payload.id || id('apt'), ...payload, status: 'Pending', paymentStatus: 'Unpaid', source: 'Online', notes: payload.notes || '' };
@@ -472,11 +568,31 @@ export const demoApi = {
     const entry = state.queue.find((item) => item.id === queueId);
     return { ...state, queue: state.queue.map((item) => item.id === queueId ? { ...item, status: 'Removed' } : item), appointments: state.appointments.map((item) => item.id === entry?.appointmentId ? { ...item, status: 'Cancelled' } : item) };
   },
-  recordPayment(state, appointmentId, method, cashReceived = 0) {
+  recordPayment(state, appointmentId, method, paymentMeta = {}) {
     const appointment = state.appointments.find((item) => item.id === appointmentId);
     if (!appointment || appointment.paymentStatus === 'Paid' || state.transactions.some((item) => item.appointmentId === appointmentId)) throw new Error('Payment has already been recorded for this service.');
-    const transaction = { id: id('txn'), appointmentId, customerName: appointment.customerName, serviceName: appointment.serviceName, amount: appointment.price, method, status: 'Paid', date: new Date().toISOString().slice(0, 10), time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), receipt: `BG-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`, cashReceived: method === 'Cash' ? Number(cashReceived) : undefined, change: method === 'Cash' ? Math.max(0, Number(cashReceived) - appointment.price) : undefined };
-    return { ...state, appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, paymentStatus: 'Paid' } : item), transactions: [transaction, ...state.transactions] };
+    const metaObj = typeof paymentMeta === 'object' && paymentMeta !== null ? paymentMeta : { cashReceived: paymentMeta };
+    const cashVal = metaObj.cashReceived;
+    const transaction = {
+      id: id('txn'),
+      appointmentId,
+      customerName: appointment.customerName,
+      serviceName: appointment.serviceName,
+      amount: appointment.price,
+      method,
+      status: 'Paid',
+      date: new Date().toISOString().slice(0, 10),
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      receipt: `BG-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`,
+      cashReceived: method === 'Cash' ? Number(cashVal || 0) : undefined,
+      change: method === 'Cash' ? Math.max(0, Number(cashVal || 0) - appointment.price) : undefined,
+      ...metaObj
+    };
+    return {
+      ...state,
+      appointments: state.appointments.map((item) => item.id === appointmentId ? { ...item, paymentStatus: 'Paid' } : item),
+      transactions: deduplicateTransactions([transaction, ...state.transactions])
+    };
   },
   addReview(state, payload) {
     return { ...state, reviews: [{ id: id('rev'), date: new Date().toISOString().slice(0, 10), public: true, ...payload }, ...state.reviews] };

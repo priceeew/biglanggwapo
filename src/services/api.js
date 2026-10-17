@@ -753,5 +753,36 @@ export async function deleteNotificationFromAtlas(id) {
   }
 }
 
+// System Settings API (MongoDB Atlas - collection: 'settings')
+export async function fetchSettingsFromAtlas() {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.success ? data.settings : null;
+  } catch (err) {
+    console.warn('Failed to fetch settings from Atlas:', err);
+    return null;
+  }
+}
+
+export async function saveSettingsToAtlas(settings) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || data.message || `Server error (${res.status})` };
+    }
+    return { success: true, settings: data.settings };
+  } catch (err) {
+    console.error('Failed to save settings to database:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 
 

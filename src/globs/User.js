@@ -165,7 +165,10 @@ export function validatePhone(phone) {
   if (!phone || !phone.trim()) {
     return 'Phone number is required.';
   }
-  const digitsOnly = phone.replace(/\D/g, '');
+  let digitsOnly = phone.replace(/\D/g, '');
+  if (digitsOnly.startsWith('63') && digitsOnly.length === 12) {
+    digitsOnly = '0' + digitsOnly.slice(2);
+  }
   if (digitsOnly.length > 11) {
     return 'Phone number cannot exceed 11 digits.';
   }

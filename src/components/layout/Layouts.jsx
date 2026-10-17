@@ -352,14 +352,15 @@ export function PublicLayout({ children }) {
         <div className="footer-brand">
           <img src="/logo.png" alt="Biglang Gwapo Logo" className="brand-logo" />
           <div>
-            <strong>Biglang Gwapo Barber Shop</strong>
+            <strong>{demo?.settings?.shopName || 'Biglang Gwapo Barber Shop'}</strong>
             <p>Sharp cuts. Easy booking.</p>
           </div>
         </div>
         <div className="footer-meta">
-          <span>180 Cutcot National Highway, Pulilan, Bulacan</span>
-          <span>Open daily · 9:00 AM–8:00 PM</span>
-          <span>© 2026 Biglang Gwapo Barbershop · All rights reserved</span>
+          <span>{demo?.settings?.address || '180 Cutcot National Highway, Pulilan, Bulacan'}</span>
+          <span>{demo?.settings?.hours ? `Open daily · ${demo.settings.hours}` : 'Open daily · 9:00 AM–8:00 PM'}</span>
+          {demo?.settings?.phone ? <span>Contact: {demo.settings.phone}</span> : null}
+          <span>© 2026 {demo?.settings?.shopName || 'Biglang Gwapo Barbershop'} · All rights reserved</span>
         </div>
         {session?.role !== 'customer' && (
           <div className="footer-staff-action">

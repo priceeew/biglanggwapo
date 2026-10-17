@@ -454,7 +454,8 @@ export function CustomerDashboard() {
     if (targetApt?.status === 'In Service') {
       return notify('Haircut has already started! In-service appointments cannot be cancelled.', 'error');
     }
-    if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
+    const policy = demo.settings?.cancellationPolicy || 'Please cancel at least 2 hours before your appointment.';
+    if (window.confirm(`Cancellation Policy: ${policy}\n\nDo you want to cancel this appointment?`)) {
       commit((state) => {
         const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
         const next = demoApi.cancelAppointment(state, id);
@@ -585,7 +586,8 @@ export function CustomerAppointments() {
     if (targetApt?.status === 'In Service') {
       return notify('Haircut has already started! In-service appointments cannot be cancelled.', 'error');
     }
-    if (window.confirm('Cancel this appointment? This demo action cannot be undone.')) {
+    const policy = demo.settings?.cancellationPolicy || 'Please cancel at least 2 hours before your appointment.';
+    if (window.confirm(`Cancellation Policy: ${policy}\n\nDo you want to cancel this appointment?`)) {
       commit((state) => {
         const prevQueueItem = state.queue.find((q) => q.appointmentId === id);
         const next = demoApi.cancelAppointment(state, id, 'Cancelled by customer', 'Appointment was cancelled by customer request.');
@@ -631,6 +633,12 @@ export function CustomerAppointments() {
           Cancelled <span>{cancelledList.length}</span>
         </button>
       </div>
+
+      {demo.settings?.cancellationPolicy && (
+        <div style={{ padding: '10px 16px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '8px', marginBottom: '14px', fontSize: '11px', color: 'var(--muted)' }}>
+          <strong style={{ color: 'var(--ink)' }}>Cancellation policy:</strong> {demo.settings.cancellationPolicy}
+        </div>
+      )}
 
       <SectionCard>
         {list.length ? (

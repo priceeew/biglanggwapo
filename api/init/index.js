@@ -9,6 +9,7 @@ import { Review } from '../../server/models/Review.js';
 import { Service } from '../../server/models/Service.js';
 import { Transaction } from '../../server/models/Transaction.js';
 import { Notification } from '../../server/models/Notification.js';
+import { Settings } from '../../server/models/Settings.js';
 
 function deduplicateQueue(rawList = []) {
   const seenApts = new Set();
@@ -51,7 +52,8 @@ export default async function handler(req, res) {
       inventory,
       discounts,
       transactions,
-      notifications
+      notifications,
+      dbSettings
     ] = await Promise.all([
       Account.find().lean(),
       Service.find().lean(),
@@ -62,7 +64,8 @@ export default async function handler(req, res) {
       Inventory.find().lean(),
       Discount.find().lean(),
       Transaction.find().sort({ createdAt: -1 }).lean(),
-      Notification.find().sort({ createdAt: -1 }).limit(100).lean()
+      Notification.find().sort({ createdAt: -1 }).limit(100).lean(),
+      Settings.findOne().lean()
     ]);
 
     const accountsMap = {};
@@ -97,7 +100,8 @@ export default async function handler(req, res) {
         inventory,
         promotions: discounts,
         transactions,
-        notifications
+        notifications,
+        settings: dbSettings || null
       }
     });
   } catch (error) {
