@@ -43,7 +43,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// Seed default admin in Atlas if not present
+// Seed default admin in Atlas if not present ff
 async function seedDefaultAdmin() {
   try {
     const adminExists = await Account.findOne({ email: 'admin@biglanggwapo.com' });
