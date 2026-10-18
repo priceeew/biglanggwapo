@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, BadgeCheck, BadgePercent, CalendarClock, CalendarDays,
-  ChartNoAxesCombined, ChevronDown, CircleHelp, Clock3, Globe2, Home, LayoutDashboard,
+  ChartNoAxesCombined, ChevronDown, Clock3, Globe2, Home, LayoutDashboard,
   ListOrdered, LockKeyhole, LogIn, LogOut, Menu, Package, RefreshCcw, Scissors,
   Settings2, Sparkles, Star, TrendingUp, UserCheck, UserPlus, UserRound, Users, WalletCards, X
 } from 'lucide-react';
@@ -460,9 +460,6 @@ export function StaffLayout({ role, children }) {
             <h1>{title}</h1>
           </div>
           <div className="staff-top-actions">
-            <button className="icon-button" title="Help">
-              <CircleHelp size={18} />
-            </button>
             <NotificationBell session={session} role={role} />
             <div
               className={`staff-user ${['barber', 'receptionist', 'customer'].includes(role) ? 'staff-user-clickable' : ''}`}

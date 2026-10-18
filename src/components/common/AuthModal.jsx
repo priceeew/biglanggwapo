@@ -187,10 +187,10 @@ export function AuthModal() {
             <div className="modal-heading">
               <div className="modal-mark"><Send size={20} /></div>
               <span className="eyebrow gold">Password recovery</span>
-              <h2 id="modal-title">We’ll keep it in the demo.</h2>
-              <p>Demo credentials are preserved in the system.</p>
+              <h2 id="modal-title">Reset your password</h2>
+              <p>Enter your account email to receive recovery instructions.</p>
             </div>
-            <form className="form-stack" onSubmit={(e) => { e.preventDefault(); notify('Demo recovery confirmed.'); closeModal(); }}>
+            <form className="form-stack" onSubmit={(e) => { e.preventDefault(); notify('Password recovery instructions sent.'); closeModal(); }}>
               <label className="field-label">Email
                 <input className="input" type="email" required placeholder="you@biglanggwapo.com" />
               </label>

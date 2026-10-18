@@ -194,7 +194,7 @@ export function ForgotPasswordPage() {
     e.preventDefault();
     if (!email) return notify('Please enter your email.', 'error');
     setSent(true);
-    notify('Demo recovery instructions sent.');
+    notify('Password recovery instructions sent.');
   };
 
   return (
@@ -205,7 +205,7 @@ export function ForgotPasswordPage() {
             <Send size={22} />
           </div>
           <span className="eyebrow gold">Password recovery</span>
-          <h2 id="modal-title">{sent ? 'Check your demo inbox' : 'Reset your password'}</h2>
+          <h2 id="modal-title">{sent ? 'Check your email inbox' : 'Reset your password'}</h2>
           <p>
             {sent
               ? `We have processed a password reset request for ${email}.`

@@ -147,7 +147,9 @@ export function loadDemoState() {
     };
 
     try {
-      const storedAcc = typeof window !== 'undefined' ? window.localStorage.getItem('biglanggwapo-accounts-v2') : null;
+      const storedAcc = typeof window !== 'undefined'
+        ? (window.localStorage.getItem('biglanggwapo-accounts-v3') || window.localStorage.getItem('biglanggwapo-accounts-v2'))
+        : null;
       if (storedAcc) {
         return syncAccountsIntoDemoState(baseState, JSON.parse(storedAcc));
       }
@@ -414,6 +416,7 @@ export const demoApi = {
       barberId: appointment.barberId || '',
       barberName: appointment.barberName || 'Barber',
       serviceName: appointment.serviceName || 'Service',
+      notes: appointment.notes || '',
       status: 'Waiting',
       joinedAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
       estimatedMinutes: appointment.duration || 30,
@@ -517,7 +520,7 @@ export const demoApi = {
       status: 'Arrived',
       paymentStatus: 'Unpaid',
       source: 'Walk-in',
-      notes: ''
+      notes: payload.notes || ''
     };
     const maxNum = (state.queue || []).reduce((max, q) => {
       const n = parseInt((q.number || '').replace(/\D/g, ''), 10);
@@ -533,6 +536,7 @@ export const demoApi = {
       barberId: barber.id,
       barberName: barber.name,
       serviceName: service.name,
+      notes: payload.notes || '',
       status: 'Waiting',
       joinedAt: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
       estimatedMinutes: service.duration || 30,

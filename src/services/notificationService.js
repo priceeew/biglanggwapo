@@ -246,10 +246,11 @@ export function getNotificationsForSession(session, demo) {
       (q) => (q.barberId === bId || q.barberName === bName) && q.status === 'Waiting'
     );
     waitingForBarber.forEach((q, idx) => {
+      const qNote = q.notes ? ` Request note: "${q.notes}".` : '';
       live.push({
         id: `live-barber-queue-${q.id}`,
         title: idx === 0 ? `Next Customer Waiting: ${q.customerName}` : `Customer in Queue: ${q.customerName}`,
-        message: `${q.customerName} has arrived and is waiting for ${q.serviceName} (Ticket #${q.number}).`,
+        message: `${q.customerName} has arrived and is waiting for ${q.serviceName} (Ticket #${q.number}).${qNote}`,
         type: idx === 0 ? 'queue-next' : 'customer-arrived',
         time: idx === 0 ? 'Ready for call' : `~${q.estimatedMinutes}m`,
         actionUrl: '/barber/queue',
@@ -263,10 +264,11 @@ export function getNotificationsForSession(session, demo) {
       (q) => (q.barberId === bId || q.barberName === bName) && (q.status === 'Called' || q.status === 'Pending')
     );
     pendingAtChair.forEach((q) => {
+      const qNote = q.notes ? ` Request note: "${q.notes}".` : '';
       live.push({
         id: `live-barber-chair-pending-${q.id}`,
         title: `Customer Pending at Chair: ${q.customerName}`,
-        message: `${q.customerName} (Ticket #${q.number}) is pending at your chair for ${q.serviceName}. Ready for you to start service.`,
+        message: `${q.customerName} (Ticket #${q.number}) is pending at your chair for ${q.serviceName}.${qNote} Ready for you to start service.`,
         type: 'queue-next',
         time: 'Ready for cut',
         actionUrl: '/barber/queue',
@@ -275,11 +277,12 @@ export function getNotificationsForSession(session, demo) {
       });
     });
 
-    // Cancelled and Confirmed appointments for this barber
+    // Pending, Confirmed, and Cancelled appointments for this barber
     const barberApts = (demo?.appointments || []).filter(
       (a) => a.barberId === bId || a.barberName === bName
     );
     barberApts.forEach((apt) => {
+      const aptNote = apt.notes ? ` Request note: "${apt.notes}".` : '';
       if (apt.status === 'Cancelled') {
         live.push({
           id: `live-barber-cancel-${apt.id}`,
@@ -295,11 +298,22 @@ export function getNotificationsForSession(session, demo) {
         live.push({
           id: `live-barber-confirm-${apt.id}`,
           title: `Booking Confirmed: ${apt.customerName}`,
-          message: `${apt.customerName} has a confirmed appointment for ${apt.serviceName} on ${humanDate(apt.date)} at ${apt.time}.`,
+          message: `${apt.customerName} has a confirmed appointment for ${apt.serviceName} on ${humanDate(apt.date)} at ${apt.time}.${aptNote}`,
           type: 'confirmed',
           time: `${humanDate(apt.date)} · ${apt.time}`,
           actionUrl: '/barber/appointments',
           actionLabel: 'Schedule',
+          urgent: false
+        });
+      } else if (apt.status === 'Pending') {
+        live.push({
+          id: `live-barber-pending-${apt.id}`,
+          title: `New Booking Request: ${apt.customerName}`,
+          message: `${apt.customerName} requested ${apt.serviceName} on ${humanDate(apt.date)} at ${apt.time}.${aptNote}`,
+          type: 'info',
+          time: `${humanDate(apt.date)} · ${apt.time}`,
+          actionUrl: '/barber/appointments',
+          actionLabel: 'View Schedule',
           urgent: false
         });
       }

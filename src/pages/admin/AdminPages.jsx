@@ -2919,7 +2919,7 @@ export function SettingsPage() {
     return {
       shopName: raw.shopName || 'Biglang Gwapo Barber Shop',
       phone: raw.phone || '+63 917 555 0100',
-      email: raw.email || 'hello@biglanggwapo.demo',
+      email: raw.email || 'hello@biglanggwapo.com',
       address: raw.address || '180 Cutcot National Highway, Pulilan, Bulacan',
       hours: raw.hours || 'Mon–Sun · 9:00 AM–8:00 PM',
       slotInterval: Number(raw.slotInterval) || 15,

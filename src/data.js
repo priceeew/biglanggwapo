@@ -56,7 +56,7 @@ export const inventory = [
 export const settings = {
   shopName: 'Biglang Gwapo Barber Shop',
   phone: '+63 917 555 0100',
-  email: 'hello@biglanggwapo.demo',
+  email: 'hello@biglanggwapo.com',
   address: '180 Cutcot National Highway, Pulilan, Bulacan',
   hours: 'Mon–Sun · 9:00 AM–8:00 PM',
   slotInterval: 15,

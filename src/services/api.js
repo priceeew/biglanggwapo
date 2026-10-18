@@ -141,7 +141,7 @@ export async function notifyCustomerTurn(queueItem, state, notify) {
   // 4. Check accounts stored in localStorage
   if (!email || !email.includes('@') || email.includes('example.com')) {
     try {
-      const rawAccounts = window.localStorage.getItem('biglanggwapo-accounts-v2');
+      const rawAccounts = window.localStorage.getItem('biglanggwapo-accounts-v3') || window.localStorage.getItem('biglanggwapo-accounts-v2');
       if (rawAccounts) {
         const accountsList = Object.values(JSON.parse(rawAccounts));
         const matched = accountsList.find(

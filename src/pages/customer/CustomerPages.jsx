@@ -9,7 +9,7 @@ import {
 import { useStore, currency, today, humanDate } from '../../context/StoreContext';
 import { demoApi } from '../../mockService';
 import { saveAccount, getAccounts } from '../../data';
-import { uploadImageFile, saveReviewToAtlas, saveAppointmentToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
+import { uploadImageFile, saveReviewToAtlas, saveAppointmentToAtlas, saveQueueItemToAtlas, deleteQueueItemFromAtlas } from '../../services/api';
 import { getSlotAvailability, isRestDay, isBarberOnLeave, isSameDayBookingClosed, getTomorrowDateStr, sortAppointmentsStably } from '../../utils/scheduling';
 import {
   BentoStats, SectionCard, Toolbar, AppointmentCard, EmptyState,
@@ -565,7 +565,7 @@ export function CustomerDashboard() {
         <SectionCard title="Shop bulletin">
           <div className="shift-note">
             <span className="note-mark">“</span>
-            <p>Welcome back, Miguel! Free cold brew & espresso at the lounge while waiting for your chair.</p>
+            <p>Welcome back{session?.name ? `, ${session.name}` : ''}! Free cold brew & espresso at the lounge while waiting for your chair.</p>
             <small>Front Desk · Biglang Gwapo Pulilan</small>
           </div>
         </SectionCard>
@@ -1200,7 +1200,7 @@ export function CustomerReviews() {
 
   const submit = (event) => {
     event.preventDefault();
-    if (!eligible) return notify('Reviews are available after a completed demo service.', 'error');
+    if (!eligible) return notify('Reviews are available after a completed service.', 'error');
     if (!rating || !comment.trim()) return notify('Choose a rating and add feedback.', 'error');
     const customerImg = session?.photoUrl || session?.image || (session?.email ? getAccounts()[session.email.toLowerCase()]?.photoUrl : '') || '';
     const newReview = {
@@ -1253,7 +1253,7 @@ export function CustomerReviews() {
               <div>
                 <span className="eyebrow gold">Eligible service</span>
                 <h2>{eligible ? eligible.serviceName : 'No pending review'}</h2>
-                <p>{eligible ? `Your completed visit with ${eligible.barberName} is ready for feedback.` : 'Complete another demo service to unlock a review.'}</p>
+                <p>{eligible ? `Your completed visit with ${eligible.barberName} is ready for feedback.` : 'Complete a visit to unlock a review.'}</p>
               </div>
               <form onSubmit={submit}>
                 <div className="star-picker" aria-label="Choose a rating">
@@ -1874,8 +1874,10 @@ export function CustomerProfile() {
         }
 
         if (session?.email) {
-          saveAccount({
+          await saveAccount({
             email: session.email,
+            role: 'customer',
+            customerId: session.customerId,
             photoUrl: newPhoto,
             image: newPhoto,
             name: name.trim(),
@@ -1883,17 +1885,59 @@ export function CustomerProfile() {
           });
         }
 
+        const cleanEmail = (session?.email || '').toLowerCase().trim();
+        const currentName = session?.name || name.trim();
+
         commit((state) => {
-          const cleanEmail = (session?.email || '').toLowerCase().trim();
           const updatedCusts = (state.customers || []).map((c) => {
-            if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId)) {
+            if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId) || (currentName && c.name && c.name.toLowerCase().trim() === currentName.toLowerCase().trim())) {
               return { ...c, image: newPhoto, photoUrl: newPhoto };
             }
             return c;
           });
-          return { ...state, customers: updatedCusts };
+
+          const updatedAppointments = (state.appointments || []).map((a) => {
+            const match =
+              (session?.customerId && a.customerId === session.customerId) ||
+              (cleanEmail && a.customerEmail && a.customerEmail.toLowerCase().trim() === cleanEmail) ||
+              (currentName && a.customerName && a.customerName.toLowerCase().trim() === currentName.toLowerCase().trim());
+            if (match) {
+              const updatedApt = { ...a, customerImage: newPhoto };
+              saveAppointmentToAtlas(updatedApt);
+              return updatedApt;
+            }
+            return a;
+          });
+
+          const updatedQueue = (state.queue || []).map((q) => {
+            const match =
+              (session?.customerId && q.customerId === session.customerId) ||
+              (cleanEmail && q.customerEmail && q.customerEmail.toLowerCase().trim() === cleanEmail) ||
+              (currentName && q.customerName && q.customerName.toLowerCase().trim() === currentName.toLowerCase().trim());
+            if (match) {
+              const updatedQ = { ...q, customerImage: newPhoto };
+              saveQueueItemToAtlas(updatedQ);
+              return updatedQ;
+            }
+            return q;
+          });
+
+          const updatedReviews = (state.reviews || []).map((r) => {
+            const match =
+              (cleanEmail && r.customerEmail && r.customerEmail.toLowerCase().trim() === cleanEmail) ||
+              (currentName && r.customer && r.customer.toLowerCase().trim() === currentName.toLowerCase().trim());
+            if (match) {
+              const updatedR = { ...r, customerPhoto: newPhoto, photoUrl: newPhoto };
+              saveReviewToAtlas(updatedR);
+              return updatedR;
+            }
+            return r;
+          });
+
+          return { ...state, customers: updatedCusts, appointments: updatedAppointments, queue: updatedQueue, reviews: updatedReviews };
         });
 
+        window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: getAccounts() }));
         notify('Profile picture updated successfully!', 'success');
       } else {
         notify(res?.error || 'Failed to upload profile picture.', 'error');
@@ -1905,30 +1949,63 @@ export function CustomerProfile() {
     }
   };
 
-  const handlePhotoRemove = () => {
+  const handlePhotoRemove = async () => {
     setPhotoUrl('');
     if (updateSession) {
       updateSession({ photoUrl: '', image: '' });
     }
     if (session?.email) {
-      saveAccount({
+      await saveAccount({
         email: session.email,
+        role: 'customer',
+        customerId: session.customerId,
         photoUrl: '',
         image: '',
         name: name.trim(),
         phone: phone.trim()
       });
     }
+    const cleanEmail = (session?.email || '').toLowerCase().trim();
+    const currentName = session?.name || name.trim();
+
     commit((state) => {
-      const cleanEmail = (session?.email || '').toLowerCase().trim();
       const updatedCusts = (state.customers || []).map((c) => {
-        if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId)) {
+        if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId) || (currentName && c.name && c.name.toLowerCase().trim() === currentName.toLowerCase().trim())) {
           return { ...c, image: '', photoUrl: '' };
         }
         return c;
       });
-      return { ...state, customers: updatedCusts };
+
+      const updatedAppointments = (state.appointments || []).map((a) => {
+        const match =
+          (session?.customerId && a.customerId === session.customerId) ||
+          (cleanEmail && a.customerEmail && a.customerEmail.toLowerCase().trim() === cleanEmail) ||
+          (currentName && a.customerName && a.customerName.toLowerCase().trim() === currentName.toLowerCase().trim());
+        if (match) {
+          const updatedApt = { ...a, customerImage: '' };
+          saveAppointmentToAtlas(updatedApt);
+          return updatedApt;
+        }
+        return a;
+      });
+
+      const updatedQueue = (state.queue || []).map((q) => {
+        const match =
+          (session?.customerId && q.customerId === session.customerId) ||
+          (cleanEmail && q.customerEmail && q.customerEmail.toLowerCase().trim() === cleanEmail) ||
+          (currentName && q.customerName && q.customerName.toLowerCase().trim() === currentName.toLowerCase().trim());
+        if (match) {
+          const updatedQ = { ...q, customerImage: '' };
+          saveQueueItemToAtlas(updatedQ);
+          return updatedQ;
+        }
+        return q;
+      });
+
+      return { ...state, customers: updatedCusts, appointments: updatedAppointments, queue: updatedQueue };
     });
+
+    window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: getAccounts() }));
     notify('Profile picture removed.', 'success');
   };
 
@@ -2072,11 +2149,13 @@ export function CustomerProfile() {
           {editing && (
             <button
               className="button button-dark"
-              onClick={() => {
+              onClick={async () => {
                 setEditing(false);
+                const trimmedName = name.trim() || session?.name || 'Customer';
+                const trimmedPhone = phone.trim() || session?.phone || '';
                 const updatedCustomerData = {
-                  name: name.trim() || session?.name || 'Customer',
-                  phone: phone.trim() || session?.phone || '',
+                  name: trimmedName,
+                  phone: trimmedPhone,
                   photoUrl,
                   image: photoUrl
                 };
@@ -2084,21 +2163,129 @@ export function CustomerProfile() {
                   updateSession(updatedCustomerData);
                 }
                 if (session?.email) {
-                  saveAccount({
+                  await saveAccount({
                     email: session.email,
+                    role: 'customer',
+                    customerId: session.customerId,
                     ...updatedCustomerData
                   });
                 }
+                const cleanEmail = (session?.email || '').toLowerCase().trim();
+                const oldName = session?.name || '';
+
                 commit((state) => {
-                  const cleanEmail = (session?.email || '').toLowerCase().trim();
+                  let found = false;
                   const updatedCusts = (state.customers || []).map((c) => {
-                    if ((c.email && c.email.toLowerCase().trim() === cleanEmail) || (session?.customerId && c.id === session.customerId)) {
-                      return { ...c, name: updatedCustomerData.name, phone: updatedCustomerData.phone, image: photoUrl, photoUrl };
+                    const match =
+                      (cleanEmail && c.email && c.email.toLowerCase().trim() === cleanEmail) ||
+                      (session?.customerId && c.id === session.customerId) ||
+                      (oldName && c.name && c.name.toLowerCase().trim() === oldName.toLowerCase().trim());
+                    if (match) {
+                      found = true;
+                      return {
+                        ...c,
+                        name: trimmedName,
+                        phone: trimmedPhone,
+                        image: photoUrl,
+                        photoUrl
+                      };
                     }
                     return c;
                   });
-                  return { ...state, customers: updatedCusts };
+                  if (!found) {
+                    updatedCusts.push({
+                      id: session?.customerId || `cust-${Date.now()}`,
+                      name: trimmedName,
+                      email: cleanEmail,
+                      phone: trimmedPhone,
+                      image: photoUrl,
+                      photoUrl,
+                      status: 'Active',
+                      visits: 1,
+                      lastVisit: 'Today'
+                    });
+                  }
+
+                  // Reflect customer name change across all appointments
+                  const updatedAppointments = (state.appointments || []).map((a) => {
+                    const match =
+                      (session?.customerId && a.customerId === session.customerId) ||
+                      (cleanEmail && a.customerEmail && a.customerEmail.toLowerCase().trim() === cleanEmail) ||
+                      (oldName && a.customerName && a.customerName.toLowerCase().trim() === oldName.toLowerCase().trim());
+                    if (match) {
+                      const updatedApt = {
+                        ...a,
+                        customerName: trimmedName,
+                        customerPhone: trimmedPhone || a.customerPhone,
+                        customerImage: photoUrl || a.customerImage
+                      };
+                      saveAppointmentToAtlas(updatedApt);
+                      return updatedApt;
+                    }
+                    return a;
+                  });
+
+                  // Reflect customer name change in live queue
+                  const updatedQueue = (state.queue || []).map((q) => {
+                    const match =
+                      (session?.customerId && q.customerId === session.customerId) ||
+                      (cleanEmail && q.customerEmail && q.customerEmail.toLowerCase().trim() === cleanEmail) ||
+                      (oldName && q.customerName && q.customerName.toLowerCase().trim() === oldName.toLowerCase().trim());
+                    if (match) {
+                      const updatedQ = {
+                        ...q,
+                        customerName: trimmedName,
+                        customerPhone: trimmedPhone || q.customerPhone,
+                        customerImage: photoUrl || q.customerImage
+                      };
+                      saveQueueItemToAtlas(updatedQ);
+                      return updatedQ;
+                    }
+                    return q;
+                  });
+
+                  // Reflect customer name change in transactions
+                  const updatedTransactions = (state.transactions || []).map((t) => {
+                    const match =
+                      (session?.customerId && t.customerId === session.customerId) ||
+                      (cleanEmail && t.customerEmail && t.customerEmail.toLowerCase().trim() === cleanEmail) ||
+                      (oldName && t.customerName && t.customerName.toLowerCase().trim() === oldName.toLowerCase().trim());
+                    if (match) {
+                      return { ...t, customerName: trimmedName };
+                    }
+                    return t;
+                  });
+
+                  // Reflect customer name change in reviews
+                  const updatedReviews = (state.reviews || []).map((r) => {
+                    const match =
+                      (cleanEmail && r.customerEmail && r.customerEmail.toLowerCase().trim() === cleanEmail) ||
+                      (oldName && r.customer && r.customer.toLowerCase().trim() === oldName.toLowerCase().trim()) ||
+                      r.customer === 'Miguel Santos';
+                    if (match) {
+                      const updatedR = {
+                        ...r,
+                        customer: trimmedName,
+                        customerPhoto: photoUrl || r.customerPhoto,
+                        photoUrl: photoUrl || r.photoUrl
+                      };
+                      saveReviewToAtlas(updatedR);
+                      return updatedR;
+                    }
+                    return r;
+                  });
+
+                  return {
+                    ...state,
+                    customers: updatedCusts,
+                    appointments: updatedAppointments,
+                    queue: updatedQueue,
+                    transactions: updatedTransactions,
+                    reviews: updatedReviews
+                  };
                 });
+
+                window.dispatchEvent(new CustomEvent('biglanggwapo-accounts-updated', { detail: getAccounts() }));
                 notify('Profile details updated successfully!');
               }}
             >
@@ -2125,18 +2312,6 @@ export function CustomerProfile() {
             </div>
             <button className="button button-ghost button-small" onClick={() => notify('Password update interface.')}>
               Open <ArrowRight size={14} />
-            </button>
-          </div>
-          <div className="setting-row">
-            <div>
-              <strong>Reset demo data</strong>
-              <small>Restore default appointments, queue and reviews.</small>
-            </div>
-            <button
-              className="button button-danger button-small"
-              onClick={() => window.confirm('Reset all demo data?') && reset()}
-            >
-              Reset data
             </button>
           </div>
         </div>

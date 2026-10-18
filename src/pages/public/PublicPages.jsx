@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp,
+  AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight,
   Clock, LockKeyhole, Scissors, ShieldCheck, Sparkles, Tag, Zap, Flame, Users, TrendingUp,
   UserPlus, UserCheck, X
 } from 'lucide-react';
@@ -65,7 +65,7 @@ export function HomePage() {
       {activePromo && (
         <section className="promo-strip content-width">
           <div>
-            <span className="eyebrow gold">Limited demo offer</span>
+            <span className="eyebrow gold">Limited time offer</span>
             <h2>{activePromo.title}</h2>
             <p>{activePromo.description}</p>
           </div>
@@ -197,10 +197,6 @@ export function ServicesPage() {
           <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Services added from Admin → Services will appear here.</p>
         </div>
       )}
-      <div className="notice-bar">
-        <CircleHelp size={17} />
-        <span>Prices are demo values in Philippine pesos. Final service details can be updated from Admin → Services.</span>
-      </div>
     </PageFrame>
   );
 }
@@ -641,6 +637,19 @@ export function BookingPage() {
         actionLabel: 'Review Booking',
         urgent: true
       });
+
+      // Notify the assigned barber of the booking request with customer notes
+      addSystemNotification({
+        title: `New Booking Request: ${effectiveCustomerName}`,
+        message: `${effectiveCustomerName} requested ${combinedServiceName} on ${humanDate(selection.date)} at ${selection.time}.${selection.notes ? ` Notes: "${selection.notes}".` : ''}`,
+        type: 'info',
+        recipientRole: 'barber',
+        recipientId: barber.id,
+        recipientName: barber.name,
+        actionUrl: '/barber/appointments',
+        actionLabel: 'View Schedule',
+        urgent: false
+      });
       setConfirmed({
         ...selection,
         customerName: effectiveCustomerName,
@@ -667,12 +676,12 @@ export function BookingPage() {
       <PageFrame
         eyebrow="Booking confirmed"
         title="Your chair is on the board."
-        description="This is a demo confirmation. Reception can now confirm the appointment and mark you arrived from the staff view."
+        description="Reception will confirm your appointment and mark you arrived upon your visit."
       >
         <div className="confirmation-card">
           <div className="confirmation-icon"><Check size={24} /></div>
           <div>
-            <span className="eyebrow gold">Booking reference · BG-DEMO</span>
+            <span className="eyebrow gold">Booking reference · BG-{confirmed.id?.slice(-6)?.toUpperCase() || 'BOOKED'}</span>
             <h2>{confirmed.serviceName}</h2>
             {confirmed.customerName && confirmed.customerName !== session?.name && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--gold-soft)', color: '#6d4e21', padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, margin: '6px 0 2px' }}>
@@ -1298,7 +1307,7 @@ export function BookingPage() {
               {!session && (
                 <div className="inline-alert">
                   <LockKeyhole size={17} />
-                  <span>You’ll sign in before this demo booking is submitted. Your selection will be kept.</span>
+                  <span>You’ll sign in before your booking is submitted. Your selection will be kept.</span>
                 </div>
               )}
             </div>
@@ -1574,10 +1583,10 @@ export function StaffAccessPage() {
   const { openModal } = useStore();
   return (
     <section className="access-page content-width">
-      <div className="eyebrow"><ShieldCheck size={14} /> Separate demo access</div>
+      <div className="eyebrow"><ShieldCheck size={14} /> Staff access</div>
       <h1>Keep the shop moving.</h1>
       <p className="lead-copy">
-        Choose a staff view to explore the operational side of Biglang Gwapo. These roles are intentionally separate from customer login and are for demonstration only.
+        Choose a staff view to access the operational portal of Biglang Gwapo. These roles are reserved for authorized team members.
       </p>
       <div className="role-cards">
         {Object.entries(staffUsers).map(([role, user]) => (

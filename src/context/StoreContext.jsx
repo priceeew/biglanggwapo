@@ -247,7 +247,7 @@ export function StoreProvider({ children }) {
         } catch {}
       }
 
-      if (!e.key || e.key === 'biglanggwapo-demo-v12' || e.key === 'biglanggwapo-demo-v10' || e.key === 'biglanggwapo-accounts-v2') {
+      if (!e.key || e.key === 'biglanggwapo-demo-v12' || e.key === 'biglanggwapo-demo-v10' || e.key === 'biglanggwapo-accounts-v3' || e.key === 'biglanggwapo-accounts-v2') {
         const rawAccounts = getAccounts();
         setDemo((prev) => syncAccountsIntoDemoState(loadDemoState(), rawAccounts));
       }
@@ -384,7 +384,7 @@ export function StoreProvider({ children }) {
 
   const reset = () => {
     commit(resetDemoState());
-    notify('Demo data has been reset.');
+    notify('Data has been reset.');
   };
 
   const openModal = (type, options = {}) => setModal({ type, ...options });

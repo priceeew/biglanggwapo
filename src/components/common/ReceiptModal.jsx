@@ -61,7 +61,7 @@ export function normalizeReceiptData(source, settings = {}, demoTransactions = [
   const shopName = settings?.shopName || 'Biglang Gwapo Barbershop';
   const shopPhone = settings?.phone || '+63 917 555 0100';
   const shopAddress = settings?.address || '180 Cutcot National Highway, Pulilan, Bulacan';
-  const shopEmail = settings?.email || 'hello@biglanggwapo.demo';
+  const shopEmail = settings?.email || 'hello@biglanggwapo.com';
 
   return {
     id: merged.id,

@@ -140,7 +140,7 @@ export function ReceptionistAppointments() {
       return cust.email;
     }
     try {
-      const raw = window.localStorage.getItem('biglanggwapo-accounts-v2');
+      const raw = window.localStorage.getItem('biglanggwapo-accounts-v3') || window.localStorage.getItem('biglanggwapo-accounts-v2');
       if (raw) {
         const list = Object.values(JSON.parse(raw));
         const matched = list.find((acc) => acc?.email && acc.email.includes('@') && !acc.email.includes('example.com') && acc.name?.trim().toLowerCase() === apt?.customerName?.trim().toLowerCase());
@@ -301,7 +301,15 @@ export function ReceptionistAppointments() {
                 <td>
                   <div className="table-person">
                     <span className="avatar avatar-xs">{item.customerName.split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
-                    <span><strong>{item.customerName}</strong><small>{item.source}</small></span>
+                    <span>
+                      <strong>{item.customerName}</strong>
+                      <small>{item.source}</small>
+                      {item.notes ? (
+                        <small style={{ color: 'var(--gold)', fontStyle: 'italic', display: 'block', fontSize: '11px', marginTop: '2px' }}>
+                          📝 “{item.notes}”
+                        </small>
+                      ) : null}
+                    </span>
                   </div>
                 </td>
                 <td>{item.serviceName}<small className="table-sub">{currency(item.price)} · {item.duration}m</small></td>
@@ -709,6 +717,12 @@ export function ReceptionistAppointments() {
                       <strong style={{ fontSize: '12px' }}>{actionModal.apt.barberName}</strong>
                     </div>
                   </div>
+                  {actionModal.apt.notes ? (
+                    <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(197, 160, 89, 0.1)', borderLeft: '3px solid var(--gold)', borderRadius: '4px' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--gold)', textTransform: 'uppercase', fontFamily: 'var(--mono)', fontWeight: 600, display: 'block' }}>Customer Request Note</span>
+                      <p style={{ margin: '3px 0 0', fontSize: '12px', fontStyle: 'italic' }}>“{actionModal.apt.notes}”</p>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Queue & Schedule Validation */}
@@ -1027,7 +1041,8 @@ export function WalkInPage() {
     customerName: '',
     phone: '',
     serviceId: demo.services[0]?.id || '',
-    barberId: defaultBarber?.id || ''
+    barberId: defaultBarber?.id || '',
+    notes: ''
   });
   const [created, setCreated] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1074,7 +1089,8 @@ export function WalkInPage() {
       customerName: '',
       phone: '',
       serviceId: demo.services[0]?.id || '',
-      barberId: defaultBarber?.id || demo.barbers[0]?.id || ''
+      barberId: defaultBarber?.id || demo.barbers[0]?.id || '',
+      notes: ''
     });
     setIsSubmitting(false);
   };
@@ -1142,6 +1158,15 @@ export function WalkInPage() {
               </div>
             </label>
           </div>
+          <label className="field-label">Customer request / notes (optional)
+            <textarea
+              className="input textarea"
+              style={{ minHeight: '60px' }}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Customer styling request, notes, or preferences..."
+            />
+          </label>
           <button className="button button-dark" type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Adding...' : 'Add to queue'} <ArrowRight size={16} />
           </button>

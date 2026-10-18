@@ -159,6 +159,14 @@ export function BarberDashboard() {
                   <span className="eyebrow gold">In service · {current.number}</span>
                   <h2>{current.customerName}</h2>
                   <p>{current.serviceName} · {current.estimatedMinutes || 30} min</p>
+                  {(() => {
+                    const note = current.notes || (demo.appointments || []).find((a) => a.id === current.appointmentId || a.id === current.id)?.notes;
+                    return note ? (
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--gold)', fontStyle: 'italic' }}>
+                        📝 Request: “{note}”
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
                 <Link
                   to="/barber/service-session"
@@ -185,6 +193,14 @@ export function BarberDashboard() {
                   <span className="eyebrow gold">{(next.status === 'Called' || next.status === 'Pending') ? `Called to chair · ${next.number}` : `Next in line · ${next.number}`}</span>
                   <h2>{next.customerName} {(next.status === 'Called' || next.status === 'Pending') ? 'pending at chair' : 'is waiting'}</h2>
                   <p>{next.serviceName} · {(next.status === 'Called' || next.status === 'Pending') ? 'Ready to begin service' : 'Ready to call to chair'}</p>
+                  {(() => {
+                    const note = next.notes || (demo.appointments || []).find((a) => a.id === next.appointmentId || a.id === next.id)?.notes;
+                    return note ? (
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--gold)', fontStyle: 'italic' }}>
+                        📝 Request: “{note}”
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
                 <button
                   className="button button-dark button-small"
@@ -230,7 +246,14 @@ export function BarberDashboard() {
             {activeApts.map((item) => (
               <tr key={item.id}>
                 <td><strong>{item.time}</strong><small className="table-sub">{humanDate(item.date)}</small></td>
-                <td>{item.customerName}</td>
+                <td>
+                  <strong>{item.customerName}</strong>
+                  {item.notes ? (
+                    <small style={{ color: 'var(--gold)', fontStyle: 'italic', display: 'block', fontSize: '10px', marginTop: '2px' }}>
+                      📝 “{item.notes}”
+                    </small>
+                  ) : null}
+                </td>
                 <td>{item.serviceName}</td>
                 <td><StatusBadge status={item.status} /></td>
                 <td>
@@ -308,7 +331,14 @@ export function BarberAppointments() {
                 <td>
                   <div className="table-person">
                     <span className="avatar avatar-xs">{(item.customerName || 'CU').split(' ').map((p) => p[0]).join('').slice(0, 2)}</span>
-                    <strong>{item.customerName}</strong>
+                    <div>
+                      <strong>{item.customerName}</strong>
+                      {item.notes ? (
+                        <small style={{ color: 'var(--gold)', fontStyle: 'italic', display: 'block', fontSize: '11px', marginTop: '2px' }}>
+                          📝 “{item.notes}”
+                        </small>
+                      ) : null}
+                    </div>
                   </div>
                 </td>
                 <td>{item.serviceName}</td>
@@ -399,6 +429,14 @@ export function BarberQueue() {
               <span className="eyebrow">{item.status === 'In Service' ? 'Current in chair' : (item.status === 'Called' || item.status === 'Pending') ? 'Pending at chair' : index === 0 ? 'Now / next' : `In line · position ${index + 1}`}</span>
               <h3>{item.customerName}</h3>
               <p>{item.serviceName} · Joined {item.joinedAt || 'recently'}</p>
+              {(() => {
+                const note = item.notes || (demo.appointments || []).find((a) => a.id === item.appointmentId || a.id === item.id)?.notes;
+                return note ? (
+                  <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--gold)', fontStyle: 'italic' }}>
+                    📝 Request: “{note}”
+                  </div>
+                ) : null;
+              })()}
             </div>
             <StatusBadge status={item.status} />
             {item.status === 'Waiting' && (
@@ -484,6 +522,15 @@ export function BarberCustomerDetails() {
         <SectionCard title="Preferences & notes">
           <p className="detail-quote">“{customer?.preferences || 'No styling preferences specified.'}”</p>
           <p className="muted-copy">{customer?.notes || 'No internal notes on file for this client.'}</p>
+          {(() => {
+            const reqNote = activeApt?.notes || current?.notes;
+            return reqNote ? (
+              <div style={{ marginTop: '14px', padding: '10px 14px', background: 'rgba(197, 160, 89, 0.12)', borderLeft: '3px solid var(--gold)', borderRadius: '4px' }}>
+                <strong style={{ fontSize: '11px', color: 'var(--gold)', display: 'block', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>Current Booking Request Note:</strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', fontStyle: 'italic', color: 'var(--ink)' }}>“{reqNote}”</p>
+              </div>
+            ) : null;
+          })()}
         </SectionCard>
       </div>
       <SectionCard title="Customer service history">
@@ -515,7 +562,15 @@ export function ServiceSession() {
 
   const myQueue = (demo.queue || []).filter((item) => matchesBarber(item) && !['Completed', 'Removed', 'Skipped'].includes(item.status));
   const current = myQueue.find((item) => item.status === 'In Service') || myQueue.find((item) => item.status === 'Called' || item.status === 'Pending') || myQueue[0];
-  const [notes, setNotes] = useState(current?.notes || '');
+  const linkedApt = (demo.appointments || []).find((a) => (current?.appointmentId && a.id === current.appointmentId) || (current?.id && a.id === current.id));
+  const customerRequestNotes = current?.notes || linkedApt?.notes || '';
+  const [notes, setNotes] = useState(customerRequestNotes);
+
+  useEffect(() => {
+    if (current) {
+      setNotes(current.notes || linkedApt?.notes || '');
+    }
+  }, [current?.id, linkedApt?.id]);
 
   const startCurrent = (item, newNotes = '') => {
     let queueToSave = null;
@@ -609,6 +664,24 @@ export function ServiceSession() {
                   : 'Customer arrived — please call next before starting service'}
               </span>
             </div>
+            {customerRequestNotes && (
+              <div style={{
+                background: '#fffdf5',
+                border: '1.5px solid var(--gold)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gold)', fontWeight: 700 }}>
+                    Customer Request Notes
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: '13.5px', fontStyle: 'italic', color: 'var(--ink)' }}>
+                  “{customerRequestNotes}”
+                </p>
+              </div>
+            )}
             <label className="field-label">Service notes & finish
               <textarea
                 className="input textarea"

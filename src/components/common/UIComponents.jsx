@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Scissors, ArrowRight, FileText, Check, CheckCircle2, CircleHelp, Search, Filter, TrendingUp,
+  Scissors, ArrowRight, FileText, Check, CheckCircle2, Search, Filter, TrendingUp,
   ZoomIn, X, AlertTriangle
 } from 'lucide-react';
 import { useStore, currency, humanDate, stars } from '../../context/StoreContext';
@@ -39,7 +39,7 @@ export function Toast({ toast }) {
   if (!toast) return null;
   return (
     <div className={`toast ${toast.tone}`} role="status">
-      <span>{toast.tone === 'error' ? <CircleHelp size={17} /> : <CheckCircle2 size={17} />}</span>
+      <span>{toast.tone === 'error' ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}</span>
       {toast.message}
     </div>
   );
