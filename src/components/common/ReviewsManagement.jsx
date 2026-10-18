@@ -133,6 +133,7 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
 
   // Validate and submit Add Review form
   const handleOpenAddModal = () => {
+    if (role === 'barber') return;
     setFormCustomer('');
     setFormBarberId(barberFilter?.id || demo.barbers?.[0]?.id || '');
     setFormServiceId(demo.services?.[0]?.id || '');
@@ -184,6 +185,10 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
 
   const handleSubmitAdd = async (e) => {
     e.preventDefault();
+    if (role === 'barber') {
+      notify('Barbers cannot add customer reviews.', 'error');
+      return;
+    }
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -275,7 +280,11 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
         count={filtered.length}
         query={query}
         setQuery={setQuery}
-        description="Monitor verified client satisfaction ratings, toggle public visibility with the Hide button, and manage feedback entries."
+        description={
+          role === 'barber'
+            ? 'View and monitor verified client reviews and ratings left by customers for your cuts.'
+            : 'Monitor verified client satisfaction ratings, toggle public visibility with the Hide button, and manage feedback entries.'
+        }
         action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             {role === 'barber' && barberFilter && (
@@ -344,13 +353,15 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
               </select>
             </div>
 
-            <button
-              type="button"
-              className="button button-dark button-small"
-              onClick={handleOpenAddModal}
-            >
-              <Plus size={14} /> Add Review
-            </button>
+            {role !== 'barber' && (
+              <button
+                type="button"
+                className="button button-dark button-small"
+                onClick={handleOpenAddModal}
+              >
+                <Plus size={14} /> Add Review
+              </button>
+            )}
           </div>
         }
       />
@@ -480,7 +491,7 @@ export function ReviewsManagement({ role = 'admin', barberFilter = null }) {
       </SectionCard>
 
       {/* Add Review Modal */}
-      {isAdding && (
+      {isAdding && role !== 'barber' && (
         <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setIsAdding(false)}>
           <div className="modal-card" style={{ maxWidth: '480px' }}>
             <button className="modal-close" onClick={() => setIsAdding(false)} aria-label="Close dialog">
