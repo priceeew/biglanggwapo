@@ -58,7 +58,7 @@ export function ReceptionistDashboard() {
       />
       <div className="dashboard-grid two-thirds">
         <SectionCard
-          title="Upcoming appointments"
+          title="Appointments"
           action={<Link to="/receptionist/appointments" className="text-link">View all <ArrowRight size={14} /></Link>}
         >
           <div className="compact-list">
